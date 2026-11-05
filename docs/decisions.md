@@ -5580,6 +5580,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+110. ✅ **Publication** — un installateur Inno Setup et un zip pour Windows, une archive pour Linux, et une release en brouillon préparée par
+     la CI pour un tag `v*`. Décisions plus bas, et [docs/publier-une-version.md](publier-une-version.md).
+109. ✅ **Copies de secours** — ce qui n'est pas enregistré est copié dans `.devex/autosave` toutes les 5 minutes et avant Play, et proposé
+     après un plantage. Décisions plus bas.
 108. ✅ **Compatibilité des projets** — les scènes et tous les fichiers des versions passées s'ouvrent, un projet dit sa version,
      prévient, se copie avant d'être repris, et des fichiers figés gardent la règle. Décisions plus bas et [docs/compatibilite.md](compatibilite.md).
 107. ✅ **GridMap** — des pièces posées sur une grille 3D et peintes dans la vue, depuis une scène palette, sans entité par case.
@@ -5615,6 +5619,39 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     l'extraction ; mesure `DEVEX_STRESS_SSR` du banc d'essai ; API des jeux 43.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
+
+## Copies de secours — décidé le 2026-11-05
+
+Deuxième point de la liste pour une 1.0. Un plantage perdait tout ce qui n'était pas enregistré. Décidé avec l'utilisateur.
+
+- **Des copies, jamais les vrais fichiers.** Écarté : enregistrer à intervalle régulier, qui écrase le fichier par un essai raté et remplit
+  l'historique de git. Une scène récupérée s'ouvre modifiée, et seul Ctrl+S écrit son fichier.
+- **Toutes les 5 minutes, réglable, et avant chaque Play** : c'est le code du jeu qui risque le plus de tout faire tomber.
+- **La présence des copies dit le plantage.** Quitter normalement ou changer de projet les retire. Écarté : un fichier de session à part, à garder
+  cohérent avec elles pour le même résultat.
+- **Un index dit ce que chaque copie remplace**, écrit après elles et jamais avant : une scène sans fichier ou un texte hors du projet n'ont pas de chemin
+  à reproduire dans le dossier. Écarté : un chemin miroir, plus simple, mais qui ne couvre que les fichiers du projet.
+- **Scènes, textes et terrains.** Sculpter est ce qui prend le plus de temps à refaire. Un terrain récupéré retourne dans son fichier, parce que rien ne sait
+  aujourd'hui le rouvrir modifié sans y toucher.
+- **La fenêtre n'a que deux réponses**, et quitter sans répondre garde les copies pour la fois suivante. Ignorer les copies les met de côté dans
+  `.devex/backups/discarded-autosave`, jusqu'à la fois suivante, parce qu'un clic trop rapide ne doit pas tout perdre.
+- **Une copie qui dit la même chose que son fichier n'est pas proposée**, ce qui évite l'alerte quand on a enregistré juste avant le plantage.
+- **Limite connue** : deux éditeurs ouverts sur le même projet partagent le dossier, et le second proposerait les copies du premier. Le cas est rare, et
+  y répondre n'abîme aucun fichier.
+
+## Publier une version — décidé le 2026-11-05
+
+Jusqu'ici, le moteur ne se téléchargeait que depuis les artefacts de la CI, qui disparaissent après 30 jours et demandent un compte GitHub. Décidé avec l'utilisateur.
+
+- **Inno Setup et un zip.** Inno Setup est gratuit, installe sans droits administrateur et sait associer les `.dvxproj`. Écarté : le zip seul, sans raccourci ni
+  désinstallation, et un MSI avec WiX, plus lourd et attendu surtout en entreprise.
+- **Un brouillon à relire**, créé par la CI pour un tag `v*`, une fois toutes les vérifications passées. Écarté : publier automatiquement, car une erreur
+  partirait en public tout de suite ; et déposer les fichiers à la main, facile à rater et impossible à refaire à l'identique.
+- **Dans la CI existante, pas un fichier de plus** : la release reprend ce que les jobs viennent de construire et de tester, plutôt que de tout reconstruire
+  dans un autre workflow, avec le risque de publier autre chose que ce qui a été vérifié.
+- **Le script refuse une version incohérente** : le tag, `CMakeLists.txt`, le bac à sable, les formats figés et le journal doivent dire la même.
+- **Pas de signature pour l'instant** : un certificat coûte de l'argent chaque année. Les notes expliquent l'avertissement de SmartScreen.
+- **Avant la 1.0, une release est marquée préversion** sur GitHub.
 
 ## Compatibilité des projets — décidé le 2026-11-05
 

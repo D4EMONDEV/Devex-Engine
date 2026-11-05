@@ -11,7 +11,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(DevexVcpkg)
 
 project(DevexEngine
-    VERSION 0.1.0
+    VERSION 0.9.0
     DESCRIPTION "Open-source 3D game engine"
     LANGUAGES C CXX
 )

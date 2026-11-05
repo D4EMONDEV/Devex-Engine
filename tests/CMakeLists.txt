@@ -276,6 +276,7 @@ devex_add_tests(tools
         tools/ViewportSettingsTests.cpp
         tools/ScriptSettingsTests.cpp
         tools/ToolsOverlayTests.cpp
+        tools/AutosaveTests.cpp
         tools/EditorBenchmark.cpp
         tools/TwoDScreenTests.cpp
     LIBRARIES

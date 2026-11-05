@@ -429,6 +429,7 @@ struct EditorSettingsUi : SettingsUi
     Entity fontSize;
     Entity codeFontSize;
     Entity updateContinuously;
+    Entity autosaveMinutes;
     Button reset;
     struct EditorFields
     {
@@ -505,6 +506,11 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     updateContinuously = toggle(updateRow.editor);
     tooltip(updateRow.row, "Draws the editor at every frame, even when nothing changes: for measuring performance");
     note(&performance, "Off, the editor draws only while something moves or the user acts, and rests in between.", "dim", 2.0f);
+    Section& autosave = pageCard(kit, 1, "Autosave");
+    const FormRow autosaveRow = formRow(autosave, "Minutes Between Copies");
+    autosaveMinutes = numbers(autosaveRow.editor, single, scene::UiNumberField{.minValue = 0.0f, .maxValue = 120.0f, .step = 1.0f, .dragSpeed = 0.1f, .decimals = 0}).front();
+    tooltip(autosaveRow.row, "0 keeps no copies");
+    note(&autosave, "Copies go to .devex/autosave and are offered back after a crash. Your files only change when you save.", "dim");
 
     Section& handles = pageCard(kit, viewportPage, "Handles and Lines");
     for (std::size_t i = 0; i < 4; ++i)
@@ -679,6 +685,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     setNumber(fontSize, theme.fontSize);
     setNumber(codeFontSize, theme.codeFontSize);
     setToggle(updateContinuously, theme.updateContinuously);
+    setNumber(autosaveMinutes, static_cast<float>(theme.autosaveMinutes));
     for (std::size_t i = 0; i < viewportNumbers.size(); ++i)
         setNumber(viewportNumberFields[i], viewport.*viewportNumbers[i].member);
     for (std::size_t i = 0; i < viewportColors.size(); ++i)
@@ -909,6 +916,10 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     {
         theme.updateContinuously = scene().get<scene::UiToggle>(updateContinuously).value;
     }
+    if (world.wasChanged(autosaveMinutes))
+    {
+        theme.autosaveMinutes = static_cast<int>(std::round(scene().get<scene::UiNumberField>(autosaveMinutes).value));
+    }
     if (world.wasClicked(reset.entity))
     {
         if (selected == viewportPage)
@@ -940,6 +951,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
             theme.fontSize = defaults.fontSize;
             theme.codeFontSize = defaults.codeFontSize;
             theme.updateContinuously = defaults.updateContinuously;
+            theme.autosaveMinutes = defaults.autosaveMinutes;
         }
     }
 

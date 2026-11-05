@@ -18,6 +18,7 @@
 #include <devex/tools/SceneCommands.hpp>
 
 #include <algorithm>
+#include <limits>
 #include <chrono>
 #include <cctype>
 #include <format>
@@ -791,6 +792,29 @@ void openSceneTab(ToolsState& state, scene::Scene& scene, const std::filesystem:
     DEVEX_LOG_INFO("Opened {}", core::toUtf8(path.filename()));
 }
 
+void openRecoveredScene(ToolsState& state, scene::Scene& scene, std::filesystem::path path, scene::Scene recovered)
+{
+    recovered.updateTransforms();
+    EditorCamera camera = defaultCamera();
+    fitToScene(camera, recovered);
+    std::optional<std::uint64_t> replaced;
+    if (const std::optional<std::size_t> open = path.empty() ? std::nullopt : state.tabs.findByPath(path, activeDocument(state, scene)))
+    {
+        replaced = state.tabs.id(*open);
+    }
+    else if (state.tabs.size() == 1 && isUntouchedNewScene(state, scene, 0))
+    {
+        replaced = state.tabs.id(0);
+    }
+    SceneDocument document = makeDocument(std::move(path), std::move(recovered), camera);
+    document.savedState = std::numeric_limits<std::uint64_t>::max();
+    addAndActivate(state, scene, std::move(document));
+    if (replaced)
+    {
+        state.tabs.close(*state.tabs.findById(*replaced), activeDocument(state, scene));
+    }
+}
+
 std::vector<std::size_t> tabsWithUnsavedChanges(ToolsState& state, scene::Scene& scene)
 {
     return state.pendingAction ? affectedTabs(state, scene, *state.pendingAction) : std::vector<std::size_t>{};
@@ -1280,6 +1304,9 @@ void updateEditorSession(ToolsState& state, scene::Scene& scene)
         {
             DEVEX_LOG_INFO("{} is open: {}", name, opened);
         }
+        // Copies still there say that the last session did not end normally.
+        state.autosave.recoverable = findAutosaveCopies(state.database->project());
+        state.openRecoverPopup = !state.autosave.recoverable.empty();
     };
     if (state.projectChanged && state.database != nullptr)
     {

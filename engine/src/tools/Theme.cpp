@@ -243,6 +243,10 @@ ThemeSettings readThemeSettings(const serialization::TextSection& section)
     }
     settings.fontSize = std::clamp(numberOr(section, "font_size", settings.fontSize), 8.0f, 32.0f);
     settings.codeFontSize = std::clamp(numberOr(section, "code_font_size", settings.codeFontSize), 8.0f, 32.0f);
+    if (const TextValue* const value = section.findAttribute("autosave_minutes"))
+    {
+        settings.autosaveMinutes = static_cast<int>(std::clamp<std::int64_t>(serialization::asInteger(*value).value_or(5), 0, 120));
+    }
     if (const TextValue* const value = section.findAttribute("update_continuously"))
     {
         settings.updateContinuously = serialization::asBool(*value).value_or(false);
@@ -263,6 +267,7 @@ serialization::TextSection writeThemeSettings(const ThemeSettings& settings)
         {"font_size", TextValue(static_cast<double>(settings.fontSize))},
         {"code_font_size", TextValue(static_cast<double>(settings.codeFontSize))},
         {"update_continuously", TextValue(settings.updateContinuously)},
+        {"autosave_minutes", TextValue(std::int64_t{settings.autosaveMinutes})},
     };
     return section;
 }

@@ -59,6 +59,8 @@ struct DEVEX_API ThemeSettings
     // Whether the editor draws every frame even when nothing changes. Off, it rests between events
     // once nothing moves, as the low processor mode of Godot does.
     bool updateContinuously = false;
+    // How often unsaved work is copied, in case the editor crashes; 0 never.
+    int autosaveMinutes = 5;
 
     // The colors and contrast of a preset, with the other settings left as they are.
     void applyPreset(ThemePreset newPreset) noexcept;

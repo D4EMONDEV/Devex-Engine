@@ -81,6 +81,15 @@ enum class DialogKind : std::uint8_t
     About,
     GameCrashed,
     OpeningProject,
+    RecoverWork,
+};
+
+// What the dialog after a crash was answered.
+enum class RecoverChoice : std::uint8_t
+{
+    None,
+    Recover,
+    Discard,
 };
 
 // What the unsaved changes dialog was answered.
@@ -127,6 +136,7 @@ struct EditorDialogsUi : FormUi
     Button cancel;
     bool focusName = false;
     UnsavedChoice unsaved = UnsavedChoice::None;
+    RecoverChoice recover = RecoverChoice::None;
     // The build that the scenes of a project just opened wait for: a bar, and what the compiler said last.
     Entity buildBar;
     Entity buildText;
@@ -209,6 +219,7 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
     validatedInput.clear();
     open = true;
     unsaved = UnsavedChoice::None;
+    recover = RecoverChoice::None;
     focusName = false;
     language = shaderKind = scriptName = file = status = folder = buildBar = buildText = buildLine = Entity{};
     folderRows.clear();
@@ -227,6 +238,27 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
 
     switch (which)
     {
+    case DialogKind::RecoverWork: {
+        constexpr std::size_t listed = 6;
+        size.x = std::round(font * 38.0f);
+        titleRow(kit, Icon::TriangleAlert, colors.warning, "Recover unsaved work?");
+        note(nullptr, "Devex did not close normally. It kept a copy of:", "text", 2.0f);
+        const std::vector<AutosaveCopy>& copies = state.autosave.recoverable;
+        for (std::size_t index = 0; index < std::min(copies.size(), listed); ++index)
+        {
+            const std::filesystem::path& original = copies[index].original;
+            note(nullptr, original.empty() ? std::string("A scene never saved") : core::toUtf8(original.filename()), "dim", 1.5f);
+        }
+        if (copies.size() > listed)
+        {
+            note(nullptr, std::format("And {} more", copies.size() - listed), "dim", 1.5f);
+        }
+        note(nullptr, "Scenes and scripts open as modified, and only saving writes them. Terrains go back to their files.", "dim", 3.0f);
+        const Entity buttons = buttonLine();
+        discard = button(kit, buttons, Icon::Trash, "Discard", "button", buttonWidth, buttonHeight);
+        confirm = button(kit, buttons, Icon::Check, "Recover", "primary", buttonWidth, buttonHeight);
+        break;
+    }
     case DialogKind::CreateNew: {
         size.x = std::round(font * 34.0f);
         titleRow(kit, Icon::FilePlus, colors.accent, "Create New");
@@ -714,6 +746,18 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
             next = DialogKind::CreateNew;
         }
         break;
+    case DialogKind::RecoverWork:
+        // Only an answer closes it: leaving normally afterwards would lose the copies.
+        if (world.wasClicked(confirm.entity))
+        {
+            recover = RecoverChoice::Recover;
+        }
+        else if (world.wasClicked(discard.entity))
+        {
+            recover = RecoverChoice::Discard;
+        }
+        open = recover == RecoverChoice::None;
+        break;
     case DialogKind::UnsavedChanges:
         if (world.wasClicked(confirm.entity))
         {
@@ -817,6 +861,10 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
     {
         requested = DialogKind::OpeningProject;
     }
+    if (std::exchange(state.openRecoverPopup, false))
+    {
+        requested = DialogKind::RecoverWork;
+    }
     EditorUiKit& kit = editorUiKit(state);
     if (requested)
     {
@@ -846,6 +894,18 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
     if (!ui->open)
     {
         closeModal(state, dialogPopup);
+    }
+
+    switch (std::exchange(ui->recover, RecoverChoice::None))
+    {
+    case RecoverChoice::Recover:
+        recoverAutosave(state, scene);
+        break;
+    case RecoverChoice::Discard:
+        discardAutosave(state);
+        break;
+    case RecoverChoice::None:
+        break;
     }
 
     // What the unsaved changes dialog was answered, once it is closed: saving may open the dialog

@@ -438,6 +438,44 @@ struct DEVEX_API ProjectInfo
     asset::ProjectAge age = asset::ProjectAge::Current;
 };
 
+// What a copy of unsaved work stands for.
+enum class AutosaveKind : std::uint8_t
+{
+    Scene,
+    Text,
+    Terrain,
+};
+
+// A copy this session keeps. A scene belongs to its tab, as an unsaved scene has no file yet.
+struct AutosaveEntry
+{
+    AutosaveKind kind = AutosaveKind::Scene;
+    std::uint64_t tab = 0;
+    std::filesystem::path original;
+    std::filesystem::path file;
+    // What it held when it was copied, to copy it only after it changes.
+    std::uint64_t stamp = 0;
+};
+
+// A copy found on opening a project, which the last session did not get to remove.
+struct AutosaveCopy
+{
+    AutosaveKind kind = AutosaveKind::Scene;
+    std::filesystem::path copy;
+    // Empty for a scene that never was saved.
+    std::filesystem::path original;
+};
+
+struct AutosaveState
+{
+    std::chrono::steady_clock::time_point copied;
+    std::chrono::steady_clock::time_point swept;
+    std::uint64_t pass = 0;
+    std::vector<AutosaveEntry> entries;
+    // What to offer back, while the dialog waits for an answer.
+    std::vector<AutosaveCopy> recoverable;
+};
+
 struct DEVEX_API ProjectManagerState
 {
     std::string filter;
@@ -882,6 +920,9 @@ struct DEVEX_API ToolsState
     // Opening a document moves the others in memory: hold the path of a document across a frame,
     // never a pointer or a reference to it.
     std::vector<TextDocument> textDocuments;
+    // The copies of what is not saved yet.
+    AutosaveState autosave;
+    bool openRecoverPopup = false;
     // What the editor keeps for the document it shows: cursor, search, completions.
     TextEditState textEdit;
     std::shared_ptr<ScriptLanguageServices> languageServices;
@@ -1350,6 +1391,20 @@ DEVEX_API bool handlePathEditing(ToolsState& state, scene::Scene& scene, const V
 DEVEX_API void addPathOverlay(const ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, std::vector<render::OverlayVertex>& lines);
 // The circle of the brush on the ground.
 DEVEX_API void addTerrainPainterOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorld& world);
+// Copies what is unsaved when it is time, and drops the copies of what no longer is. Called at the end of each frame.
+DEVEX_API void updateAutosave(ToolsState& state, scene::Scene& scene);
+DEVEX_API void writeAutosaveCopies(ToolsState& state, scene::Scene& scene);
+// Leaving the project normally: the copies have served.
+DEVEX_API void removeAutosave(const asset::Project& project);
+// Moves the copies out of the way, where they stay until the next time.
+DEVEX_API void setAsideAutosave(const asset::Project& project);
+// What the last session left behind, without what its files already say.
+[[nodiscard]] DEVEX_API std::vector<AutosaveCopy> findAutosaveCopies(const asset::Project& project);
+// Opens what was found as unsaved work: scenes and texts in their tabs, marked modified. Terrains go back to their files.
+DEVEX_API void recoverAutosave(ToolsState& state, scene::Scene& scene);
+DEVEX_API void discardAutosave(ToolsState& state);
+// In place of the tab of the same scene, or of an untouched new scene. Modified, whatever undoing does.
+DEVEX_API void openRecoveredScene(ToolsState& state, scene::Scene& scene, std::filesystem::path path, scene::Scene recovered);
 // Writes the maps of the terrains of a scene that changed since they were saved to their files.
 DEVEX_API void saveTerrains(ToolsState& state, const scene::Scene& scene);
 // The cells around the mouse and the tile about to be painted.

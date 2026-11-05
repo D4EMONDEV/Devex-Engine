@@ -2162,6 +2162,9 @@ namespace devex::ui {
   `GeneratedMesh` sur chaque racine, appelé avant la physique et l'extraction), `AssetManager::addGeneratedMesh`. Guide `docs/level-design.md`.
 - Chemins : `scene/PathComponents.hpp` (`Path3D`, `PathFollower`, `PathCurve`), `runtime/PathFollowers.hpp`, `Paths` en C#,
   l'outil dans la vue `tools/PathEditor.cpp`. Guide `docs/level-design.md`, plan dans `docs/decisions.md`.
+- Copies de secours : `tools/Autosave.cpp` (`updateAutosave` à la fin de chaque image, `.devex/autosave/index.dvx`), fenêtre `DialogKind::RecoverWork` dans
+  `tools/EditorDialogs.cpp`, réglage `ThemeSettings::autosaveMinutes`. Publication : `packaging/windows/devex.iss`, `scripts/prepare_release.ps1`, job `release` de
+  `.github/workflows/ci.yml`, `docs/publier-une-version.md`, `CHANGELOG.md`.
 - Compatibilité : `docs/compatibilite.md` (la promesse et comment changer un format). `Project::engineVersion`, `projectAge`, `backUpProject`,
   `upgradeProject` (`asset/Project`), `prepareProjectForEditing` à l'ouverture (`runtime/Application.cpp`), fenêtres dans `tools/ProjectManager.cpp`.
   Anciens noms : `FieldHints::was`, `TypeBuilder::was`, `[WasNamed]`. Étapes des scènes : `upgradeScene` (`SceneSerializer.cpp`, `serialization/FormatUpgrades.hpp`).

@@ -1,4 +1,4 @@
-[project format=1 engine="0.1.0" name="Sandbox" startup_scene="res://assets/scenes/arena.dvxscene"]
+[project format=1 engine="0.9.0" name="Sandbox" startup_scene="res://assets/scenes/arena.dvxscene"]
 
 [sorting_layer name="Background"]
 

@@ -377,7 +377,11 @@ voir [docs/fuzzing.md](docs/fuzzing.md).
 
 ## Télécharger le moteur
 
-Chaque exécution de la CI garde 30 jours le moteur en Release, prêt à lancer : dans l'onglet
+Les versions publiées sont sur la page [Releases](https://github.com/D4EMONDEV/Devex-Engine/releases) : un installateur
+ou un zip pour Windows, et une archive pour Linux. Ce qui change de l'une à l'autre est dans le
+[journal des versions](CHANGELOG.md), et la façon de les préparer dans [docs/publier-une-version.md](docs/publier-une-version.md).
+
+Pour la toute dernière version du code, chaque exécution de la CI garde 30 jours le moteur en Release, prêt à lancer : dans l'onglet
 *Actions*, ouvrir une exécution réussie et prendre `devex-windows-x64` ou `devex-linux-x64` (un
 `.tar.gz` à extraire, vérifié complet avant d'être gardé par `scripts/check_engine_package.sh`), et,
 pendant 14 jours, `sandbox-linux-x64`, le bac à sable exporté pour Linux, à essayer sur d'autres

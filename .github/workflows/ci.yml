@@ -3,12 +3,14 @@
 # The machines of GitHub have no GPU: on Linux, the tests tagged [gpu] run on lavapipe, the Vulkan of
 # Mesa that draws on the processor; on Windows, on developers' machines only. The Release builds are
 # installed and kept as downloads: devex-windows-x64 and devex-linux-x64. The Linux one then exports
-# the sandbox, which plays on a bare Ubuntu and is kept too: sandbox-linux-x64.
+# the sandbox, which plays on a bare Ubuntu and is kept too: sandbox-linux-x64. A tag v<version> also
+# makes what they packed into a draft release, to read and publish by hand: docs/publier-une-version.md.
 name: CI
 
 on:
   push:
     branches: [main, ci]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -489,3 +491,38 @@ jobs:
             out/build/android-arm64/vcpkg-manifest-install.log
             ${{ runner.temp }}/vcpkg/buildtrees/**/*.log
           if-no-files-found: ignore
+
+  # What the checks above packed, for a tag v<version>: the installer and the zip for Windows, the
+  # archive for Linux, in a release that stays a draft until someone publishes it.
+  release:
+    name: Draft the release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux, android]
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Get the sources
+        uses: actions/checkout@v7
+
+      - name: Get the engines
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/engines
+          pattern: devex-*-x64
+
+      - name: Install Inno Setup
+        run: choco install innosetup --version=6.7.1 --no-progress -y
+
+      - name: Prepare the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ github.ref_name }}".Substring(1)
+          scripts/prepare_release.ps1 -Version $version `
+            -Windows "$env:RUNNER_TEMP/engines/devex-windows-x64" `
+            -Linux "$env:RUNNER_TEMP/engines/devex-linux-x64/devex-linux-x64.tar.gz" `
+            -Output "$env:RUNNER_TEMP/release" `
+            -Iscc "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" `
+            -Draft

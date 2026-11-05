@@ -487,6 +487,11 @@ ToolsOverlay::~ToolsOverlay()
     if (m_state->mode == ToolsMode::Editor)
     {
         detail::saveEditorSettings(*m_state);
+        // Copies not answered for yet are offered again next time.
+        if (m_state->database != nullptr && m_state->autosave.recoverable.empty())
+        {
+            detail::removeAutosave(m_state->database->project());
+        }
         if (m_state->flying)
         {
             m_state->window.setMouseCaptured(false);
@@ -673,6 +678,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     {
         logFailure(state.history.execute(scene, std::exchange(state.pendingCommand, nullptr)));
     }
+    detail::updateAutosave(state, scene);
 
     finishFrame(state);
     state.capturesKeyboard = !state.hosts.focusedId().empty();
@@ -936,7 +942,12 @@ void ToolsOverlay::setAssetDatabase(asset::AssetDatabase* database) noexcept
     if (state.mode == ToolsMode::Editor && state.database != nullptr)
     {
         detail::saveEditorSettings(state);
+        if (state.autosave.recoverable.empty())
+        {
+            detail::removeAutosave(state.database->project());
+        }
     }
+    state.autosave = {};
     // The scenes of the previous project go with it; the application empties the edited scene.
     scene::Scene dropped;
     state.tabs.clear(detail::ActiveDocument{state.scenePath, dropped, state.history, state.savedState, state.selection,

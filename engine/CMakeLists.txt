@@ -925,6 +925,7 @@ target_sources(devex_tools
         src/tools/CreationCatalog.cpp
         src/tools/CreationCatalog.hpp
         src/tools/CreationDialog.cpp
+        src/tools/Autosave.cpp
         src/tools/TextDocument.cpp
         src/tools/TextDocument.hpp
         src/tools/TextEditorPanel.cpp
