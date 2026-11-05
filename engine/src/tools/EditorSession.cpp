@@ -1321,7 +1321,14 @@ void updateEditorSession(ToolsState& state, scene::Scene& scene)
         state.projectManager.selected = normalProjectPath(*project);
         state.projectManager.refresh = true;
         saveUserSettings(state);
-        requestAction(state, scene, {.kind = PendingAction::Kind::OpenProject, .path = std::move(*project)});
+        if (const core::Result<asset::Project> imported = asset::loadProject(*project); imported && asset::projectAge(*imported) != asset::ProjectAge::Current)
+        {
+            state.projectManager.askOpen = state.projectManager.selected;
+        }
+        else
+        {
+            requestAction(state, scene, {.kind = PendingAction::Kind::OpenProject, .path = std::move(*project)});
+        }
     }
     if (std::optional<std::filesystem::path> folder = std::exchange(answers.scanFolder, std::nullopt))
     {

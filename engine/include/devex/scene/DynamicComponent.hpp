@@ -33,6 +33,8 @@ struct DEVEX_API DynamicField
     std::vector<std::string> enumNames;
     // A list of values of the kind, stored as the std::vector a C++ component would use.
     bool list = false;
+    // The names it had, which files that still say so read into it.
+    std::vector<std::string> formerNames;
     // Starts an inspector group; empty continues the previous one, as FieldHints::group does.
     std::string group;
 };
@@ -50,7 +52,7 @@ public:
 
     // Fails when a field has no name, when two fields share one, or when a kind is unsupported.
     [[nodiscard]] static core::Result<std::shared_ptr<const DynamicComponentLayout>> create(
-        std::string typeName, std::span<const DynamicField> fields, Initializer initialize = {});
+        std::string typeName, std::span<const DynamicField> fields, Initializer initialize = {}, std::vector<std::string> formerNames = {});
 
     [[nodiscard]] const reflection::TypeInfo& type() const noexcept
     {

@@ -2085,6 +2085,7 @@ void apiResetBindings()
     const std::string* const values = serialization::stringAttribute(section, "values");
     const std::string* const assetType = serialization::stringAttribute(section, "asset_type");
     const std::string* const group = serialization::stringAttribute(section, "group");
+    const std::string* const was = serialization::stringAttribute(section, "was");
     return scene::DynamicField{
         .name = *name,
         .kind = *valueKind,
@@ -2095,6 +2096,7 @@ void apiResetBindings()
         .audioGroup = boolAttribute(section, "audio_group"),
         .enumNames = values != nullptr ? splitValues(*values) : std::vector<std::string>{},
         .list = boolAttribute(section, "list"),
+        .formerNames = reflection::splitFormerNames(was != nullptr ? *was : std::string()),
         .group = group != nullptr ? *group : std::string(),
     };
 }
@@ -3532,6 +3534,7 @@ core::Result<void> ManagedGame::loadAssembly(const std::filesystem::path& assemb
 
     // Each [component] section and the [field] sections that follow describe one type.
     std::string typeName;
+    std::vector<std::string> typeFormerNames;
     std::vector<scene::DynamicField> fields;
     const auto registerType = [&]() {
         if (typeName.empty())
@@ -3547,7 +3550,7 @@ core::Result<void> ManagedGame::loadAssembly(const std::filesystem::path& assemb
             }
         };
         core::Result<std::shared_ptr<const scene::DynamicComponentLayout>> layout =
-            scene::DynamicComponentLayout::create(typeName, fields, std::move(initialize));
+            scene::DynamicComponentLayout::create(typeName, fields, std::move(initialize), std::move(typeFormerNames));
         if (!layout)
         {
             DEVEX_LOG_ERROR("The C# component {} is ignored: {}", typeName, layout.error());
@@ -3564,6 +3567,7 @@ core::Result<void> ManagedGame::loadAssembly(const std::filesystem::path& assemb
             m_impl->types.push_back(typeName);
         }
         typeName.clear();
+        typeFormerNames.clear();
         fields.clear();
     };
 
@@ -3583,6 +3587,10 @@ core::Result<void> ManagedGame::loadAssembly(const std::filesystem::path& assemb
             if (const std::string* const name = serialization::stringAttribute(section, "type"))
             {
                 typeName = *name;
+            }
+            if (const std::string* const was = serialization::stringAttribute(section, "was"))
+            {
+                typeFormerNames = reflection::splitFormerNames(*was);
             }
         }
         else if (section.type == "field" && !typeName.empty())

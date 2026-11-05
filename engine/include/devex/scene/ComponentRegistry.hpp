@@ -48,7 +48,7 @@ public:
     void add()
     {
         const reflection::TypeInfo& info = reflection::typeInfo<T>();
-        if (find(info.name) != nullptr)
+        if (findExact(info.name) != nullptr)
         {
             return;
         }
@@ -82,7 +82,10 @@ public:
     bool remove(std::string_view name);
 
     // The pointer stays valid until the next registration or removal.
+    // By its name, or one it had: files that still say so read into it.
     [[nodiscard]] const ComponentType* find(std::string_view name) const noexcept;
+    // By its name alone.
+    [[nodiscard]] const ComponentType* findExact(std::string_view name) const noexcept;
     [[nodiscard]] const ComponentType* findByIndex(std::size_t index) const noexcept;
 
     // In registration order, which is the order of components in saved files.

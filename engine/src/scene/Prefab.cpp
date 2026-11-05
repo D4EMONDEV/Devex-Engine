@@ -122,7 +122,7 @@ constexpr std::size_t maxCachedBases = 64;
         return fresh;
     }
 
-    const core::Result<TextDocument> document = serialization::parseText(*text);
+    core::Result<TextDocument> document = serialization::parseText(*text);
     if (!document)
     {
         return std::unexpected(document.error());
@@ -130,6 +130,10 @@ constexpr std::size_t maxCachedBases = 64;
     if (core::Result<void> header = detail::checkSceneHeader(*document); !header)
     {
         return std::unexpected(header.error());
+    }
+    if (core::Result<void> upgraded = detail::upgradeScene(*document); !upgraded)
+    {
+        return std::unexpected(upgraded.error());
     }
     stack.push_back(prefab);
     core::Result<detail::FlatScene> flat = detail::flattenSections(*document, 1, PrefabLoading::Resolve, stack);

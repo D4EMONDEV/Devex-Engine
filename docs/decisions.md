@@ -5580,6 +5580,8 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+108. ✅ **Compatibilité des projets** — les scènes et tous les fichiers des versions passées s'ouvrent, un projet dit sa version,
+     prévient, se copie avant d'être repris, et des fichiers figés gardent la règle. Décisions plus bas et [docs/compatibilite.md](compatibilite.md).
 107. ✅ **GridMap** — des pièces posées sur une grille 3D et peintes dans la vue, depuis une scène palette, sans entité par case.
      Dernière étape du level design.
 106. ✅ **Blocs CSG** — `CsgBox`, `CsgSphere`, `CsgCylinder`, `CsgPath` et `CsgCombiner`, calculés par Manifold à la volée : un seul
@@ -5613,6 +5615,39 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     l'extraction ; mesure `DEVEX_STRESS_SSR` du banc d'essai ; API des jeux 43.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
+
+## Compatibilité des projets — décidé le 2026-11-05
+
+Premier point de la liste pour une 1.0. Décidé avec l'utilisateur avant tout code. Les formats texte acceptaient déjà les
+anciennes versions, sauf les scènes, et rien ne disait quelle version avait écrit un projet.
+
+La promesse, écrite dans [docs/compatibilite.md](compatibilite.md) : **les fichiers et l'API C#**. Tout fichier d'un projet s'ouvre dans
+toutes les 1.x, et l'API C# ne fait que grandir, ce qui part attendant la 2.0. L'API C++ peut changer, puisque l'éditeur
+recompile le code du jeu. Écarté : promettre aussi le C++, qui figerait les en-têtes des composants.
+
+Les choix :
+
+- **Un projet ancien prévient et se copie.** Écarté : le convertir sans rien dire, car une erreur de migration n'aurait
+  laissé aucun moyen de revenir en arrière ; et tout réécrire à l'ouverture, car chaque fichier prend le format actuel de
+  lui-même quand il est enregistré, sans bruit dans le gestionnaire de versions du jeu.
+- **Un projet plus récent avertit, et Annuler reste le choix par défaut** : Entrée ne confirme pas. Écarté : le refuser, car on doit
+  pouvoir récupérer quelque chose d'un projet ouvert par erreur avec un ancien moteur. Il garde sa version en étant
+  enregistré, pour que l'avertissement ne disparaisse pas après la première sauvegarde.
+- **La copie va dans `.devex/backups/<version>`**, hors du suivi de version, et ne garde que ce qui est fait à la main. Le code
+  n'y va pas : les migrations ne le touchent jamais.
+- **Les renommages se disent là où est le champ** (`.was`, `[WasNamed]`), plutôt que dans une table à part ou une étape de format :
+  c'est le cas le plus courant, il ne demande aucune version, et l'ancien nom se lit à côté du nouveau. `findField` et
+  `ComponentRegistry::find` essaient d'abord les noms actuels, pour qu'un nouveau champ puisse reprendre un nom libéré.
+- **Les étapes de format n'existent que pour les scènes**, seul format relu en entier par une table générique (`FormatUpgrades`), et
+  aucune n'est encore écrite : la table commence vide. Les autres formats gardent leur lecteur des anciennes versions,
+  comme avant.
+- **Les garde-fous échouent aussi sur un ajout** : une liste qu'on met à jour à la main se serait vite vidée de son sens. Une
+  variable (`DEVEX_UPDATE_FORMATS`) la refait, et le diff montre ce qui change à la relecture.
+- **Les anciennes versions sont figées dans le dépôt**, un dossier par version, parce que rien d'autre ne prouve qu'un fichier écrit
+  il y a un an se relit. La scène de référence a toutes ses valeurs changées : une valeur par défaut ne prouve rien.
+- **L'API C# se compare par réflexion** dans un petit programme `tests/managed/ApiProbe`, sans paquet à télécharger.
+- **`0.1.0` est la première version figée.** Les projets existants sans `engine` passeront une fois par la fenêtre, ce qui
+  fait une copie de plus mais n'en perd aucune. API des jeux 51.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

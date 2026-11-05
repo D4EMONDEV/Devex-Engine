@@ -433,6 +433,9 @@ struct DEVEX_API ProjectInfo
     ProjectCodeStatus code;
     // When the project file last changed, in seconds since 1970.
     std::int64_t modified = 0;
+    // Which version of the engine last saved it, and how that stands against this one.
+    std::string engineVersion;
+    asset::ProjectAge age = asset::ProjectAge::Current;
 };
 
 struct DEVEX_API ProjectManagerState
@@ -443,6 +446,10 @@ struct DEVEX_API ProjectManagerState
     // Keyed by the UTF-8 path of the project file, refreshed when the list changes.
     std::unordered_map<std::string, ProjectInfo> projects;
     bool refresh = true;
+    // The project a dialog asks about before it opens.
+    std::filesystem::path pendingOpen;
+    // To open as if it had been chosen in the list, once the list knows it.
+    std::optional<std::filesystem::path> askOpen;
 
     bool openCreate = false;
     std::string createName = "New Game Project";

@@ -1,6 +1,12 @@
 #include <devex/asset/Addon.hpp>
+#include <devex/asset/Artifact.hpp>
+#include <devex/asset/IrradianceVolumeData.hpp>
+#include <devex/asset/NavMeshData.hpp>
+#include <devex/asset/Package.hpp>
 #include <devex/asset/Project.hpp>
+#include <devex/asset/ReflectionProbeData.hpp>
 #include <devex/asset/TranslationData.hpp>
+#include <devex/core/BuildInfo.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/core/Uuid.hpp>
@@ -555,6 +561,10 @@ core::Result<Project> parseProject(std::string_view text, const std::filesystem:
     Project project;
     project.file = absoluteNormal(projectFile);
     project.root = project.file.parent_path();
+    if (const std::string* const engine = serialization::stringAttribute(*section, "engine"))
+    {
+        project.engineVersion = *engine;
+    }
     const serialization::TextValue* const name = section->findAttribute("name");
     const std::string* const nameText = name != nullptr ? serialization::asString(*name) : nullptr;
     project.name = nameText != nullptr ? *nameText : core::toUtf8(projectFile.stem());
@@ -628,6 +638,82 @@ core::Result<void> validateGlobals(std::span<const GlobalScene> globals)
     return {};
 }
 
+ProjectAge projectAge(const Project& project) noexcept
+{
+    const int order = core::compareVersions(project.engineVersion, core::version());
+    return order < 0 ? ProjectAge::Older : (order > 0 ? ProjectAge::Newer : ProjectAge::Current);
+}
+
+core::Result<std::filesystem::path> backUpProject(const Project& project)
+{
+    namespace fs = std::filesystem;
+    const std::string version = project.engineVersion.empty() ? std::string("older") : project.engineVersion;
+    std::error_code error;
+    fs::path destination = project.cacheDirectory() / "backups" / version;
+    for (int attempt = 2; fs::exists(destination, error); ++attempt)
+    {
+        destination = project.cacheDirectory() / "backups" / std::format("{}-{}", version, attempt);
+    }
+    // What is baked, imported or built comes back by itself, unlike a terrain that was sculpted.
+    const auto isMadeByHand = [](const fs::path& file) {
+        const std::string extension = core::toUtf8(file.extension());
+        return extension.starts_with(".dvx") && extension != artifactExtension && extension != packageExtension && extension != navMeshExtension &&
+               extension != reflectionProbeExtension && extension != irradianceVolumeExtension;
+    };
+    const auto isGenerated = [](const fs::path& folder) {
+        return core::toUtf8(folder.filename()).starts_with('.') || folder == fs::path("out") || folder == fs::path("code") / "bin" || folder == fs::path("code") / "obj";
+    };
+    fs::recursive_directory_iterator walk(project.root, fs::directory_options::skip_permission_denied, error);
+    const fs::recursive_directory_iterator end;
+    while (!error && walk != end)
+    {
+        const fs::path file = walk->path();
+        const fs::path relative = file.lexically_relative(project.root);
+        std::error_code ignored;
+        if (walk->is_directory(ignored))
+        {
+            if (isGenerated(relative))
+            {
+                walk.disable_recursion_pending();
+            }
+        }
+        else if (walk->is_regular_file(ignored) && isMadeByHand(file))
+        {
+            const fs::path target = destination / relative;
+            fs::create_directories(target.parent_path(), error);
+            if (!error)
+            {
+                fs::copy_file(file, target, fs::copy_options::overwrite_existing, error);
+            }
+            if (error)
+            {
+                return core::makeError(core::ErrorCode::Io, "cannot copy '{}': {}", core::toUtf8(file), error.message());
+            }
+        }
+        walk.increment(error);
+    }
+    if (error)
+    {
+        return core::makeError(core::ErrorCode::Io, "cannot read the folder of the project: {}", error.message());
+    }
+    return destination;
+}
+
+core::Result<std::filesystem::path> upgradeProject(Project& project)
+{
+    core::Result<std::filesystem::path> backup = backUpProject(project);
+    if (!backup)
+    {
+        return backup;
+    }
+    project.engineVersion = std::string(core::version());
+    if (core::Result<void> saved = saveProject(project); !saved)
+    {
+        return std::unexpected(saved.error());
+    }
+    return backup;
+}
+
 core::Result<void> saveProject(const Project& project)
 {
     if (auto valid = validateGlobals(project.globals); !valid)
@@ -649,6 +735,9 @@ std::string writeProjectText(const Project& project)
     serialization::TextSection& section = document.sections.emplace_back();
     section.type = "project";
     section.attributes.push_back({"format", serialization::TextValue(projectFormatVersion)});
+    // Never going back: an older engine that saves the project of a newer one does not make it its own.
+    const bool newer = core::compareVersions(project.engineVersion, core::version()) > 0;
+    section.attributes.push_back({"engine", serialization::TextValue(newer ? project.engineVersion : std::string(core::version()))});
     section.attributes.push_back({"name", serialization::TextValue(project.name)});
     if (!project.startupScene.empty())
     {

@@ -294,7 +294,7 @@ TEST_CASE("Malformed scenes report the faulty line", "[scene][serializer]")
     };
 
     check("[entity uuid=\"x\"]", "a scene file starts with [scene]");
-    check("[scene format=2]", "line 1: unsupported scene format, expected format=1");
+    check("[scene format=2]", "line 1: this scene has format 2: it needs a newer version of Devex");
     check("[scene format=1]\n[entity name=\"No id\"]", "line 2: an entity needs a uuid");
     check("[scene format=1]\n[component type=\"Transform\"]",
           "line 2: a component must follow an entity");
@@ -462,4 +462,46 @@ projection = "orthographic"
     Scene world;
     world.add<Camera>(world.createEntity("Camera"));
     CHECK(devex::scene::inferSceneKind(world) == devex::scene::SceneKind::ThreeD);
+}
+
+namespace test {
+
+struct RenamedComponent
+{
+    int health = 0;
+};
+DEVEX_DECLARE_REFLECTION(RenamedComponent);
+
+DEVEX_REFLECT(RenamedComponent)
+{
+    type.was("OldComponent");
+    type.field("health", &RenamedComponent::health, {.was = "hit_points"});
+}
+
+} // namespace test
+
+TEST_CASE("A scene that says a former name reads into the new one, and is written with it", "[scene]")
+{
+    devex::scene::componentRegistry().add<test::RenamedComponent>();
+    REQUIRE(devex::scene::componentRegistry().find("OldComponent") != nullptr);
+    CHECK(devex::scene::componentRegistry().find("OldComponent")->name() == "RenamedComponent");
+    CHECK(devex::scene::componentRegistry().findExact("OldComponent") == nullptr);
+
+    const devex::core::Result<devex::scene::Scene> scene = devex::scene::loadScene(R"([scene format=1]
+
+[entity uuid="512b3362-0f48-55ab-b074-5105b71618fd" name="Old"]
+
+[component type="OldComponent"]
+hit_points = 12
+)");
+    REQUIRE(scene);
+    const devex::scene::Entity entity = scene->findEntity(devex::core::Uuid::parse("512b3362-0f48-55ab-b074-5105b71618fd").value());
+    REQUIRE(scene->tryGet<test::RenamedComponent>(entity) != nullptr);
+    CHECK(scene->tryGet<test::RenamedComponent>(entity)->health == 12);
+
+    const std::string saved = devex::scene::saveScene(*scene);
+    CHECK(saved.find("RenamedComponent") != std::string::npos);
+    CHECK(saved.find("health = 12") != std::string::npos);
+    CHECK(saved.find("OldComponent") == std::string::npos);
+    CHECK(saved.find("hit_points") == std::string::npos);
 }

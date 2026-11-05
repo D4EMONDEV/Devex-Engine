@@ -142,6 +142,7 @@ devex_add_tests(asset
         asset/AddonTests.cpp
         asset/CurveTests.cpp
         asset/FbxImporterTests.cpp
+        asset/FormatCompatibilityTests.cpp
         asset/FontImporterTests.cpp
         asset/GltfImporterTests.cpp
         asset/MeshDataTests.cpp
@@ -362,6 +363,31 @@ if(DEVEX_DOTNET)
     target_compile_definitions(devex_runtime_tests PRIVATE DEVEX_TEST_MANAGED_GAME="${DEVEX_TEST_GAME_DIRECTORY}/TestGame.dll")
 endif()
 target_include_directories(devex_runtime_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
+
+# What games can call of the C# API only grows.
+if(DEVEX_DOTNET)
+    set(DEVEX_API_PROBE_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/managed-api")
+    set(DEVEX_API_PROBE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/managed/ApiProbe/Program.cs" "${CMAKE_CURRENT_SOURCE_DIR}/managed/ApiProbe/ApiProbe.csproj")
+    add_custom_command(
+        OUTPUT "${DEVEX_API_PROBE_DIRECTORY}/ApiProbe.dll"
+        COMMAND "${DEVEX_DOTNET}" build "${CMAKE_CURRENT_SOURCE_DIR}/managed/ApiProbe/ApiProbe.csproj"
+                -c Release -o "${DEVEX_API_PROBE_DIRECTORY}" --nologo -v quiet
+                "-p:BaseIntermediateOutputPath=${CMAKE_CURRENT_BINARY_DIR}/managed-api/obj/"
+        DEPENDS ${DEVEX_API_PROBE_SOURCES}
+        COMMENT "Building the probe of the C# API"
+        VERBATIM
+    )
+    add_custom_target(devex_api_probe DEPENDS "${DEVEX_API_PROBE_DIRECTORY}/ApiProbe.dll")
+    set_target_properties(devex_api_probe PROPERTIES FOLDER "Tests")
+    add_dependencies(devex_api_probe devex_managed)
+    add_dependencies(devex_asset_tests devex_api_probe)
+    add_test(NAME devex.formats.csharp_api
+        COMMAND "${DEVEX_DOTNET}" "${DEVEX_API_PROBE_DIRECTORY}/ApiProbe.dll"
+                "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/managed/Devex.Managed.dll"
+                "${CMAKE_CURRENT_SOURCE_DIR}/data/formats/csharp-api.txt"
+    )
+    set_tests_properties(devex.formats.csharp_api PROPERTIES LABELS format TIMEOUT 60)
+endif()
 
 add_executable(devex_test_play_process runtime/PlayProcessFixture.cpp)
 target_link_libraries(devex_test_play_process PRIVATE Devex::Engine)

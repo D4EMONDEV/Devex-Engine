@@ -119,6 +119,34 @@ void applyWindowIcon(platform::Window& window, const asset::AssetDatabase* datab
     window.setIcon(image->rgba, image->width, image->height);
 }
 
+// Before the editor works on a project another version of Devex saved: an older one is copied and becomes current, and
+// a newer one stays what it says it is, whoever chose to open it.
+void prepareProjectForEditing(const std::filesystem::path& projectFile)
+{
+    core::Result<asset::Project> project = asset::loadProject(projectFile);
+    if (!project)
+    {
+        return;
+    }
+    const std::string saved = project->engineVersion.empty() ? std::string("an older Devex") : std::format("Devex {}", project->engineVersion);
+    if (asset::projectAge(*project) == asset::ProjectAge::Newer)
+    {
+        DEVEX_LOG_WARNING("{} was last saved with {}, newer than this one: what this version does not know of its files is lost when they are saved",
+                          project->name, saved);
+    }
+    else if (asset::projectAge(*project) == asset::ProjectAge::Older)
+    {
+        if (core::Result<std::filesystem::path> backup = asset::upgradeProject(*project))
+        {
+            DEVEX_LOG_INFO("{} comes from {}: its files are copied to {}", project->name, saved, core::toUtf8(*backup));
+        }
+        else
+        {
+            DEVEX_LOG_ERROR("Cannot copy the files of {} before opening it: {}", project->name, backup.error());
+        }
+    }
+}
+
 // `origin` says in the log who asked for the project: "the command line", "the project manager".
 [[nodiscard]] core::Result<std::unique_ptr<asset::AssetDatabase>> openProject(const std::filesystem::path& projectFile,
                                                                              core::JobSystem& jobs, bool watchAssets,
@@ -1823,6 +1851,7 @@ void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
     m_externalPlay.shutdown();
     closeProject();
 
+    prepareProjectForEditing(projectFile);
     core::Result<std::unique_ptr<asset::AssetDatabase>> opened = openProject(projectFile, m_services.jobs, m_watchAssets, "the project manager");
     if (!opened)
     {
@@ -3666,6 +3695,10 @@ int run(Application& application, const ApplicationConfig& config)
     std::unique_ptr<asset::AssetDatabase> database;
     if (!config.project.empty())
     {
+        if (config.editor)
+        {
+            detail::prepareProjectForEditing(config.project);
+        }
         core::Result<std::unique_ptr<asset::AssetDatabase>> opened =
             detail::openProject(config.project, jobs, config.watchAssets, "the command line");
         if (!opened)

@@ -2162,6 +2162,11 @@ namespace devex::ui {
   `GeneratedMesh` sur chaque racine, appelé avant la physique et l'extraction), `AssetManager::addGeneratedMesh`. Guide `docs/level-design.md`.
 - Chemins : `scene/PathComponents.hpp` (`Path3D`, `PathFollower`, `PathCurve`), `runtime/PathFollowers.hpp`, `Paths` en C#,
   l'outil dans la vue `tools/PathEditor.cpp`. Guide `docs/level-design.md`, plan dans `docs/decisions.md`.
+- Compatibilité : `docs/compatibilite.md` (la promesse et comment changer un format). `Project::engineVersion`, `projectAge`, `backUpProject`,
+  `upgradeProject` (`asset/Project`), `prepareProjectForEditing` à l'ouverture (`runtime/Application.cpp`), fenêtres dans `tools/ProjectManager.cpp`.
+  Anciens noms : `FieldHints::was`, `TypeBuilder::was`, `[WasNamed]`. Étapes des scènes : `upgradeScene` (`SceneSerializer.cpp`, `serialization/FormatUpgrades.hpp`).
+  Garde-fous : `tests/data/formats` (`schema.txt`, `csharp-api.txt`, un dossier par version), `tests/asset/FormatCompatibilityTests.cpp`, `tests/managed/ApiProbe` ;
+  `DEVEX_UPDATE_FORMATS=1` enregistre après un changement voulu.
 - Exemple multijoueur : `samples/sandbox/assets/scenes/arena_online.dvxscene`, `code/Online.cs`, guide `docs/multiplayer.md`.
 - Instances de Play : `PlayGroup` (`runtime/EditorPlay`), le menu près de Play (`playInstancesMenu`, `tools/EditorMenus.cpp`),
   `ScriptSettings::playInstances`, `EditorPlayClient::startNetwork`, `Multiplayer::keepAlive`, `TestInstance`.

@@ -20,11 +20,27 @@
 
 namespace devex::scene {
 
-const ComponentType* ComponentRegistry::find(std::string_view name) const noexcept
+const ComponentType* ComponentRegistry::findExact(std::string_view name) const noexcept
 {
     for (const ComponentType& type : m_types)
     {
         if (type.name() == name)
+        {
+            return &type;
+        }
+    }
+    return nullptr;
+}
+
+const ComponentType* ComponentRegistry::find(std::string_view name) const noexcept
+{
+    if (const ComponentType* const exact = findExact(name))
+    {
+        return exact;
+    }
+    for (const ComponentType& type : m_types)
+    {
+        if (std::ranges::find(type.type->formerNames, name) != type.type->formerNames.end())
         {
             return &type;
         }
@@ -62,7 +78,7 @@ std::span<const ComponentType> ComponentRegistry::types() const noexcept
 bool ComponentRegistry::addDynamic(std::shared_ptr<const DynamicComponentLayout> layout)
 {
     const std::string_view name = layout->type().name;
-    if (find(name) != nullptr)
+    if (findExact(name) != nullptr)
     {
         return false;
     }

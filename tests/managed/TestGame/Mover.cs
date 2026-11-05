@@ -32,8 +32,10 @@ public class Mover : Component
 }
 
 // A second component, to check that every type of an assembly is registered.
+[WasNamed("Tally", "Abacus")]
 public class Counter : Component
 {
+    [WasNamed("Total")]
     public int Count;
 
     public override void FixedUpdate(float delta)

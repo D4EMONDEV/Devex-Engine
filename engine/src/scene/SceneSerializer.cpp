@@ -11,6 +11,7 @@
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
 #include <devex/scene/UiComponents.hpp>
+#include <devex/serialization/FormatUpgrades.hpp>
 #include <devex/serialization/Text.hpp>
 
 #include <algorithm>
@@ -421,12 +422,25 @@ core::Result<void> checkSceneHeader(const TextDocument& document)
     }
     const TextSection& header = document.sections.front();
     const TextValue* const format = header.findAttribute("format");
-    if (format == nullptr || serialization::asInteger(*format) != sceneFormatVersion)
+    const std::optional<std::int64_t> version = format != nullptr ? serialization::asInteger(*format) : std::nullopt;
+    if (!version || *version < 1)
     {
-        return core::makeError(core::ErrorCode::Unsupported, "line {}: unsupported scene format, expected format={}",
-                               header.line, sceneFormatVersion);
+        return core::makeError(core::ErrorCode::Parse, "line {}: a scene says its format, as format={}", header.line, sceneFormatVersion);
+    }
+    if (*version > sceneFormatVersion)
+    {
+        return core::makeError(core::ErrorCode::Unsupported, "line {}: this scene has format {}: it needs a newer version of Devex", header.line, *version);
     }
     return {};
+}
+
+core::Result<void> upgradeScene(TextDocument& document)
+{
+    // What changed in scenes from a format to the next, for the files that are still in it. A format without a step
+    // fails here, and in the tests that read a scene of every older format.
+    static const serialization::FormatUpgrades upgrades;
+    const TextValue* const format = document.sections.front().findAttribute("format");
+    return upgrades.apply(document, serialization::asInteger(*format).value_or(sceneFormatVersion), sceneFormatVersion);
 }
 
 } // namespace detail
@@ -511,6 +525,10 @@ core::Result<Scene> loadScene(std::string_view text, PrefabLoading prefabs)
     if (core::Result<void> header = detail::checkSceneHeader(*document); !header)
     {
         return std::unexpected(header.error());
+    }
+    if (core::Result<void> upgraded = detail::upgradeScene(*document); !upgraded)
+    {
+        return std::unexpected(upgraded.error());
     }
     core::Result<Scene> scene = createScene(*document, 1, prefabs);
     if (!scene)

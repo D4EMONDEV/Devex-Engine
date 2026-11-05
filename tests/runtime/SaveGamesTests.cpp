@@ -1,5 +1,8 @@
+#include <devex/core/BuildInfo.hpp>
 #include <devex/core/File.hpp>
+#include <devex/core/Path.hpp>
 #include <devex/core/Uuid.hpp>
+#include <devex/platform/Process.hpp>
 #include <devex/runtime/PlayerSettings.hpp>
 #include <devex/runtime/SaveGames.hpp>
 #include <devex/scene/Components.hpp>
@@ -263,4 +266,36 @@ TEST_CASE("The settings of the player keep volumes, the window and the values of
     PlayerSettings damaged;
     damaged.read("[volume group=");
     CHECK_FALSE(damaged.fullscreen().has_value());
+}
+
+TEST_CASE("The saves of every version read", "[runtime][format]")
+{
+    namespace fs = std::filesystem;
+    const fs::path formats = fs::path(DEVEX_TEST_DATA_DIRECTORY) / "formats";
+    const fs::path current = formats / std::string(devex::core::version()) / "saves";
+    if (!devex::platform::environmentVariable("DEVEX_UPDATE_FORMATS").empty() && !fs::exists(current))
+    {
+        test::Progress progress;
+        progress.level = 7;
+        progress.name = "Frozen";
+        progress.items = {"key", "map"};
+        devex::runtime::SaveGames saves(current);
+        REQUIRE(saves.save("frozen", progress));
+    }
+    for (const fs::directory_entry& version : fs::directory_iterator(formats))
+    {
+        if (!version.is_directory())
+        {
+            continue;
+        }
+        INFO(devex::core::toUtf8(version.path()));
+        TemporaryFolder folder;
+        fs::copy(version.path() / "saves", folder.path(), fs::copy_options::recursive);
+        devex::runtime::SaveGames saves(folder.path());
+        const devex::core::Result<test::Progress> progress = saves.load<test::Progress>("frozen", false);
+        REQUIRE(progress);
+        CHECK(progress->level == 7);
+        CHECK(progress->name == "Frozen");
+        CHECK(progress->items == std::vector<std::string>{"key", "map"});
+    }
 }

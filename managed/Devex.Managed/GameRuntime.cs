@@ -1108,15 +1108,16 @@ internal static unsafe partial class GameRuntime
         var text = new StringBuilder();
         foreach (ComponentTypeInfo info in Types)
         {
-            DescribeType(text, info.Name, info.Fields);
+            DescribeType(text, info.Name, info.Fields, info.Type);
         }
         return text.ToString();
     }
 
     /// <summary>A type as the engine reads it: its name, then each field with its kind.</summary>
-    internal static void DescribeType(StringBuilder text, string name, FieldInfo[] fields)
+    internal static void DescribeType(StringBuilder text, string name, FieldInfo[] fields, Type? type = null)
     {
-        text.Append($"[component type=\"{name}\"]\n\n");
+        string former = type?.GetCustomAttribute<WasNamedAttribute>() is { } typeWas ? $" was=\"{string.Join(' ', typeWas.Names)}\"" : "";
+        text.Append($"[component type=\"{name}\"{former}]\n\n");
         foreach (FieldInfo field in fields)
         {
             FieldKind kind = Describe(field.FieldType);
@@ -1140,6 +1141,11 @@ internal static unsafe partial class GameRuntime
             if (field.GetCustomAttribute<AudioGroupAttribute>() != null)
             {
                 text.Append(" audio_group=true");
+            }
+            if (field.GetCustomAttribute<WasNamedAttribute>() is { } was)
+            {
+                // As files wrote it, the name of the field in C# being what it says.
+                text.Append($" was=\"{string.Join(' ', was.Names.Select(FileName))}\"");
             }
             if (field.GetCustomAttribute<GroupAttribute>() is { } group && !string.IsNullOrWhiteSpace(group.Name))
             {

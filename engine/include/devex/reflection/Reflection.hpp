@@ -204,6 +204,8 @@ struct DEVEX_API FieldHints
     // State the engine keeps while the game runs, such as the velocity of a character: seen by code,
     // neither saved, copied nor shown.
     bool runtime = false;
+    // The names it had, separated by spaces: files that still say so read into this field.
+    std::string_view was;
     // Starts a section of the fields, which the inspector shows under this title and folds: the
     // fields that follow belong to it until the next field that starts one.
     std::string_view group;
@@ -233,6 +235,8 @@ struct DEVEX_API FieldInfo
     const ListOps* list = nullptr;
     // Where the field is in its type, when the type can be built to find out.
     std::size_t offset = unknownOffset;
+    // The names it had, which files that still say so read into it.
+    std::vector<std::string> formerNames;
 
     static constexpr std::size_t unknownOffset = std::numeric_limits<std::size_t>::max();
 
@@ -255,6 +259,8 @@ struct DEVEX_API TypeInfo
     // The size and alignment of the type in bytes.
     std::size_t size = 0;
     std::size_t alignment = 0;
+    // The names it had, which files that still say so read into it.
+    std::vector<std::string> formerNames;
 
     [[nodiscard]] const FieldInfo* findField(std::string_view fieldName) const noexcept
     {
@@ -265,9 +271,22 @@ struct DEVEX_API TypeInfo
                 return &field;
             }
         }
+        for (const FieldInfo& field : fields)
+        {
+            for (const std::string& former : field.formerNames)
+            {
+                if (former == fieldName)
+                {
+                    return &field;
+                }
+            }
+        }
         return nullptr;
     }
 };
+
+// The names a hint gives, separated by spaces.
+[[nodiscard]] DEVEX_API std::vector<std::string> splitFormerNames(std::string_view names);
 
 template <typename T>
 class TypeBuilder
@@ -276,6 +295,13 @@ public:
     TypeBuilder& setName(std::string name)
     {
         m_info.name = std::move(name);
+        return *this;
+    }
+
+    // A name the type had: files that still say so read into it.
+    TypeBuilder& was(std::string name)
+    {
+        m_info.formerNames.push_back(std::move(name));
         return *this;
     }
 
@@ -305,6 +331,7 @@ public:
             .access = [member](void* object) -> void* {
                 return &(static_cast<T*>(object)->*member);
             },
+            .formerNames = splitFormerNames(hints.was),
         });
         return *this;
     }
@@ -339,6 +366,7 @@ public:
                 return &(static_cast<T*>(object)->*member);
             },
             .list = &listOps<Element>(),
+            .formerNames = splitFormerNames(hints.was),
         });
         return *this;
     }

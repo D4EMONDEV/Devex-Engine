@@ -275,6 +275,8 @@ struct DEVEX_API AddonSetting
 // versioned.
 struct DEVEX_API Project
 {
+    // The version of the engine that last saved it; empty when that was before projects said.
+    std::string engineVersion;
     std::string name;
     // Absolute directory of the project file.
     std::filesystem::path root;
@@ -333,6 +335,21 @@ struct DEVEX_API Project
 [[nodiscard]] DEVEX_API core::Result<void> writeAndroidSigning(const Project& project, const AndroidSigning& signing);
 
 [[nodiscard]] DEVEX_API core::Result<Project> loadProject(const std::filesystem::path& projectFile);
+
+// How a project stands against this engine.
+enum class ProjectAge : std::uint8_t
+{
+    Current,
+    // Files of older versions read, and take the current format when they are saved.
+    Older,
+    // What this engine does not know of its files is lost when they are saved.
+    Newer,
+};
+[[nodiscard]] DEVEX_API ProjectAge projectAge(const Project& project) noexcept;
+// Copies the files that are made by hand to .devex/backups/<version>, and says where: what is baked comes back.
+[[nodiscard]] DEVEX_API core::Result<std::filesystem::path> backUpProject(const Project& project);
+// An older project becomes current: its files are copied, and its project file says this version.
+[[nodiscard]] DEVEX_API core::Result<std::filesystem::path> upgradeProject(Project& project);
 // The same from the text of a project file, as exported games keep it; projectFile gives the
 // project its root.
 [[nodiscard]] DEVEX_API core::Result<Project> parseProject(std::string_view text, const std::filesystem::path& projectFile);

@@ -158,7 +158,7 @@ void copyField(ValueKind kind, void* destination, const void* source, std::size_
 } // namespace
 
 core::Result<std::shared_ptr<const DynamicComponentLayout>> DynamicComponentLayout::create(
-    std::string typeName, std::span<const DynamicField> fields, Initializer initialize)
+    std::string typeName, std::span<const DynamicField> fields, Initializer initialize, std::vector<std::string> formerNames)
 {
     if (typeName.empty())
     {
@@ -166,6 +166,7 @@ core::Result<std::shared_ptr<const DynamicComponentLayout>> DynamicComponentLayo
     }
     std::shared_ptr<DynamicComponentLayout> layout(new DynamicComponentLayout());
     layout->m_type.name = std::move(typeName);
+    layout->m_type.formerNames = std::move(formerNames);
     layout->m_initialize = std::move(initialize);
     for (const DynamicField& field : fields)
     {
@@ -219,6 +220,7 @@ core::Result<std::shared_ptr<const DynamicComponentLayout>> DynamicComponentLayo
             { return static_cast<std::byte*>(component) + offset; },
             .list = list != nullptr ? list->operations : nullptr,
             .offset = offset,
+            .formerNames = field.formerNames,
         };
         // The names outlive the layout, which owns them.
         layout->m_type.fields.push_back(std::move(info));

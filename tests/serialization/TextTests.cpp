@@ -1,3 +1,4 @@
+#include <devex/serialization/FormatUpgrades.hpp>
 #include <devex/serialization/Text.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -123,4 +124,23 @@ TEST_CASE("Negative floating-point zero keeps its sign when written and read",
     REQUIRE(number.has_value());
     CHECK(*number == 0.0);
     CHECK(std::signbit(*number));
+}
+
+TEST_CASE("The steps of a format run in order from the version of the file", "[serialization]")
+{
+    devex::serialization::FormatUpgrades upgrades;
+    std::vector<int> ran;
+    upgrades.from(1, [&](devex::serialization::TextDocument&) { ran.push_back(1); });
+    upgrades.from(2, [&](devex::serialization::TextDocument&) { ran.push_back(2); });
+
+    devex::serialization::TextDocument document;
+    REQUIRE(upgrades.apply(document, 1, 3));
+    CHECK(ran == std::vector<int>{1, 2});
+
+    ran.clear();
+    REQUIRE(upgrades.apply(document, 3, 3));
+    CHECK(ran.empty());
+
+    // A version nothing knows how to leave says so.
+    CHECK_FALSE(upgrades.apply(document, 3, 4));
 }

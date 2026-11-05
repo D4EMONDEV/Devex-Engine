@@ -1627,6 +1627,22 @@ TEST_CASE("C# components play sounds and change the volumes of the groups", "[ru
     CHECK_FALSE(field<bool>(*jukebox, state(), "was_playing"));
     game->unloadAssembly();
 }
+
+TEST_CASE("C# components and fields answer to the names they had", "[runtime][managed][format]")
+{
+    std::unique_ptr<ManagedGame> game = startRuntime();
+    for (const std::string_view former : {"Tally", "Abacus"})
+    {
+        const devex::scene::ComponentType* const type = devex::scene::componentRegistry().find(former);
+        REQUIRE(type != nullptr);
+        CHECK(type->name() == "Counter");
+        // Scenes hold the field under its name in files: [WasNamed("Total")] said Total in C#.
+        const devex::reflection::FieldInfo* const count = type->type->findField("total");
+        REQUIRE(count != nullptr);
+        CHECK(count->name == "count");
+    }
+    game->unloadAssembly();
+}
 #endif
 
 TEST_CASE("C# code hosts a session and hears who comes and goes", "[runtime][managed][net]")

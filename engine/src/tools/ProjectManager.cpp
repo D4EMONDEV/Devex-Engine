@@ -83,6 +83,11 @@ void refreshProjects(ToolsState& state)
         info.exists = project.has_value();
         info.name = project ? project->name : core::toUtf8(entry.file.stem());
         info.modified = fileTime(entry.file);
+        if (project)
+        {
+            info.engineVersion = project->engineVersion;
+            info.age = asset::projectAge(*project);
+        }
         if (project && state.projectCodeStatus)
         {
             info.code = state.projectCodeStatus(*project);
@@ -259,6 +264,14 @@ struct ProjectManagerUi : PanelBuilder
     Entity removeText;
     Button removeConfirm;
     Button removeCancel;
+    Entity upgradeDialog;
+    Entity upgradeText;
+    Button upgradeConfirm;
+    Button upgradeCancel;
+    Entity newerDialog;
+    Entity newerText;
+    Button newerConfirm;
+    Button newerCancel;
 
     void build(ToolsState& state, EditorUiKit& kit);
     void buildRows(ToolsState& state, EditorUiKit& kit, const std::vector<ProjectEntry>& projects);
@@ -443,6 +456,23 @@ void ProjectManagerUi::build(ToolsState& state, EditorUiKit& kit)
     removeText = text(warning, grow(font * 1.8f), "", "text");
     text(removeDialog, wide(font * 1.4f), "The project folder and its files are not modified.", "dim");
     std::tie(removeConfirm, removeCancel) = dialogButtons(kit, removeDialog, Icon::Trash, "Remove", font * 7.0f);
+
+    const auto versionDialog = [&](const char* name, Entity& shown, Entity& message, const char* first, const char* second) {
+        shown = dialog(name, {font * 40.0f, font * 10.0f});
+        const Entity row = add(shown, "Question", wide(font * 1.8f));
+        scene().add<scene::UiLayout>(row, scene::UiLayout{.kind = scene::UiLayoutKind::Row, .spacing = font * 0.5f, .align = scene::TextAlign::Left});
+        icon(kit, row, middle({font * 1.2f, font * 1.2f}), Icon::TriangleAlert, "icon_warning");
+        message = text(row, grow(font * 1.8f), "", "text");
+        text(shown, wide(font * 1.4f), first, "dim");
+        text(shown, wide(font * 1.4f), second, "dim");
+    };
+    versionDialog("Upgrade dialog", upgradeDialog, upgradeText, "Its files are copied to .devex/backups first.", "Each one then takes the current format when it is saved.");
+    std::tie(upgradeConfirm, upgradeCancel) = dialogButtons(kit, upgradeDialog, Icon::Check, "Open", font * 7.0f);
+    versionDialog("Newer dialog", newerDialog, newerText, "What this version does not know of its files is lost when they are saved.", "Prefer the version it comes from.");
+    std::tie(newerConfirm, newerCancel) = dialogButtons(kit, newerDialog, Icon::TriangleAlert, "Open Anyway", font * 9.0f);
+    // Cancel is the choice this dialog leads to.
+    scene().get<scene::UiRect>(newerConfirm.entity).style = "button";
+    scene().get<scene::UiRect>(newerCancel.entity).style = "primary";
 }
 
 void ProjectManagerUi::buildRows(ToolsState& state, EditorUiKit& kit, const std::vector<ProjectEntry>& projects)
@@ -776,7 +806,7 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     }
     // Enter opens the selected project, when nothing else takes it.
     const bool dialogOpen = world.isPopupOpen(scene(), createDialog) || world.isPopupOpen(scene(), renameDialog) ||
-                            world.isPopupOpen(scene(), removeDialog);
+                            world.isPopupOpen(scene(), removeDialog) || world.isPopupOpen(scene(), upgradeDialog) || world.isPopupOpen(scene(), newerDialog);
     if (panel.focused() && !dialogOpen && !world.isEditing() && state.input.pressed(platform::Key::Enter, false) &&
         !manager.selected.empty())
     {
@@ -867,9 +897,56 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         }
     }
 
+    if (manager.askOpen && !manager.refresh)
+    {
+        opened = std::exchange(manager.askOpen, std::nullopt);
+    }
+
+    // Opening what another version of Devex saved asks first.
+    if (world.isPopupOpen(scene(), upgradeDialog))
+    {
+        if (world.wasClicked(upgradeConfirm.entity))
+        {
+            world.closePopup(scene(), upgradeDialog);
+            openProject(state, manager.pendingOpen);
+        }
+        else if (world.wasClicked(upgradeCancel.entity) || world.wasCancelled() || escaped)
+        {
+            world.closePopup(scene(), upgradeDialog);
+        }
+    }
+    if (world.isPopupOpen(scene(), newerDialog))
+    {
+        if (world.wasClicked(newerConfirm.entity))
+        {
+            world.closePopup(scene(), newerDialog);
+            openProject(state, manager.pendingOpen);
+        }
+        else if (world.wasClicked(newerCancel.entity) || world.wasCancelled() || escaped)
+        {
+            world.closePopup(scene(), newerDialog);
+        }
+    }
+
     if (opened)
     {
-        openProject(state, *opened);
+        const ProjectInfo* const info = infoOf(state, *opened);
+        const std::string saved = info != nullptr && !info->engineVersion.empty() ? std::format("Devex {}", info->engineVersion) : std::string("an older Devex");
+        manager.pendingOpen = *opened;
+        if (info != nullptr && info->exists && info->age == asset::ProjectAge::Older)
+        {
+            scene().get<scene::UiText>(upgradeText).text = std::format("{} was last saved with {}. This is Devex {}.", info->name, saved, core::version());
+            world.openPopup(scene(), upgradeDialog);
+        }
+        else if (info != nullptr && info->exists && info->age == asset::ProjectAge::Newer)
+        {
+            scene().get<scene::UiText>(newerText).text = std::format("{} was last saved with {}, newer than this Devex {}.", info->name, saved, core::version());
+            world.openPopup(scene(), newerDialog);
+        }
+        else
+        {
+            openProject(state, *opened);
+        }
     }
 }
 

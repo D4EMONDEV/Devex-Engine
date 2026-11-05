@@ -135,6 +135,17 @@ public sealed class ColorAttribute : Attribute;
 [AttributeUsage(AttributeTargets.Field)]
 public sealed class PhysicsLayerAttribute : Attribute;
 
+/// <summary>
+/// The names a component or a field had: scenes and saves that still say so read into it, and are written under its
+/// new name when they are saved. Without it, a field that is renamed loses what scenes held for it.
+/// </summary>
+[AttributeUsage(AttributeTargets.Field | AttributeTargets.Class)]
+public sealed class WasNamedAttribute(params string[] names) : Attribute
+{
+    /// <summary>The names it had.</summary>
+    public string[] Names { get; } = names;
+}
+
 /// <summary>A uint field that chooses one of the audio groups of the project.</summary>
 [AttributeUsage(AttributeTargets.Field)]
 public sealed class AudioGroupAttribute : Attribute;

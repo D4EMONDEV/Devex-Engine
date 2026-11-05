@@ -24,6 +24,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
   événement, ou toutes les 250 ms, comme le mode basse consommation de Godot ;
 - [addons locaux](docs/addons.md) : packages de contenu et de scripts, installation depuis un
   dossier, outils activés par projet et commandes C# dans l'éditeur avec annuler/rétablir ;
+- [compatibilité des projets](docs/compatibilite.md) : les fichiers des versions passées s'ouvrent,
+  un projet dit sa version, prévient et se copie avant d'être repris ;
 - traductions comme chez Godot : tables `.csv` (une colonne par langue) éditées dans le panneau
   Translations, textes des interfaces traduits d'eux-mêmes, `Localization.Tr` en C#, langue du
   joueur ou du système, polices qui cuisent les caractères de toutes les langues traduites.

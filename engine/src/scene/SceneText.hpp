@@ -19,6 +19,8 @@ namespace devex::scene::detail {
 
 // Checks the [scene format=1] header that starts a scene file.
 [[nodiscard]] core::Result<void> checkSceneHeader(const serialization::TextDocument& document);
+// Brings a scene of an older format, which the header allows, to the current one.
+[[nodiscard]] core::Result<void> upgradeScene(serialization::TextDocument& document);
 
 [[nodiscard]] std::unexpected<core::Error> errorAt(std::uint32_t line, const core::Error& error);
 [[nodiscard]] core::Result<core::Uuid> readUuid(const serialization::TextValue& value);

@@ -106,3 +106,38 @@ TEST_CASE("Enumerations are reflected with their names and hints are kept", "[re
     CHECK(creature.mood == test::Mood::Angry);
     CHECK(devex::reflection::readEnumIndex(mood, mood.address(&creature)) == 1);
 }
+
+namespace test {
+
+struct Renamed
+{
+    float speed = 0.0f;
+    std::vector<int> stops;
+    float rate = 0.0f;
+};
+DEVEX_DECLARE_REFLECTION(Renamed);
+
+DEVEX_REFLECT(Renamed)
+{
+    type.was("Moved");
+    type.field("speed", &Renamed::speed, {.was = "velocity rate"});
+    type.field("stops", &Renamed::stops, {.was = "halts"});
+    type.field("rate", &Renamed::rate);
+}
+
+} // namespace test
+
+TEST_CASE("Fields answer to the names they had", "[reflection]")
+{
+    const devex::reflection::TypeInfo& info = devex::reflection::typeInfo<test::Renamed>();
+    CHECK(info.formerNames == std::vector<std::string>{"Moved"});
+    REQUIRE(info.findField("velocity") != nullptr);
+    CHECK(info.findField("velocity")->name == "speed");
+    REQUIRE(info.findField("halts") != nullptr);
+    CHECK(info.findField("halts")->name == "stops");
+    // The name of a field wins over a name another one had.
+    REQUIRE(info.findField("rate") != nullptr);
+    CHECK(info.findField("rate")->name == "rate");
+    CHECK(info.findField("nothing") == nullptr);
+    CHECK(devex::reflection::splitFormerNames(" a  b ") == std::vector<std::string>{"a", "b"});
+}

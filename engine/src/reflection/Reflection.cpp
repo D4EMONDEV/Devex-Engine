@@ -4,6 +4,21 @@
 
 namespace devex::reflection {
 
+std::vector<std::string> splitFormerNames(std::string_view names)
+{
+    std::vector<std::string> split;
+    while (!names.empty())
+    {
+        const std::size_t space = names.find(' ');
+        if (space != 0)
+        {
+            split.emplace_back(names.substr(0, space));
+        }
+        names = space == std::string_view::npos ? std::string_view{} : names.substr(space + 1);
+    }
+    return split;
+}
+
 std::string_view toString(ValueKind kind) noexcept
 {
     switch (kind)
