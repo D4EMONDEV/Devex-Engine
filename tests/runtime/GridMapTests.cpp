@@ -256,3 +256,21 @@ TEST_CASE("Cells are kept with the scene, and what they make comes back", "[grid
     CHECK(cell.piece == 2);
     CHECK(cell.rotation == 3);
 }
+
+TEST_CASE("A single piece with a part under it is a piece of its own", "[grid]")
+{
+    Scene source;
+    const Entity block = source.createEntity("Block");
+    source.add<Transform>(block);
+    source.add<devex::scene::MeshRenderer>(block).mesh = devex::asset::builtin::cubeMesh;
+    const Entity top = source.createEntity("Top");
+    source.add<Transform>(top).position = {0.0f, 1.0f, 0.0f};
+    source.add<devex::scene::MeshRenderer>(top).mesh = devex::asset::builtin::sphereMesh;
+    REQUIRE(source.setParent(top, block));
+    const Palette palette(devex::scene::saveScene(source));
+    const std::shared_ptr<const devex::scene::GridPalette> read = devex::scene::gridPalette(AssetId{Uuid::fromParts(0x33, 0x44)});
+    REQUIRE(read);
+    REQUIRE(read->pieces.size() == 1);
+    CHECK(read->pieces[0].name == "Block");
+    CHECK(read->pieces[0].parts.size() == 2);
+}

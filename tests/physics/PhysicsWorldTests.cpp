@@ -8,6 +8,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -604,4 +605,39 @@ TEST_CASE("A body shaped by the colliders of its children swings around a hinge 
     CHECK(bobAt.z > -1.6f);
     CHECK(std::abs(bobAt.x) < 0.01f);
     CHECK(devex::math::length(bobAt - Vec3{0.0f, 4.5f, 0.0f}) == Catch::Approx(3.0f).margin(0.03f));
+}
+
+TEST_CASE("A character stays on what moves under it, with or without a rigid body", "[physics][platform]")
+{
+    const bool kinematic = GENERATE(true, false);
+    const Vec3 speed = GENERATE(Vec3{2.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, -3.0f}, Vec3{0.0f, 1.0f, 0.0f}, Vec3{0.0f, -1.0f, 0.0f});
+    CAPTURE(kinematic, speed.x, speed.y, speed.z);
+
+    Scene scene;
+    const Entity platform = scene.createEntity("Platform");
+    scene.add<devex::scene::Transform>(platform).position = {0.0f, -0.25f, 0.0f};
+    scene.add<devex::scene::BoxCollider>(platform).size = {6.0f, 0.5f, 6.0f};
+    if (kinematic)
+    {
+        scene.add<devex::scene::RigidBody>(platform).type = devex::scene::BodyType::Kinematic;
+    }
+    const Entity hero = scene.createEntity("Hero");
+    scene.add<devex::scene::Transform>(hero).position = {0.5f, 0.1f, 0.5f};
+    auto& controller = scene.add<devex::scene::CharacterController>(hero);
+
+    const auto world = makeWorld();
+    simulate(*world, scene, 1.0);
+    REQUIRE(controller.grounded);
+
+    const Vec3 start = positionOf(scene, hero);
+    for (int frame = 0; frame < 60; ++frame)
+    {
+        scene.get<devex::scene::Transform>(platform).position += speed * static_cast<float>(stepSeconds);
+        simulate(*world, scene, stepSeconds);
+    }
+    const Vec3 end = positionOf(scene, hero);
+    CHECK(controller.grounded);
+    CHECK(end.x == Catch::Approx(start.x + speed.x).margin(0.15f));
+    CHECK(end.y == Catch::Approx(start.y + speed.y).margin(0.15f));
+    CHECK(end.z == Catch::Approx(start.z + speed.z).margin(0.15f));
 }

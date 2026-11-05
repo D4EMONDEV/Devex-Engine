@@ -82,11 +82,13 @@ void addParts(const Scene& scene, Entity entity, const math::Mat4& toPiece, Grid
         return std::unexpected(root.error());
     }
     GridPalette palette;
-    // A scene with one top entity has its pieces under it, unless it is a piece itself.
+    // A scene with one top entity has its pieces under it, unless it is a piece itself: it has nothing under it, or a
+    // mesh of its own, which what only holds the pieces has not.
     const Entity first = scene.firstChild(*root);
-    if (!scene.isAlive(first))
+    if (!scene.isAlive(first) || scene.has<MeshRenderer>(*root))
     {
         palette.pieces.push_back(pieceOf(scene, *root));
+        return palette;
     }
     for (Entity child = first; scene.isAlive(child); child = scene.nextSibling(child))
     {

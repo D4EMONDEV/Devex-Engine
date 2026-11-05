@@ -41,7 +41,7 @@ sert à faire de vrais petits jeux et à trouver ce qui manque avant la 1.0.
 
 - `Time.Scale` en C# et `Application::setTimeScale` en C++ : 0 met le jeu en pause et l'interface continue de répondre, entre 0 et 1 il ralentit.
 - `Entity.TryGet` marche aussi sur les composants écrits en C#.
-- `CharacterController2D` suit ce qui bouge sous ses pieds, même un collider déplacé par un script, et une plateforme à sens unique qui monte.
+- Les personnages 2D et 3D suivent ce qui bouge sous leurs pieds, même un collider déplacé par un script, et en 2D une plateforme à sens unique qui monte.
 
 **Limites connues**
 

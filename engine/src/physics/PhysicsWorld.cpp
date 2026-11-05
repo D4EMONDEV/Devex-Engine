@@ -494,6 +494,10 @@ struct CharacterRecord
     std::uint64_t signature = 0;
     math::Vec3 position{0.0f};
     math::Vec3 previousPosition{0.0f};
+    // What it stands on, and the point under its feet at the end of the last move.
+    JPH::BodyID groundBody;
+    JPH::Vec3 groundAnchor{0.0f, 0.0f, 0.0f};
+    math::Vec3 groundPoint{0.0f};
     bool seen = false;
 };
 
@@ -1210,6 +1214,18 @@ struct PhysicsWorld::Implementation
             character.UpdateGroundVelocity();
             JPH::Vec3 velocity = toJolt(controller->velocity);
             const bool grounded = character.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
+            const math::Vec3 before = record.position;
+            // A collider game code moves has no velocity: where the point under the feet has gone says how far.
+            if (grounded && velocity.GetY() <= 0.0f && !record.groundBody.IsInvalid() && bodyInterface().IsAdded(record.groundBody) &&
+                bodyInterface().GetMotionType(record.groundBody) == JPH::EMotionType::Static)
+            {
+                const math::Vec3 point = fromJoltPosition(bodyInterface().GetWorldTransform(record.groundBody) * record.groundAnchor);
+                const math::Vec3 carried = point - record.groundPoint;
+                if (math::length(carried) > 1e-6f)
+                {
+                    character.SetPosition(character.GetPosition() + toJolt(carried));
+                }
+            }
             if (grounded && velocity.GetY() <= 0.0f)
             {
                 // Standing: carried by the ground, and not accumulating gravity.
@@ -1230,10 +1246,16 @@ struct PhysicsWorld::Implementation
             character.ExtendedUpdate(seconds, gravity, update, system.GetDefaultBroadPhaseLayerFilter(layer),
                                      system.GetDefaultLayerFilter(layer), ignoreItself, {}, *temporaryAllocator);
 
-            record.previousPosition = record.position;
+            record.previousPosition = before;
             record.position = fromJoltPosition(character.GetPosition());
             setWorldPose(scene, record.owner, record.position, std::nullopt);
             controller->grounded = character.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
+            record.groundBody = controller->grounded ? character.GetGroundBodyID() : JPH::BodyID{};
+            if (!record.groundBody.IsInvalid() && bodyInterface().IsAdded(record.groundBody))
+            {
+                record.groundAnchor = bodyInterface().GetWorldTransform(record.groundBody).Inversed() * character.GetPosition();
+                record.groundPoint = record.position;
+            }
             controller->groundNormal = controller->grounded ? fromJolt(character.GetGroundNormal()) : math::Vec3{0.0f, 1.0f, 0.0f};
             // The velocity game code sees is relative to the ground it stands on.
             JPH::Vec3 result = character.GetLinearVelocity();

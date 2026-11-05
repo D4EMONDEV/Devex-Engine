@@ -5639,6 +5639,10 @@ Troisième point de la liste pour une 1.0 : faire de vrais petits jeux avec la 0
   pieds, et va où ce point est allé, avant le reste du mouvement. Écarté : calculer une vitesse aux colliders déplacés, qui garde le retard d'un pas et le problème du sens unique ; et
   demander un `RigidBody2D` cinématique comme le `AnimatableBody2D` de Godot, qu'on découvre en voyant son personnage glisser. Un mur l'arrête. En l'air, plus rien ne le porte : le
   jeu garde la main sur sa vitesse, et la vitesse de la plateforme n'est pas ajoutée au saut.
+- **Le second jeu, une aventure 3D** (`D:\\Devex Projects\\3DProject`) : une grille pour le sol, du CSG pour le château et la tour, une plateforme sur chemin, des ennemis sur une
+  navmesh, un personnage animé, des modèles CC0. Tout a tenu du premier coup, y compris la navmesh sur la grille et le CSG et le transport sur la plateforme.
+- **Une palette d'une seule pièce** : une entité du haut avec un enfant passait pour ce qui tient les pièces, et le sol disparaissait sans un mot. Elle reste une pièce quand elle a un mesh.
+- **Le personnage 3D sur un collider déplacé par le code** : comme en 2D, il va où va le point sous ses pieds. Sur ce qui a une vitesse, Jolt le portait déjà, et on le laisse faire.
 - **Un robot joue pour de vrai** : un composant temporaire écrit la position du joueur, et un script envoie les touches à la seule fenêtre du jeu. Il a parcouru les deux
   niveaux sans aide, ce qui prouve qu'ils sont faisables. Il ne dit pas s'ils sont amusants : c'est à l'utilisateur de le dire.
 

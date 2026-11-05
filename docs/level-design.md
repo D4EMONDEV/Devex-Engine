@@ -5,7 +5,7 @@
 Un **GridMap** pose des pièces sur une grille 3D : des pièces, des couloirs et un décor faits de modules, comme le GridMap de
 Godot. Une pièce n'est pas une entité, ce qui permet d'en poser des milliers.
 
-- **La palette** : une scène ordinaire. Chacune de ses entités du haut est une pièce, avec ses meshes, ceux de ses enfants compris,
+- **La palette** : une scène ordinaire. Chacune de ses entités du haut est une pièce (une seule entité du haut sans mesh ne fait que les tenir, et les pièces sont alors dessous), avec ses meshes, ceux de ses enfants compris,
   et ses matières. Sa position dans la palette ne compte pas, ce qui laisse la place de les ranger. Une pièce se pose à sa base, au
   milieu de sa case : décalez le mesh sur un enfant si son origine est ailleurs.
 - **Les collisions** : une pièce dont l'entité a un collider collide, avec les triangles de son mesh, ou de celui de son
