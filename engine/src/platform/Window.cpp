@@ -145,6 +145,53 @@ void Window::center()
     SDL_SetWindowPosition(detail::toSdlWindow(m_native), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 }
 
+void Window::centerOver(const Window& other)
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    SDL_Window* const window = detail::toSdlWindow(m_native);
+    SDL_Window* const below = detail::toSdlWindow(other.m_native);
+    if (!SDL_GetWindowPosition(below, &x, &y) || !SDL_GetWindowSize(below, &width, &height))
+    {
+        return;
+    }
+    int ownWidth = 0;
+    int ownHeight = 0;
+    SDL_GetWindowSize(window, &ownWidth, &ownHeight);
+    SDL_SetWindowPosition(window, x + (width - ownWidth) / 2, y + (height - ownHeight) / 2);
+}
+
+void Window::setOwner(const Window& owner, bool modal)
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    SDL_Window* const window = detail::toSdlWindow(m_native);
+    if (!SDL_SetWindowParent(window, detail::toSdlWindow(owner.m_native)) || !SDL_SetWindowModal(window, modal))
+    {
+        DEVEX_LOG_WARNING("A window stays on its own: {}", SDL_GetError());
+    }
+#ifdef _WIN32
+    if (const auto hwnd = static_cast<HWND>(SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr)))
+    {
+        SetWindowLongPtrW(hwnd, GWL_STYLE, GetWindowLongPtrW(hwnd, GWL_STYLE) & ~static_cast<LONG_PTR>(WS_MINIMIZEBOX));
+    }
+#endif
+}
+
+bool Window::hasKeyboardFocus() const noexcept
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    return (SDL_GetWindowFlags(detail::toSdlWindow(m_native)) & SDL_WINDOW_INPUT_FOCUS) != 0;
+}
+
+bool Window::hasMouseFocus() const noexcept
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    return (SDL_GetWindowFlags(detail::toSdlWindow(m_native)) & SDL_WINDOW_MOUSE_FOCUS) != 0;
+}
+
 void Window::maximize()
 {
     DEVEX_ASSERT(m_native != nullptr);

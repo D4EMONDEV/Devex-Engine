@@ -138,7 +138,13 @@ struct ExportUi : FormUi
 
     // The key of an Android game, kept apart from the project.
     asset::AndroidSigning signing;
-    Entity platform;
+    // The list of platforms, the tabs, and what stands under them.
+    std::vector<Button> platformRows;
+    Button optionsTab;
+    Button resourcesTab;
+    Button exportAll;
+    Button closeWindow;
+    std::size_t tab = 0;
     Entity androidPackage;
     Entity androidVersionName;
     Entity androidVersionCode;
@@ -163,7 +169,6 @@ struct ExportUi : FormUi
     std::vector<FolderRow> folders;
     Entity addFolder;
     std::vector<std::string> folderChoices;
-    std::size_t exportCard = 0;
     Button exportButton;
     Button openFolder;
     Button runGame;
@@ -174,12 +179,92 @@ struct ExportUi : FormUi
     Entity statusIcon;
     Entity statusText;
 
+    void buildFrame(EditorUiKit& kit);
     void buildCards(ToolsState& state, EditorUiKit& kit);
     void sync(ToolsState& state, EditorUiKit& kit);
     void answer(ToolsState& state);
     void save(ToolsState& state, bool force);
     void update(ToolsState& state, EditorUiKit& kit, core::Duration delta);
 };
+
+void ExportUi::buildFrame(EditorUiKit& kit)
+{
+    const float margin = std::round(font * 0.8f);
+    const float listWidth = std::round(font * 14.0f);
+    const float noteHeight = std::round(font * 3.2f);
+    const float footerHeight = noteHeight + line + margin * 2.0f;
+    const float left = margin * 2.0f + listWidth;
+    const Entity root = add({}, "Export", whole());
+
+    // The platforms, as Godot lists its presets.
+    const Entity sidebar = add(root, "Platforms",
+                               UiRect{.anchorMin = {0.0f, 0.0f},
+                                      .anchorMax = {0.0f, 1.0f},
+                                      .offsetMin = {margin, margin},
+                                      .offsetMax = {margin + listWidth, -footerHeight}},
+                               "list");
+    scene().add<scene::UiImage>(sidebar);
+    const std::vector<std::string> choices = platformChoices();
+    const Entity rows = add(sidebar, "Rows",
+                            UiRect{.anchorMin = {0.0f, 0.0f},
+                                   .anchorMax = {1.0f, 0.0f},
+                                   .offsetMin = {pad, pad},
+                                   .offsetMax = {-pad, pad + static_cast<float>(choices.size()) * (line + gap)}});
+    scene().add<scene::UiLayout>(rows, scene::UiLayout{.kind = scene::UiLayoutKind::Column, .spacing = gap, .align = scene::TextAlign::Left});
+    platformRows.clear();
+    for (const std::string& choice : choices)
+    {
+        platformRows.push_back(button(kit, rows, {}, choice, "row", -1, line, scene::TextAlign::Left));
+    }
+
+    const Entity strip = add(root, "Tabs",
+                             UiRect{.anchorMin = {0.0f, 0.0f},
+                                    .anchorMax = {1.0f, 0.0f},
+                                    .offsetMin = {left, margin},
+                                    .offsetMax = {-margin, margin + line}});
+    scene().add<scene::UiLayout>(strip, scene::UiLayout{.kind = scene::UiLayoutKind::Row, .spacing = gap, .align = scene::TextAlign::Left});
+    optionsTab = button(kit, strip, {}, "Options", "flat", 0, line);
+    resourcesTab = button(kit, strip, {}, "Resources", "flat", 0, line);
+    buildForm(root, UiRect{.anchorMin = {0.0f, 0.0f},
+                           .anchorMax = {1.0f, 1.0f},
+                           .offsetMin = {left, margin + line + gap},
+                           .offsetMax = {-margin, -footerHeight}});
+
+    // What stands in the way or what came of the export, and the buttons.
+    const Entity footer = add(root, "Footer",
+                              UiRect{.anchorMin = {0.0f, 1.0f},
+                                     .anchorMax = {1.0f, 1.0f},
+                                     .offsetMin = {margin, -footerHeight + margin * 0.5f},
+                                     .offsetMax = {-margin, -margin}});
+    const UiRect noteRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {0.0f, noteHeight}};
+    buildNote = text(footer, noteRect, "", "dim");
+    scene().get<scene::UiText>(buildNote).wrap = true;
+    scene().get<scene::UiText>(buildNote).verticalAlign = scene::TextVerticalAlign::Top;
+    progressLine = add(footer, "Progress", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {0.0f, line}});
+    progress = add(progressLine, "Bar", whole(math::Vec4{0.0f, 3.0f, 0.0f, 3.0f}), "list");
+    scene().add<scene::UiImage>(progress);
+    scene().add<scene::UiSlider>(progress, scene::UiSlider{.handleSize = 0.0f, .interactable = false});
+    progressText = text(progress, whole(), "", "text", false, scene::TextAlign::Center);
+    statusLine = add(footer, "Status", noteRect);
+    const float iconSize = std::round(font * 1.15f);
+    statusIcon = icon(kit, statusLine,
+                      UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = {0.0f, font * 0.15f},
+                             .offsetMax = {iconSize, font * 0.15f + iconSize}},
+                      Icon::CircleCheck, {});
+    statusText = text(statusLine, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {iconSize + font * 0.5f, 0.0f}, .offsetMax = {0.0f, 0.0f}},
+                      "", "text");
+    scene().get<scene::UiText>(statusText).wrap = true;
+    scene().get<scene::UiText>(statusText).verticalAlign = scene::TextVerticalAlign::Top;
+    const Entity buttons = add(footer, "Buttons", UiRect{.anchorMin = {0.0f, 1.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {0.0f, -line}, .offsetMax = {0.0f, 0.0f}});
+    scene().add<scene::UiLayout>(buttons, scene::UiLayout{.kind = scene::UiLayoutKind::Row, .spacing = font * 0.6f, .align = scene::TextAlign::Center});
+    exportAll = button(kit, buttons, {}, "Export All", "button", std::round(font * 9.0f), line);
+    tooltip(exportAll.entity, "Exports for every platform that has what it needs");
+    exportButton = button(kit, buttons, Icon::Package, "Export Project", "primary", std::round(font * 11.0f), line);
+    openFolder = button(kit, buttons, Icon::FolderOpen, "Open Folder", "button", std::round(font * 10.0f), line);
+    runGame = button(kit, buttons, Icon::Play, "Run Game", "button", std::round(font * 9.0f), line);
+    closeWindow = button(kit, buttons, {}, "Close", "button", std::round(font * 7.0f), line);
+    panel.setKeyboardNavigation(false);
+}
 
 void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
 {
@@ -188,12 +273,13 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
 
     const bool android = settings.platform == "android";
     const bool other = settings.targetsOtherDesktop();
-    Section& game = card(kit, "Game");
-    platform = choice(formRow(game, "Platform").editor, platformChoices());
+    Section& game = card(kit, "");
+    makePlain(game);
+    game.page = 0;
     const FormRow executableRow = formRow(game, android ? "File" : other && desktopIsWindows ? "Archive" : "Executable");
     executable = text(executableRow.editor, whole(math::Vec4{font * 0.3f, 0.0f, 0.0f, 0.0f}), "", "text");
     tooltip(executableRow.row, "Named after the game: rename it in Project > Project Settings");
-    const FormRow outputRow = formRow(game, "Output Folder");
+    const FormRow outputRow = formRow(game, "Export Path");
     output = field(outputRow.editor, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {-tool - gap * 2.0f, 0.0f}},
                    "", asset::ExportSettings{}.output);
     tooltip(outputRow.row, "Relative to the project folder, or absolute. A previous export there is replaced.");
@@ -208,11 +294,12 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
         terminal = choice(terminalRow.editor, {"Hidden", "Shown"});
         tooltip(terminalRow.row, "Shown, a terminal opens with the game and shows its log. The log is kept in a file either way.");
     }
-    buildNote = note(&game, "", "dim", 2.0f);
 
     if (android)
     {
-        Section& phone = card(kit, "Android");
+        Section& phone = card(kit, "");
+        makePlain(phone);
+        phone.page = 0;
         const auto password = [&](Entity field) {
             scene().get<scene::UiInput>(field).password = true;
             return field;
@@ -246,6 +333,8 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
     }
 
     Section& list = card(kit, "Scenes");
+    makePlain(list);
+    list.page = 1;
     scenes.clear();
     const float box = std::round(font * 1.3f);
     for (std::string& path : scenePaths(*state.database))
@@ -268,6 +357,8 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
     note(&list, "The scenes and prefabs that exported scenes refer to are exported with them.", "dim", 2.0f);
 
     Section& included = card(kit, "Always Included Folders");
+    makePlain(included);
+    included.page = 1;
     folders.clear();
     const float iconSize = std::round(font * 1.1f);
     for (std::size_t index = 0; index < settings.includeFolders.size(); ++index)
@@ -291,30 +382,6 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
                                                     .offsetMax = {font * 17.0f, -2.0f}}));
     included.lines.push_back(Line{.entity = adding});
     note(&included, "Every asset of these folders is exported, for the assets that code loads by itself.", "dim", 2.0f);
-
-    // The export, its progress and what came of it.
-    exportCard = sections.size();
-    Section& run = card(kit, "Export");
-    const Entity buttons = actions(&run);
-    exportButton = button(kit, buttons, Icon::Package, "Export", "primary", std::round(font * 9.0f), line - 4.0f);
-    openFolder = action(kit, buttons, Icon::FolderOpen, "Open Folder");
-    runGame = action(kit, buttons, Icon::Play, "Run Game");
-    progressLine = add(run.card, "Progress", wide(line));
-    progress = add(progressLine, "Bar", whole(math::Vec4{font * 0.35f, 3.0f, 0.0f, 3.0f}), "list");
-    scene().add<scene::UiImage>(progress);
-    scene().add<scene::UiSlider>(progress, scene::UiSlider{.handleSize = 0.0f, .interactable = false});
-    progressText = text(progress, whole(), "", "text", false, scene::TextAlign::Center);
-    run.lines.push_back(Line{.entity = progressLine});
-    statusLine = add(run.card, "Status", wide(std::round(font * 3.2f)));
-    statusIcon = icon(kit, statusLine,
-                      UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = {font * 0.35f, font * 0.3f},
-                             .offsetMax = {font * 0.35f + iconSize, font * 0.3f + iconSize}},
-                      Icon::CircleCheck, {});
-    statusText = text(statusLine, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {font * 0.85f + iconSize, 0.0f}, .offsetMax = {0.0f, 0.0f}},
-                      "", "text");
-    scene().get<scene::UiText>(statusText).wrap = true;
-    scene().get<scene::UiText>(statusText).verticalAlign = scene::TextVerticalAlign::Top;
-    run.lines.push_back(Line{.entity = statusLine});
 }
 
 void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
@@ -324,8 +391,17 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
     const bool android = settings.platform == "android";
     const bool other = settings.targetsOtherDesktop();
     const std::string gameFile = asset::gameFileName(project.name);
-    const std::vector<std::string> choices = platformChoices();
-    setChoice(platform, choices, android ? static_cast<std::int32_t>(choices.size()) - 1 : other ? 1 : 0);
+    const std::size_t chosenRow = android ? platformRows.size() - 1 : other ? 1 : 0;
+    for (std::size_t row = 0; row < platformRows.size(); ++row)
+    {
+        scene().get<UiRect>(platformRows[row].entity).style = row == chosenRow ? "row_selected" : "row";
+    }
+    scene().get<UiRect>(optionsTab.entity).style = tab == 0 ? "row_selected" : "flat";
+    scene().get<UiRect>(resourcesTab.entity).style = tab == 1 ? "row_selected" : "flat";
+    for (Section& section : sections)
+    {
+        section.hidden = section.page != static_cast<int>(tab);
+    }
     scene().get<scene::UiText>(executable).text =
         gameFile + (android ? (settings.android.format == "aab" ? ".aab" : ".apk")
                     : other ? (desktopIsWindows ? "-linux-x64.tar.gz" : ".exe")
@@ -341,7 +417,7 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
     }
     const auto build = std::ranges::find_if(state.engineBuilds, [&](const EngineBuildChoice& choice) { return choice.configuration == settings.configuration; });
     scene::UiText& buildText = scene().get<scene::UiText>(buildNote);
-    bool exportable = build != state.engineBuilds.end() && !settings.output.empty();
+    bool exportable = build != state.engineBuilds.end();
     if (android)
     {
         const asset::AndroidExportSettings& phone = settings.android;
@@ -388,29 +464,28 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
         exportable = problem.empty();
         const bool csharp = hasCSharp(project);
         scene().get<scene::UiText>(androidNote).text =
-            !problem.empty() ? problem
-            : csharp ? "This project has C# code, which does not run on Android yet: its components will do nothing, and only its C++ code runs."
-                     : (phone.arm64 ? "Textures are converted to ASTC for phones, which takes a while the first time." : "Textures stay in BC, which the emulator reads.");
-        scene().get<UiRect>(androidNote).style = !problem.empty() || csharp ? "warning" : "dim";
-        buildText.text = "The first export downloads Gradle and what it needs, which takes some minutes.";
-        scene().get<UiRect>(buildNote).style = "dim";
+            csharp ? "This project has C# code, which does not run on Android yet: its components will do nothing, and only its C++ code runs."
+                   : (phone.arm64 ? "Textures are converted to ASTC for phones, which takes a while the first time." : "Textures stay in BC, which the emulator reads.");
+        scene().get<UiRect>(androidNote).style = csharp ? "warning" : "dim";
+        buildText.text = !problem.empty() ? problem : "The first export downloads Gradle and what it needs, which takes some minutes.";
+        scene().get<UiRect>(buildNote).style = !problem.empty() ? "error" : "dim";
     }
     else if (other)
     {
         const bool ready = state.otherDesktopProblem.empty();
-        exportable = ready && !settings.otherOutput.empty();
+        exportable = ready;
         buildText.text = !ready ? state.otherDesktopProblem + "."
                                 : std::format("With the engine for {} that comes with Devex. C# needs .NET for {}, which the first export downloads. "
                                               "C++ code only builds on the system it runs on: a module that registers nothing is left out.{}",
                                               otherPlatform, otherPlatform, desktopIsWindows ? " Extract the archive on Linux and start the game." : "");
-        scene().get<UiRect>(buildNote).style = ready ? "dim" : "warning";
+        scene().get<UiRect>(buildNote).style = ready ? "dim" : "error";
     }
     else if (build == state.engineBuilds.end())
     {
         buildText.text = std::format("There is no {} build of the engine next to the editor. Build it first, for instance with cmake --build --preset "
                                      "build-x64-{}.",
                                      settings.configuration, settings.configuration == "Debug" ? "debug" : "release");
-        scene().get<UiRect>(buildNote).style = "warning";
+        scene().get<UiRect>(buildNote).style = "error";
     }
     else
     {
@@ -418,6 +493,13 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
                                      settings.configuration == "Debug" ? "Debug games run slower and need Visual Studio."
                                                                        : "Players need nothing else installed.");
         scene().get<UiRect>(buildNote).style = "dim";
+    }
+
+    if (exportable && !android && (other ? settings.otherOutput : settings.output).empty())
+    {
+        exportable = false;
+        buildText.text = "Choose where to export the game.";
+        scene().get<UiRect>(buildNote).style = "error";
     }
 
     // The startup scene is always exported.
@@ -450,16 +532,17 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
 
     const ExportStatus& status = state.exportStatus;
     const bool running = status.state == ExportStatus::State::Running;
-    relabel(kit, exportButton, running ? "Exporting..." : "Export");
+    relabel(kit, exportButton, running ? "Exporting..." : "Export Project");
     enable(exportButton, !running && exportable);
-    Section& run = sections[exportCard];
+    enable(exportAll, !running);
     const bool succeeded = status.state == ExportStatus::State::Succeeded;
     const bool failed = status.state == ExportStatus::State::Failed;
     scene().get<UiRect>(openFolder.entity).visible = succeeded;
-    scene().get<UiRect>(runGame.entity).visible = succeeded && !android && !other;
-    enable(runGame, !status.executable.empty());
-    showLine(run, progressLine, running);
-    showLine(run, statusLine, succeeded || failed);
+    // An Export All leaves no game to run: it made several.
+    scene().get<UiRect>(runGame.entity).visible = succeeded && !android && !other && !status.executable.empty();
+    scene().get<UiRect>(progressLine).visible = running;
+    scene().get<UiRect>(statusLine).visible = succeeded || failed;
+    scene().get<UiRect>(buildNote).visible = !running && !succeeded && !failed;
     scene::UiSlider& bar = scene().get<scene::UiSlider>(progress);
     bar.value = std::clamp(status.fraction, 0.0f, 1.0f);
     bar.fillColor = linearColor(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.8f));
@@ -480,12 +563,37 @@ void ExportUi::answer(ToolsState& state)
     {
         (android ? settings.android.output : other ? settings.otherOutput : settings.output) = typed(output);
     }
-    if (world.wasChanged(platform))
+    for (std::size_t row = 0; row < platformRows.size(); ++row)
     {
-        const auto chosen = static_cast<std::size_t>(scene().get<scene::UiDropdown>(platform).selected);
-        settings.platform = chosen + 1 == platformChoices().size() ? std::string("android")
-                            : chosen == 1                          ? std::string(asset::otherDesktopSystem())
-                                                                   : std::string("desktop");
+        if (world.wasClicked(platformRows[row].entity))
+        {
+            const std::string chosen = row + 1 == platformRows.size() ? std::string("android")
+                                       : row == 1                     ? std::string(asset::otherDesktopSystem())
+                                                                      : std::string("desktop");
+            // What the last export said was of another platform.
+            if (chosen != settings.platform && state.exportStatus.state != ExportStatus::State::Running)
+            {
+                state.exportStatus = {};
+            }
+            settings.platform = chosen;
+        }
+    }
+    if (world.wasClicked(optionsTab.entity))
+    {
+        tab = 0;
+    }
+    if (world.wasClicked(resourcesTab.entity))
+    {
+        tab = 1;
+    }
+    if (world.wasClicked(closeWindow.entity))
+    {
+        state.showExport = false;
+    }
+    if (world.wasClicked(exportAll.entity) && state.exportStatus.state != ExportStatus::State::Running)
+    {
+        state.requests.exportGame = true;
+        state.requests.exportAll = true;
     }
     if (terminal.isValid() && world.wasChanged(terminal))
     {
@@ -674,8 +782,7 @@ void ExportUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
         built = true;
         builtFont = font;
         signature.clear();
-        buildForm(add({}, "Export", whole()), whole(math::Vec4{font * 0.3f, font * 0.3f, 0.0f, 0.0f}));
-        panel.setKeyboardNavigation(false);
+        buildFrame(kit);
     }
     styleTooltips(colors);
 
@@ -710,7 +817,8 @@ void ExportUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
         buildCards(state, kit);
         signature = std::move(wanted);
     }
-    labelWidth = std::clamp(std::round(panel.size().x * 0.3f), font * 7.0f, font * 11.0f);
+    // The labels on one half and what they set on the other, as in the windows of settings.
+    labelWidth = std::max(font * 8.0f, std::round((panel.size().x - font * 17.0f) * 0.5f));
     sync(state, kit);
     layoutCards();
     panel.update(kit, delta, UiPanel::zoomFor(font));
@@ -732,7 +840,7 @@ void drawExportWindow(ToolsState& state)
     {
         state.exportUi = std::make_shared<ExportUi>();
     }
-    if (beginFormWindow(state, exportWindow, &state.showExport, 36.0f, 36.0f))
+    if (beginFormWindow(state, exportWindow, &state.showExport, 52.0f, 38.0f))
     {
         state.exportUi->update(state, kit, core::Duration(state.input.delta()));
         endFormWindow(state);

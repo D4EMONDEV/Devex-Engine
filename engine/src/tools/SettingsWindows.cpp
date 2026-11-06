@@ -5,6 +5,7 @@
 #include "SettingsUi.hpp"
 
 #include "EditorModal.hpp"
+#include "NativeWindow.hpp"
 #include "FileSearch.hpp"
 
 #include <devex/asset/TranslationData.hpp>
@@ -40,9 +41,27 @@ constexpr std::array<std::string_view, 5> editorPages{"Theme", "Display", "Viewp
 constexpr std::size_t viewportPage = 2;
 constexpr std::size_t scriptsPage = 3;
 constexpr std::size_t compilationPage = 4;
-constexpr std::array<std::string_view, 10> projectPages{
-    "Application", "Window",    "Physics",      "Collision Layers", "Sorting Layers",
-    "Audio",       "Input Map", "Localization", "Globals",          "Addons"};
+// The pages of the project, by the numbers their cards use; those of General are listed by projectTree.
+constexpr std::array<std::string_view, 11> projectPages{
+    "Config", "Window",    "Physics",      "Collision", "Sorting",
+    "Audio",  "Input Map", "Localization", "Globals",   "Addons", "Run"};
+constexpr std::size_t runPage = 10;
+
+// A category of the list on the left and its pages; without a name, a page that stands alone.
+struct PageTree
+{
+    std::string_view group;
+    std::array<int, 2> pages{-1, -1};
+};
+constexpr std::array<PageTree, 5> projectTree{PageTree{"Application", {0, static_cast<int>(runPage)}}, PageTree{"Display", {1, -1}},
+                                              PageTree{"", {2, -1}}, PageTree{"", {5, -1}}, PageTree{"Layer Names", {3, 4}}};
+constexpr std::array<PageTree, 4> editorTree{PageTree{"Interface", {0, 1}}, PageTree{"", {2, -1}}, PageTree{"", {3, -1}}, PageTree{"", {4, -1}}};
+
+// The pages of the first tab of the project settings, the others being tabs of their own.
+[[nodiscard]] constexpr bool isGeneralPage(std::size_t page) noexcept
+{
+    return page < 6 || page == runPage;
+}
 
 [[nodiscard]] math::Vec4 linearOf(math::Vec3 srgb)
 {
@@ -126,6 +145,35 @@ EditorUiKit& editorUiKit(ToolsState& state)
 
 bool beginFormWindow(ToolsState& state, const char* title, bool* open, float width, float height)
 {
+    // In a window of the system, as Godot opens its own, where there can be one.
+    if (*open && !state.nativeFormsUnavailable)
+    {
+        std::shared_ptr<NativeFormWindow>& native = state.nativeWindows[title];
+        if (!native)
+        {
+            const float size = themeMetrics().lineHeight;
+            native = NativeFormWindow::open(state, title, math::Vec2(size * width, size * height));
+            if (native)
+            {
+                native->input.begin(state.platform.windowInput(native->window.id()), state.clock, state.input.delta());
+            }
+        }
+        if (native)
+        {
+            native->used = true;
+            if (state.platform.takeWindowCloseRequest(native->window.id()))
+            {
+                *open = false;
+                return false;
+            }
+            // What the form reads of the devices is what happens over its window.
+            std::swap(state.input, native->input);
+            editorUiKit(state).setNativeHost(native.get());
+            return true;
+        }
+        state.nativeWindows.erase(title);
+        state.nativeFormsUnavailable = true;
+    }
     if (takeModalClose(state, title))
     {
         *open = false;
@@ -146,6 +194,18 @@ bool beginFormWindow(ToolsState& state, const char* title, bool* open, float wid
 
 void endFormWindow(ToolsState& state)
 {
+    EditorUiKit& kit = editorUiKit(state);
+    if (NativeFormWindow* const native = kit.nativeHost())
+    {
+        kit.setNativeHost(nullptr);
+        std::swap(state.input, native->input);
+        // One pointer for the whole system, in the shape of what it is over.
+        if (native->window.hasMouseFocus())
+        {
+            state.input.cursor = native->input.cursor;
+        }
+        return;
+    }
     endModal(state);
 }
 
@@ -260,25 +320,67 @@ void SettingsUi::buildFrame(EditorUiKit& kit, std::span<const std::string_view> 
     scene().add<scene::UiLayout>(list, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
                                                        .spacing = gap,
                                                        .align = scene::TextAlign::Left});
-    static constexpr std::array projectIcons{
-        Icon::Box,    Icon::Monitor,  Icon::Shapes,    Icon::Layers, Icon::ArrowUpDown,
-        Icon::Volume, Icon::Keyboard, Icon::Languages, Icon::Globe,  Icon::Package};
-    static constexpr std::array editorIcons{Icon::Palette, Icon::Monitor, Icon::Axis, Icon::Code,
-                                            Icon::Hammer};
-    for (std::size_t i = 0; i < names.size(); ++i)
-        pages.push_back(
-            Page{.name = std::string(names[i]),
-                 .button = button(kit, list, projectTabs ? projectIcons[i] : editorIcons[i],
-                                  names[i], "row", -1, line, scene::TextAlign::Left)});
+    // A row of the tree: its text after the room of an arrow, further in under a category.
+    const float gutter = std::min(line, 28.0f);
+    const auto pageRow = [&](std::size_t page, int group) {
+        Page& made = pages[page];
+        made.name = std::string(names[page]);
+        made.group = group;
+        made.button = button(kit, list, {}, names[page], "row", -1, line, scene::TextAlign::Left);
+        scene().get<scene::UiLayout>(made.button.entity).padding.x = gutter + (group >= 0 ? font * 0.9f : 0.0f);
+    };
+    pages.resize(names.size());
+    pageGroups.clear();
+    const auto listTree = [&](std::span<const PageTree> tree) {
+        for (const PageTree& entry : tree)
+        {
+            const int group = entry.group.empty() ? -1 : static_cast<int>(pageGroups.size());
+            if (group >= 0)
+            {
+                const Entity row = add(list, "Category", wide(line), "row");
+                scene().add<scene::UiImage>(row);
+                scene().add<scene::UiButton>(row);
+                scene().add<scene::UiFoldout>(row, scene::UiFoldout{.expanded = true, .arrowColor = linearColor(themeColors().textDim)});
+                text(row, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {gutter, 0.0f}, .offsetMax = {0.0f, 0.0f}}, std::string(entry.group), "text");
+                pageGroups.push_back({.row = row});
+            }
+            for (const int page : entry.pages)
+            {
+                if (page >= 0)
+                {
+                    pageRow(static_cast<std::size_t>(page), group);
+                }
+            }
+        }
+    };
+    if (projectTabs)
+    {
+        listTree(projectTree);
+        // The pages of the other tabs show in the list while a search goes through them.
+        for (std::size_t page = 0; page < names.size(); ++page)
+        {
+            if (!isGeneralPage(page))
+            {
+                pageRow(page, -1);
+            }
+        }
+    }
+    else
+    {
+        listTree(editorTree);
+    }
+    scene().get<UiRect>(list).offsetMax.y = pad + static_cast<float>(names.size() + pageGroups.size()) * (line + gap);
     heading = text(root,
                    UiRect{.anchorMin = {0, 0},
                           .anchorMax = {1, 0},
                           .offsetMin = {margin + listWidth + margin, below},
                           .offsetMax = {-margin, below + line}},
                    "", "text", true);
+    // The page says what it is by the list beside it, as in Godot.
+    scene().get<UiRect>(heading).visible = false;
     buildForm(root, UiRect{.anchorMin = {0, 0},
                            .anchorMax = {1, 1},
-                           .offsetMin = {margin + listWidth + margin, below + line + gap},
+                           .offsetMin = {margin + listWidth + margin, below},
                            .offsetMax = {-margin, -footerHeight}});
     noMatches = text(root,
                      UiRect{.anchorMin = {0, 0},
@@ -299,7 +401,11 @@ void SettingsUi::buildFrame(EditorUiKit& kit, std::span<const std::string_view> 
                              .offsetMax = {-font * 9, 0}},
                       "Changes are saved automatically.", "dim");
     close = button(kit, footer, {}, "Close", "button", font * 8, line);
-    placeRight(scene(), close.entity, 0, font * 8);
+    UiRect& closeRect = scene().get<UiRect>(close.entity);
+    closeRect.anchorMin = {0.5f, 0.0f};
+    closeRect.anchorMax = {0.5f, 1.0f};
+    closeRect.offsetMin = {-font * 4.0f, 0.0f};
+    closeRect.offsetMax = {font * 4.0f, 0.0f};
     buildColorPopup();
     panel.setKeyboardNavigation(false);
 }
@@ -308,6 +414,11 @@ Section& SettingsUi::pageCard(EditorUiKit& kit, std::size_t page, std::string na
 {
     Section& section = card(kit, std::move(name));
     section.page = static_cast<int>(page);
+    // The settings of the tree are rows under a title. The other tabs keep their cards, which are lists of their own.
+    if (!projectTabs || isGeneralPage(page))
+    {
+        makePlain(section);
+    }
     filterDirty = true;
     return section;
 }
@@ -373,18 +484,27 @@ void SettingsUi::applyFilter()
             scene().get<UiRect>(pages[i].button.label).opacity = !searching || found[i] ? 1 : 0.45f;
         }
     }
-    const bool showSidebar = !projectTabs || searching || selected < 6;
+    const bool showSidebar = !projectTabs || searching || isGeneralPage(selected);
     scene().get<UiRect>(sidebar).visible = showSidebar;
     for (std::size_t i = 0; i < pages.size(); ++i)
-        scene().get<UiRect>(pages[i].button.entity).visible = !projectTabs || searching || i < 6;
+    {
+        const bool open = pages[i].group < 0 || pageGroups[static_cast<std::size_t>(pages[i].group)].open;
+        scene().get<UiRect>(pages[i].button.entity).visible = searching || ((!projectTabs || isGeneralPage(i)) && open);
+    }
+    for (const PageGroup& group : pageGroups)
+    {
+        scene().get<scene::UiFoldout>(group.row).expanded = searching || group.open;
+    }
     const float left = font * (showSidebar ? 15.6f : 0.8f);
+    // The labels on one half and what they set on the other, as wide as the window lets them.
+    labelWidth = std::max(font * 8.0f, (panel.size().x - left - font * 1.6f) * 0.5f);
     scene().get<UiRect>(scroll).offsetMin.x = left;
     scene().get<UiRect>(heading).offsetMin.x = left + font * 0.3f;
     scene().get<UiRect>(noMatches).offsetMin.x = left;
     scene().get<scene::UiText>(heading).text =
         searching ? "Search Results"
-                  : (projectTabs && selected < 6 ? "General / " : "") + pages[selected].name;
-    const std::size_t activeTab = selected < 6 ? 0 : selected - 5;
+                  : (projectTabs && isGeneralPage(selected) ? "General / " : "") + pages[selected].name;
+    const std::size_t activeTab = isGeneralPage(selected) ? 0 : selected - 5;
     for (std::size_t i = 0; i < tabs.size(); ++i)
         scene().get<UiRect>(tabs[i].entity).style =
             !searching && i == activeTab ? "row_selected" : "flat";
@@ -405,6 +525,9 @@ void SettingsUi::answerFrame()
     for (std::size_t i = 0; i < tabs.size(); ++i)
         if (world.wasClicked(tabs[i].entity))
             select(i == 0 ? 0 : i + 5);
+    for (PageGroup& group : pageGroups)
+        if (world.wasChanged(group.row))
+            group.open = !group.open;
     if (world.wasClicked(clearSearch.entity))
         scene().get<scene::UiText>(filter).text.clear();
     closeRequested = world.wasClicked(close.entity);
@@ -484,7 +607,7 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     placeRight(scene(), reset.entity, 0.0f, width);
     tooltip(reset.entity, "Resets the settings of the selected page");
 
-    Section& theme = pageCard(kit, 0, "Theme");
+    Section& theme = pageCard(kit, 0, "");
     const FormRow presetRow = formRow(theme, "Preset");
     preset = choice(presetRow.editor);
     tooltip(presetRow.row, "Colours to start from: choosing one sets the base, the accent and the contrast");
@@ -848,7 +971,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         if (world.wasClicked(fields.browse.entity))
         {
             const std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
-            state.platform.showFileDialog(state.window,
+            state.platform.showFileDialog(dialogParent(state),
                 {.type = platform::FileDialogType::OpenFile,
                  .filters = {{"Executable", "exe"}, {"All files", "*"}},
                  .defaultLocation = core::pathFromUtf8(editor.executable)},
@@ -1066,11 +1189,12 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     const float tool = closeButtonSize();
 
     // Application.
-    Section& application = pageCard(kit, 0, "Application");
+    Section& application = pageCard(kit, 0, "");
     name = textField(formRow(application, "Name").editor, "Name of the game");
-    const FormRow startupRow = formRow(application, "Startup Scene");
-    startup = choice(startupRow.editor);
-    tooltip(startupRow.row, "The scene the game opens with: without one, the first scene of the project");
+    const FormRow descriptionRow = formRow(application, "Description");
+    description = textField(descriptionRow.editor, "What the game is");
+    tooltip(descriptionRow.row, "What a Linux desktop says of the game in its list of applications");
+    version = textField(formRow(application, "Version").editor, "1.0");
     const FormRow iconRow = formRow(application, "Icon");
     icon = choice(iconRow.editor);
     scene().add<scene::UiDropTarget>(icon, scene::UiDropTarget{.accepts = {"asset:texture"}, .highlightColor = math::Vec4{accent.x, accent.y, accent.z, 0.35f}});
@@ -1082,24 +1206,38 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     const FormRow backRow = formRow(application, "Android Quit On Back");
     quitOnBack = toggle(backRow.editor);
     tooltip(backRow.row, "On Android, the Back button quits the game, unless an input action uses the Back key");
+    Section& run = pageCard(kit, runPage, "");
+    const FormRow startupRow = formRow(run, "Startup Scene");
+    startup = choice(startupRow.editor);
+    tooltip(startupRow.row, "The scene the game opens with: without one, the first scene of the project");
 
     // Window.
-    Section& window = pageCard(kit, 1, "Window");
+    Section& window = pageCard(kit, 1, "Size");
     const FormRow sizeRow = formRow(window, "Size");
     const std::array<std::string_view, 2> sides{"w", "h"};
     size = numbers(sizeRow.editor, sides, {.minValue = 64.0f, .maxValue = 16384.0f, .step = 1.0f, .dragSpeed = 1.0f, .decimals = 0});
     tooltip(sizeRow.row, "The size of the window, in points: the system scales it on high-density displays");
-    fullscreen = toggle(formRow(window, "Fullscreen").editor);
-    const FormRow vsyncRow = formRow(window, "VSync");
-    vsync = toggle(vsyncRow.editor);
-    tooltip(vsyncRow.row, "Waits for the display refresh: no tearing, lower power");
-    const FormRow rateRow = formRow(window, "Frame Rate Limit");
+    const FormRow modeRow = formRow(window, "Mode");
+    windowMode = choice(modeRow.editor);
+    tooltip(modeRow.row, "Borderless Fullscreen covers the display and shares it with other windows. Exclusive Fullscreen has it to itself, and going back to the desktop takes a moment.");
+    const FormRow resizableRow = formRow(window, "Resizable");
+    resizable = toggle(resizableRow.editor);
+    tooltip(resizableRow.row, "Whether the player can change the size of the window with its edges");
+    const FormRow borderlessRow = formRow(window, "Borderless");
+    borderless = toggle(borderlessRow.editor);
+    tooltip(borderlessRow.row, "A window without a frame or a title bar, at its size");
+    Section& sync = pageCard(kit, 1, "V-Sync");
+    const FormRow vsyncRow = formRow(sync, "V-Sync Mode");
+    vsyncMode = choice(vsyncRow.editor);
+    tooltip(vsyncRow.row, "Enabled waits for the display: no tearing, lower power. Adaptive does too, unless the game is late, then it tears rather than waits. "
+                          "Mailbox does not wait and never tears, showing the latest frame. Disabled waits for nothing.");
+    const FormRow rateRow = formRow(sync, "Frame Rate Limit");
     frameRate = numbers(rateRow.editor, single, {.minValue = 0.0f, .maxValue = 1000.0f, .step = 1.0f, .dragSpeed = 0.5f, .decimals = 0}).front();
     tooltip(rateRow.row, "The most frames a second the game draws; 0 leaves it unlimited");
-    note(&window, "Changes apply the next time the game starts.");
+    note(&sync, "Changes apply the next time the game starts.");
 
     // Physics.
-    Section& physics = pageCard(kit, 2, "Physics");
+    Section& physics = pageCard(kit, 2, "");
     const std::array<std::string_view, 3> axes{"x", "y", "z"};
     gravity = numbers(formRow(physics, "Gravity").editor, axes, {.dragSpeed = 0.05f, .decimals = 2});
     note(&physics, "Changes apply the next time the game starts.");
@@ -1173,7 +1311,7 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     note(&collisions, "Changes apply the next time the game starts.");
 
     // Sorting layers, in the order they draw.
-    Section& sorting = pageCard(kit, 4, "Sorting Layers");
+    Section& sorting = pageCard(kit, 4, "");
     note(&sorting, "Sprites draw over the sprites of the layers above theirs. Blended surfaces and particles draw in Default.", "dim", 2.0f);
     sortingRows.clear();
     const float buttons = tool * 3.0f + gap * 4.0f;
@@ -1271,8 +1409,11 @@ void ProjectSettingsUi::sync(ToolsState& state, EditorUiKit& kit)
     // Window and physics.
     setNumber(size[0], static_cast<float>(project.window.width));
     setNumber(size[1], static_cast<float>(project.window.height));
-    setToggle(fullscreen, project.window.fullscreen);
-    setToggle(vsync, project.window.vsync);
+    setChoice(windowMode, {"Windowed", "Borderless Fullscreen", "Exclusive Fullscreen"},
+              !project.window.fullscreen ? 0 : project.window.exclusiveFullscreen ? 2 : 1);
+    setToggle(resizable, project.window.resizable);
+    setToggle(borderless, project.window.borderless);
+    setChoice(vsyncMode, {"Disabled", "Enabled", "Adaptive", "Mailbox"}, static_cast<std::int32_t>(project.window.vsyncMode));
     setNumber(frameRate, static_cast<float>(project.window.maxFrameRate));
     scene::UiNumberField& rate = scene().get<scene::UiNumberField>(frameRate);
     rate.format = rate.value < 0.5f ? "Unlimited" : "{} fps";
@@ -1391,13 +1532,30 @@ void ProjectSettingsUi::answer(ToolsState& state, EditorUiKit& kit)
     {
         project.window.height = whole(number(size[1]));
     }
-    if (world.wasChanged(fullscreen))
+    if (const std::optional<std::size_t> mode = chosen(windowMode))
     {
-        project.window.fullscreen = scene().get<scene::UiToggle>(fullscreen).value;
+        project.window.fullscreen = *mode != 0;
+        project.window.exclusiveFullscreen = *mode == 2;
     }
-    if (world.wasChanged(vsync))
+    if (world.wasChanged(resizable))
     {
-        project.window.vsync = scene().get<scene::UiToggle>(vsync).value;
+        project.window.resizable = scene().get<scene::UiToggle>(resizable).value;
+    }
+    if (world.wasChanged(borderless))
+    {
+        project.window.borderless = scene().get<scene::UiToggle>(borderless).value;
+    }
+    if (const std::optional<std::size_t> mode = chosen(vsyncMode))
+    {
+        project.window.vsyncMode = static_cast<asset::VSyncMode>(*mode);
+    }
+    if (const std::string* const typed = typedText(description))
+    {
+        project.description = *typed;
+    }
+    if (const std::string* const typed = typedText(version))
+    {
+        project.version = *typed;
     }
     if (world.wasChanged(frameRate))
     {
@@ -1640,6 +1798,13 @@ void renderFormWindows(ToolsState& state, render::RenderWorld& world)
         return;
     }
     const math::Vec4 background = linearColor(themeColors().panel);
+    for (const auto& [title, native] : state.nativeWindows)
+    {
+        if (native->used && native->surface != 0)
+        {
+            world.uiWindowImages.push_back({.target = native->target, .surface = native->surface});
+        }
+    }
     if (state.editorSettingsUi)
     {
         state.editorSettingsUi->panel.render(*state.uiKit, world, background);

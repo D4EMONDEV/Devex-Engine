@@ -698,6 +698,13 @@ struct DEVEX_API UiSurface
     std::vector<UiDraw> draws;
 };
 
+// A surface shown in another window of the system than the main one, instead of through the tools.
+struct DEVEX_API UiWindowImage
+{
+    std::uint32_t target = 0;
+    std::uint32_t surface = 0;
+};
+
 // The scene seen through another camera, into an image of its own that the tools show with
 // UiSource::View: the game the editor plays, beside the scene its viewport shows. The view draws
 // the scene as the main image does, without the lines, outlines and picking of the tools.
@@ -822,6 +829,8 @@ struct DEVEX_API RenderWorld
     std::vector<UiDraw> uiDraws;
     // Interfaces drawn into images of their own, for the tools; only drawn with them.
     std::vector<UiSurface> uiSurfaces;
+    // The surfaces shown in windows of their own, by what Renderer::addWindowTarget gave.
+    std::vector<UiWindowImage> uiWindowImages;
     // The tools over the whole window, drawn last in the colours of the display: the images of the
     // scene and of the surfaces where the editor shows them, and what it paints around them.
     // Positions are in pixels of the window.

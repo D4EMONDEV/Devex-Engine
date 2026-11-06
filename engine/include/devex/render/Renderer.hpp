@@ -31,6 +31,8 @@ enum class PresentMode : std::uint8_t
     Fifo,
     // Replaces the queued image with the newest one: low latency without tearing.
     Mailbox,
+    // Waits for the display, unless the frame is late: it then tears rather than waits a whole refresh.
+    FifoRelaxed,
     // Presents as soon as possible: lowest latency, with tearing.
     Immediate,
 };
@@ -181,6 +183,10 @@ public:
     [[nodiscard]] PresentMode presentMode() const noexcept;
     // Asks for another present mode, from the next frame.
     void setPresentMode(PresentMode mode);
+    // Another window of the system to show an interface surface in, through RenderWorld::uiWindowImages. The window must
+    // have been created with WindowConfig::vulkan and outlive what this gives, which removeWindowTarget ends.
+    [[nodiscard]] core::Result<std::uint32_t> addWindowTarget(platform::Window& window);
+    void removeWindowTarget(std::uint32_t target);
     // What the machine offers for drawing, in words, for a bug report.
     [[nodiscard]] core::Result<std::string> describeGraphics() const;
     // The same with no renderer: a machine that cannot make one is the first to need a report. Refused while a renderer

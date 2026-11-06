@@ -241,6 +241,8 @@ struct DEVEX_API EditorRequests
     bool createCode = false;
     // Exports the game as the export settings of the project say.
     bool exportGame = false;
+    // With exportGame: for every platform that has what it needs, rather than the chosen one.
+    bool exportAll = false;
     // Help > Copy System Report.
     bool systemReport = false;
     // Creates a component in a new file of the code folder and opens it in the code editor.

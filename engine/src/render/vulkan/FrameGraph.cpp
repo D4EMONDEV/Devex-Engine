@@ -283,7 +283,7 @@ core::Result<void> VulkanRenderer::createFrameImages(FrameGraph& view)
             view.surfaceIndices.push_back(create({
                 .format = view.targetFormat,
                 .extent = {std::max(surface.size.width, 1u), std::max(surface.size.height, 1u)},
-                .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                 .alternateFormat =
                     view.toolsFormat != view.targetFormat ? view.toolsFormat : VK_FORMAT_UNDEFINED,
             }));
@@ -1775,6 +1775,50 @@ void VulkanRenderer::addInterfacePasses(FrameGraph& view)
                     alternate != VK_NULL_HANDLE ? *m_uiDisplayPipeline : *m_uiPipeline,
                     alternate != VK_NULL_HANDLE || !targetEncodes);
             });
+    }
+
+    // The surfaces other windows of the system show, whose bytes are already the colours of the display.
+    for (const std::unique_ptr<WindowTarget>& target : m_windowTargets)
+    {
+        for (std::size_t surface = 0; target->ready && surface < view.surfaceIndices.size(); ++surface)
+        {
+            if (m_world.uiSurfaces[surface].id != target->surfaceId)
+            {
+                continue;
+            }
+            const RenderGraph::ImageId image = *view.created[view.surfaceIndices[surface]];
+            const math::Extent2D drawn = m_world.uiSurfaces[surface].size;
+            view.graph.addPass("Window of its own", {{image, ImageAccess::TransferRead}},
+                               [&view, image, drawn, shown = target.get()](VkCommandBuffer commands)
+                               {
+                                   const VkImage destination = shown->swapchain->image(shown->imageIndex);
+                                   const math::Extent2D room = shown->swapchain->extent();
+                                   transitionImage(commands, destination, ImageState::AcquiredBackbuffer, ImageState::TransferDestination);
+                                   const VkImageBlit region{
+                                       .srcSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+                                       .srcOffsets = {{0, 0, 0}, {static_cast<std::int32_t>(std::max(drawn.width, 1u)), static_cast<std::int32_t>(std::max(drawn.height, 1u)), 1}},
+                                       .dstSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+                                       .dstOffsets = {{0, 0, 0}, {static_cast<std::int32_t>(room.width), static_cast<std::int32_t>(room.height), 1}},
+                                   };
+                                   if (shown->swapchain->format() == view.targetFormat && drawn.width == room.width && drawn.height == room.height)
+                                   {
+                                       // The bytes as they are: a blit would encode an sRGB image once more.
+                                       const VkImageCopy copy{
+                                           .srcSubresource = region.srcSubresource,
+                                           .dstSubresource = region.dstSubresource,
+                                           .extent = {room.width, room.height, 1},
+                                       };
+                                       vkCmdCopyImage(commands, view.graph.handle(image), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination,
+                                                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+                                   }
+                                   else
+                                   {
+                                       vkCmdBlitImage(commands, view.graph.handle(image), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination,
+                                                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_LINEAR);
+                                   }
+                                   transitionImage(commands, destination, ImageState::TransferDestination, ImageState::Present);
+                               });
+        }
     }
 
     if (view.extraView == nullptr && (view.toViewport || view.drawTools))

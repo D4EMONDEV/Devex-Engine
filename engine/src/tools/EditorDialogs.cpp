@@ -4,6 +4,7 @@
 // the scenes and files an action would drop, About tells what the editor is made with, Game Crashed
 // what stopped the game, and Opening how the code of a project just opened compiles before its scenes
 // open.
+#include "NativeWindow.hpp"
 #include "SettingsUi.hpp"
 #include "EditorModal.hpp"
 
@@ -938,10 +939,23 @@ void renderEditorDialogs(ToolsState& state, render::RenderWorld& world)
     }
 }
 
+const platform::Window& dialogParent(const ToolsState& state)
+{
+    // The editor waits behind a window of the system, and a dialog over it would let it go when it closes.
+    for (const auto& [title, native] : state.nativeWindows)
+    {
+        if (native)
+        {
+            return native->window;
+        }
+    }
+    return state.window;
+}
+
 void showFolderDialog(ToolsState& state, std::optional<std::filesystem::path> DialogAnswers::*answer, std::filesystem::path start)
 {
     const std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
-    state.platform.showFileDialog(state.window, {.type = platform::FileDialogType::OpenFolder, .defaultLocation = std::move(start)},
+    state.platform.showFileDialog(dialogParent(state), {.type = platform::FileDialogType::OpenFolder, .defaultLocation = std::move(start)},
                                   [answers, answer](std::optional<std::filesystem::path> chosen) {
                                       if (const std::shared_ptr<DialogAnswers> inbox = answers.lock(); inbox && chosen)
                                       {

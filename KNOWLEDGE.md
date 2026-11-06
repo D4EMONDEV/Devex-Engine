@@ -3906,3 +3906,16 @@ public:
     }
     
     void up
+
+## Fenêtres du système des formulaires (jalon 118)
+
+- `beginFormWindow` ouvre une `NativeFormWindow` (`tools/NativeWindow.hpp`) par titre ; `pruneNativeWindows` ferme celles qu'aucun
+  formulaire n'a demandées dans la frame. Si le système ou le GPU n'en donne pas, `nativeFormsUnavailable` garde le formulaire dans l'éditeur.
+- Le panneau dessine dans son `UiSurface` comme les autres ; `RenderWorld::uiWindowImages` dit quelle surface copier dans quel
+  `WindowTarget` (`Renderer::addWindowTarget`, passe « Window of its own » du graphe). Les surfaces ont le format du swapchain principal :
+  la copie passe par un blit si la cible en a un autre.
+- Les événements d'une fenêtre suivie (`Platform::trackWindowInput`) ne vont qu'à son `Input`. `state.input` est échangé avec celui de la
+  fenêtre pendant que le formulaire se met à jour. `dialogParent` donne le parent des dialogues de fichiers : l'éditeur est désactivé derrière
+  la fenêtre, et un dialogue ouvert sur lui le réactiverait en se fermant.
+- `Section&` : un nouveau `card` ou `pageCard` déplace les sections, ne pas garder la référence d'avant. `FormUi::makePlain` donne une section
+  sans cadre ni repli ; `Section::page` dit dans quel onglet ou quelle page elle se montre (l'export s'en sert aussi).

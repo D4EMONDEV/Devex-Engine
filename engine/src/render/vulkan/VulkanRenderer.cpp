@@ -253,6 +253,11 @@ VulkanRenderer::~VulkanRenderer()
     if (device != VK_NULL_HANDLE)
     {
         vkDeviceWaitIdle(device);
+    for (const std::unique_ptr<WindowTarget>& target : m_windowTargets)
+    {
+        destroyWindowTarget(*target);
+    }
+    m_windowTargets.clear();
         destroyPresentSemaphores();
         for (FrameContext& frame : m_frames)
         {
@@ -298,6 +303,152 @@ void VulkanRenderer::setPresentMode(PresentMode mode)
     {
         m_requestedPresentMode = mode;
         m_swapchainOutdated = true;
+    }
+}
+
+core::Result<std::uint32_t> VulkanRenderer::addWindowTarget(platform::Window& window)
+{
+    const core::Result<std::uint64_t> handle = window.createVulkanSurface(m_instance.handle());
+    if (!handle)
+    {
+        return std::unexpected(handle.error());
+    }
+    auto target = std::make_unique<WindowTarget>();
+    target->window = &window;
+    target->surface.emplace(m_instance.handle(), std::bit_cast<VkSurfaceKHR>(*handle));
+    VkBool32 canPresent = VK_FALSE;
+    DEVEX_VK_TRY(vkGetPhysicalDeviceSurfaceSupportKHR, m_device.physicalDevice(), m_device.queueFamily(), target->surface->handle(), &canPresent);
+    if (canPresent != VK_TRUE)
+    {
+        return core::makeError(core::ErrorCode::Unsupported, "the GPU cannot show images in that window");
+    }
+    const VkSemaphoreCreateInfo semaphoreInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    for (VkSemaphore& semaphore : target->acquired)
+    {
+        DEVEX_VK_TRY(vkCreateSemaphore, m_device.handle(), &semaphoreInfo, nullptr, &semaphore);
+    }
+    target->id = m_nextWindowTarget++;
+    m_windowTargets.push_back(std::move(target));
+    return m_windowTargets.back()->id;
+}
+
+void VulkanRenderer::destroyWindowTarget(WindowTarget& target) noexcept
+{
+    const VkDevice device = m_device.handle();
+    for (VkSemaphore& semaphore : target.acquired)
+    {
+        vkDestroySemaphore(device, std::exchange(semaphore, VK_NULL_HANDLE), nullptr);
+    }
+    for (const VkSemaphore semaphore : target.presented)
+    {
+        vkDestroySemaphore(device, semaphore, nullptr);
+    }
+    target.presented.clear();
+    target.swapchain.reset();
+    target.surface.reset();
+}
+
+void VulkanRenderer::removeWindowTarget(std::uint32_t target)
+{
+    const auto found = std::ranges::find_if(m_windowTargets, [target](const std::unique_ptr<WindowTarget>& candidate) { return candidate->id == target; });
+    if (found == m_windowTargets.end())
+    {
+        return;
+    }
+    static_cast<void>(vkDeviceWaitIdle(m_device.handle()));
+    destroyWindowTarget(**found);
+    m_windowTargets.erase(found);
+}
+
+void VulkanRenderer::acquireWindowTargets(std::uint32_t frameSlot)
+{
+    const VkDevice device = m_device.handle();
+    for (const std::unique_ptr<WindowTarget>& target : m_windowTargets)
+    {
+        target->ready = false;
+    }
+    for (const UiWindowImage& image : m_world.uiWindowImages)
+    {
+        const auto found = std::ranges::find_if(m_windowTargets, [&image](const std::unique_ptr<WindowTarget>& candidate) { return candidate->id == image.target; });
+        if (found == m_windowTargets.end())
+        {
+            continue;
+        }
+        WindowTarget& target = **found;
+        const math::Extent2D size = target.window->pixelSize();
+        if (size.width == 0 || size.height == 0 || target.window->isMinimized())
+        {
+            continue;
+        }
+        if (!target.swapchain || target.outdated || target.swapchain->extent() != size)
+        {
+            static_cast<void>(vkDeviceWaitIdle(device));
+            // Mailbox, because each window waiting for the display would hold back the others.
+            core::Result<Swapchain> swapchain = Swapchain::create(m_device, target.surface->handle(),
+                                                                  {.windowPixelSize = size,
+                                                                   .presentMode = PresentMode::Mailbox,
+                                                                   .transferTarget = true,
+                                                                   .previous = target.swapchain ? target.swapchain->handle() : VK_NULL_HANDLE});
+            if (!swapchain)
+            {
+                DEVEX_LOG_WARNING("A window shows nothing: {}", swapchain.error());
+                continue;
+            }
+            target.swapchain = std::move(*swapchain);
+            target.outdated = false;
+            for (const VkSemaphore semaphore : target.presented)
+            {
+                vkDestroySemaphore(device, semaphore, nullptr);
+            }
+            target.presented.clear();
+            const VkSemaphoreCreateInfo semaphoreInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+            for (std::uint32_t index = 0; index < target.swapchain->imageCount(); ++index)
+            {
+                VkSemaphore semaphore = VK_NULL_HANDLE;
+                if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore) == VK_SUCCESS)
+                {
+                    target.presented.push_back(semaphore);
+                }
+            }
+            if (target.presented.size() != target.swapchain->imageCount())
+            {
+                continue;
+            }
+        }
+        const VkResult acquired = vkAcquireNextImageKHR(device, target.swapchain->handle(), 0, target.acquired[frameSlot], VK_NULL_HANDLE, &target.imageIndex);
+        if (acquired == VK_SUCCESS || acquired == VK_SUBOPTIMAL_KHR)
+        {
+            target.ready = true;
+            target.surfaceId = image.surface;
+            target.outdated = acquired == VK_SUBOPTIMAL_KHR;
+        }
+        else if (acquired == VK_ERROR_OUT_OF_DATE_KHR)
+        {
+            target.outdated = true;
+        }
+    }
+}
+
+void VulkanRenderer::presentWindowTargets()
+{
+    for (const std::unique_ptr<WindowTarget>& target : m_windowTargets)
+    {
+        if (!target->ready)
+        {
+            continue;
+        }
+        const VkSwapchainKHR swapchain = target->swapchain->handle();
+        const VkPresentInfoKHR presentInfo{
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &target->presented[target->imageIndex],
+            .swapchainCount = 1,
+            .pSwapchains = &swapchain,
+            .pImageIndices = &target->imageIndex,
+        };
+        const VkResult presented = vkQueuePresentKHR(m_device.queue(), &presentInfo);
+        target->outdated = target->outdated || presented != VK_SUCCESS;
+        target->ready = false;
     }
 }
 
@@ -1053,6 +1204,7 @@ core::Result<void> VulkanRenderer::endFrame()
     }
 
     DEVEX_VK_TRY(vkResetFences, device, 1, &frame.completed);
+    acquireWindowTargets(frameSlot);
     {
         DEVEX_PROFILE_SCOPE("Uploads");
         selectUploads(frame);
@@ -1124,28 +1276,40 @@ core::Result<void> VulkanRenderer::endFrame()
     rememberFrame();
 
     const VkSemaphore presentSemaphore = m_presentSemaphores[imageIndex];
-    const VkSemaphoreSubmitInfo waitInfo{
+    std::vector<VkSemaphoreSubmitInfo> waitInfos{{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
         .semaphore = frame.imageAcquired,
         .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-    };
+    }};
     const VkCommandBufferSubmitInfo commandBufferInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
         .commandBuffer = frame.commandBuffer,
     };
-    const VkSemaphoreSubmitInfo signalInfo{
+    std::vector<VkSemaphoreSubmitInfo> signalInfos{{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
         .semaphore = presentSemaphore,
         .stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT,
-    };
+    }};
+    for (const std::unique_ptr<WindowTarget>& target : m_windowTargets)
+    {
+        if (target->ready)
+        {
+            waitInfos.push_back({.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                                 .semaphore = target->acquired[frameSlot],
+                                 .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT});
+            signalInfos.push_back({.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                                   .semaphore = target->presented[target->imageIndex],
+                                   .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT});
+        }
+    }
     const VkSubmitInfo2 submitInfo{
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-        .waitSemaphoreInfoCount = 1,
-        .pWaitSemaphoreInfos = &waitInfo,
+        .waitSemaphoreInfoCount = static_cast<std::uint32_t>(waitInfos.size()),
+        .pWaitSemaphoreInfos = waitInfos.data(),
         .commandBufferInfoCount = 1,
         .pCommandBufferInfos = &commandBufferInfo,
-        .signalSemaphoreInfoCount = 1,
-        .pSignalSemaphoreInfos = &signalInfo,
+        .signalSemaphoreInfoCount = static_cast<std::uint32_t>(signalInfos.size()),
+        .pSignalSemaphoreInfos = signalInfos.data(),
     };
     DEVEX_VK_TRY(vkQueueSubmit2, m_device.queue(), 1, &submitInfo, frame.completed);
 
@@ -1179,6 +1343,7 @@ core::Result<void> VulkanRenderer::endFrame()
     {
         return vulkanError("vkQueuePresentKHR", presented);
     }
+    presentWindowTargets();
 
     ++m_frameIndex;
     return {};

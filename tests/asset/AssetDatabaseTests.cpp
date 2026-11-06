@@ -638,7 +638,7 @@ TEST_CASE("Window and export settings of projects are saved and read back", "[as
     project.window.width = 1920;
     CHECK(devex::asset::writeProjectText(project).find("desktop_entry") == std::string::npos);
     CHECK(devex::asset::writeProjectText(project).find("quit_on_back") == std::string::npos);
-    project.window = {.width = 1920, .height = 1080, .fullscreen = true, .vsync = false, .maxFrameRate = 144,
+    project.window = {.width = 1920, .height = 1080, .fullscreen = true, .vsyncMode = devex::asset::VSyncMode::Disabled, .maxFrameRate = 144,
                       .icon = AssetId::generate(), .desktopEntry = false, .quitOnBack = false};
     project.exportSettings = {.scenes = {"res://assets/scenes/a.dvxscene", "res://assets/scenes/b.dvxscene"},
                               .includeFolders = {"res://assets/data"},
@@ -654,6 +654,46 @@ TEST_CASE("Window and export settings of projects are saved and read back", "[as
     REQUIRE(parsed.has_value());
     CHECK(parsed->window == project.window);
     CHECK(parsed->root == project.root);
+}
+
+TEST_CASE("What describes a game and how its window opens are saved and read back", "[asset][project]")
+{
+    TemporaryProject temporary;
+    devex::asset::Project project = temporary.project;
+    using devex::asset::VSyncMode;
+
+    // What keeps its default is not written, and a project from before reads as it did.
+    const std::string plain = devex::asset::writeProjectText(project);
+    for (const char* const attribute : {"vsync_mode", "resizable", "borderless", "exclusive_fullscreen", "description"})
+    {
+        CHECK(plain.find(attribute) == std::string::npos);
+    }
+    const auto before = devex::asset::parseProject(plain, project.file);
+    REQUIRE(before.has_value());
+    CHECK(before->window.vsyncMode == VSyncMode::Enabled);
+    CHECK(before->window.resizable);
+    CHECK_FALSE(before->window.borderless);
+    CHECK_FALSE(before->window.exclusiveFullscreen);
+
+    project.description = "A small game, with a \"quote\"";
+    project.version = "1.2.3";
+    project.window.fullscreen = true;
+    project.window.exclusiveFullscreen = true;
+    project.window.resizable = false;
+    project.window.borderless = true;
+    for (const VSyncMode mode : {VSyncMode::Disabled, VSyncMode::Enabled, VSyncMode::Adaptive, VSyncMode::Mailbox})
+    {
+        project.window.vsyncMode = mode;
+        const auto parsed = devex::asset::parseProject(devex::asset::writeProjectText(project), project.file);
+        REQUIRE(parsed.has_value());
+        CHECK(parsed->window == project.window);
+        CHECK(parsed->description == project.description);
+        CHECK(parsed->version == project.version);
+    }
+
+    // Off and on stay what they were for the versions before the modes.
+    project.window.vsyncMode = VSyncMode::Disabled;
+    CHECK(devex::asset::writeProjectText(project).find("vsync_mode") == std::string::npos);
 }
 
 TEST_CASE("Input actions and contexts of projects are saved and read back", "[asset][project][input]")

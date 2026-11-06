@@ -54,6 +54,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -86,6 +87,8 @@ class Clip;
 } // namespace devex::audio
 
 namespace devex::tools::detail {
+
+class NativeFormWindow;
 
 // What the center shows while the game plays.
 enum class PlayLayout : std::uint8_t
@@ -835,6 +838,10 @@ struct DEVEX_API ToolsState
     std::shared_ptr<EditorSettingsUi> editorSettingsUi;
     std::shared_ptr<ProjectSettingsUi> projectSettingsUi;
     std::shared_ptr<ExportUi> exportUi;
+    // The forms open in windows of the system, by their titles.
+    std::map<std::string, std::shared_ptr<NativeFormWindow>> nativeWindows;
+    // A window of the system could not open: the forms stay inside the editor.
+    bool nativeFormsUnavailable = false;
     std::shared_ptr<DebuggingUi> debuggingUi;
     std::shared_ptr<EditorDialogsUi> dialogsUi;
     // The panels of measures.
@@ -1462,6 +1469,8 @@ DEVEX_API void drawStatusBar(ToolsState& state, const scene::Scene& scene);
 DEVEX_API void drawSettingsWindow(ToolsState& state);
 DEVEX_API void drawProjectSettingsWindow(ToolsState& state, scene::Scene& scene);
 // Asks for a folder, starting from `start` when given, and leaves it in an answer for later frames.
+// The window a dialog of the system opens over: the form of its own that is open, or the editor.
+[[nodiscard]] const platform::Window& dialogParent(const ToolsState& state);
 void showFolderDialog(ToolsState& state, std::optional<std::filesystem::path> DialogAnswers::*answer, std::filesystem::path start = {});
 DEVEX_API void drawExportWindow(ToolsState& state);
 DEVEX_API void renderExportWindow(ToolsState& state, render::RenderWorld& world);

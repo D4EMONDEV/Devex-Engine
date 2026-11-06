@@ -57,6 +57,8 @@ struct SettingsUi : FormUi
     {
         std::string name;
         PanelButton button;
+            // The category it stands under, -1 for none.
+        int group = -1;
     };
 
     bool built = false;
@@ -64,6 +66,13 @@ struct SettingsUi : FormUi
     // What the cards were made for: they are made again when it changes.
     std::string signature;
     std::vector<Page> pages;
+    // The categories of the list on the left, which fold the pages under them.
+    struct PageGroup
+    {
+        scene::Entity row;
+        bool open = true;
+    };
+    std::vector<PageGroup> pageGroups;
     std::size_t selected = 0;
     scene::Entity top;
     scene::Entity filter;
@@ -182,6 +191,8 @@ struct ProjectSettingsUi : SettingsUi
 
     // Application.
     scene::Entity name;
+    scene::Entity description;
+    scene::Entity version;
     scene::Entity startup;
     std::vector<std::string> startupScenes;
     scene::Entity icon;
@@ -190,8 +201,10 @@ struct ProjectSettingsUi : SettingsUi
     scene::Entity quitOnBack;
     // Window.
     std::vector<scene::Entity> size;
-    scene::Entity fullscreen;
-    scene::Entity vsync;
+    scene::Entity windowMode;
+    scene::Entity resizable;
+    scene::Entity borderless;
+    scene::Entity vsyncMode;
     scene::Entity frameRate;
     // Physics.
     std::vector<scene::Entity> gravity;

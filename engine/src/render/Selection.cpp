@@ -67,6 +67,8 @@ std::string_view toString(PresentMode mode) noexcept
     {
     case PresentMode::Fifo:
         return "FIFO";
+    case PresentMode::FifoRelaxed:
+        return "FIFO relaxed";
     case PresentMode::Mailbox:
         return "mailbox";
     case PresentMode::Immediate:

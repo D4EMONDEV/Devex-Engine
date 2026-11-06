@@ -31,6 +31,8 @@
 // the nodes its games use.
 namespace devex::tools::detail {
 
+class NativeFormWindow;
+
 // A color of the editor theme, written in sRGB, as the linear color of the interface of the engine.
 [[nodiscard]] math::Vec4 linearColor(math::Vec4 srgb) noexcept;
 
@@ -106,6 +108,11 @@ public:
     [[nodiscard]] std::optional<Tooltip> takeTooltip() noexcept;
 
     // The places, the devices and the platform of the frame, which the panels read.
+    // The window of the system the panels update for, while a form stands in one; otherwise null, and they stand in hosts.
+    void setNativeHost(NativeFormWindow* window) noexcept;
+    [[nodiscard]] NativeFormWindow* nativeHost() const noexcept;
+    // The window that asked for typing this frame; null for the main one.
+    [[nodiscard]] NativeFormWindow* textInputWindow() const noexcept;
     void setFrame(EditorHosts& hosts, const EditorInput& input, platform::Platform& platform) noexcept;
     [[nodiscard]] EditorHosts& hosts() const noexcept;
     [[nodiscard]] const EditorInput& input() const noexcept;
@@ -164,6 +171,8 @@ private:
     platform::Platform* m_platform = nullptr;
     std::optional<EditorDrag> m_carried;
     std::optional<std::pair<math::Vec2, math::Vec2>> m_textInput;
+    NativeFormWindow* m_nativeHost = nullptr;
+    NativeFormWindow* m_textInputWindow = nullptr;
 };
 
 

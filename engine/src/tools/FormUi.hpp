@@ -59,7 +59,9 @@ struct Section
     // A component whose code is not loaded: only its header shows.
     bool locked = false;
     bool fromPrefab = false;
-    // The page of a window of settings the card stands in, -1 outside them; a card another page or
+    // A title in bold over its rows, or no title at all, with nothing around them and nothing to fold, as Godot shows settings.
+    bool plain = false;
+    // The page of a window of settings the card stands in, -1 outside them; a card another  page or
     // a filter leaves out is hidden.
     int page = -1;
     bool hidden = false;
@@ -219,6 +221,8 @@ struct FormUi : PanelBuilder
     scene::Entity swatch(EditorUiKit& kit, scene::Entity editor, bool alpha);
     void setSwatch(scene::Entity swatch, math::Vec4 color, bool alpha);
     // A text on a line of its own, in a card or between the cards; taller lines wrap it.
+    // Makes a section a title in bold over its rows, or just rows without a name, with nothing around them to fold.
+    void makePlain(Section& section);
     scene::Entity note(Section* section, std::string value, std::string_view style = "dim", float lines = 1.0f);
     // A line where buttons follow each other from the left.
     scene::Entity actions(Section* section);

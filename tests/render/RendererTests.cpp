@@ -2893,6 +2893,49 @@ TEST_CASE("The swapchain follows the way the window takes the screen", "[render]
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("An interface surface shows in another window of the system", "[render][gpu]")
+{
+    const ErrorCapture capture;
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto second = platform->createWindow({.width = 200, .height = 100, .vulkan = true, .hidden = true});
+    REQUIRE(second);
+    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer);
+    auto target = renderer->addWindowTarget(*second);
+    REQUIRE(target);
+
+    const auto frame = [&](devex::math::Extent2D size) {
+        devex::render::RenderWorld& world = renderer->beginFrame();
+        // The surfaces are drawn with the interface of the tools.
+        world.toolsVertices.resize(3);
+        world.toolsIndices = {0, 1, 2};
+        world.toolsDraws.push_back({.indexCount = 3});
+        devex::render::UiSurface surface{.id = 7, .size = size, .clearColor = devex::math::Vec4{0.2f, 0.4f, 0.8f, 1.0f}};
+        world.uiSurfaces.push_back(std::move(surface));
+        world.uiWindowImages.push_back({.target = *target, .surface = 7});
+        REQUIRE(renderer->endFrame());
+    };
+    // Frames of the same size as the window, and one that does not fit it, as during a resize.
+    for (int index = 0; index < 4; ++index)
+    {
+        frame({200, 100});
+    }
+    frame({120, 80});
+    second->setSize({260, 140});
+    frame({260, 140});
+    frame({260, 140});
+    renderer->removeWindowTarget(*target);
+    frame({200, 100});
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("A machine says what its GPUs offer, with or without a renderer", "[render][gpu][settings]")
 {
     auto platform = devex::platform::Platform::create();

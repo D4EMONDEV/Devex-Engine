@@ -537,6 +537,9 @@ private:
     std::string m_gameLoadError;
     std::unique_ptr<ExportJob> m_export;
     bool m_exportWaiting = false;
+    // The platforms an Export All has left, the first being the one under way.
+    std::vector<std::string> m_exportQueue;
+    std::vector<std::filesystem::path> m_exportedFolders;
     // The build of the library that is loaded, and when to look for a newer one.
     std::filesystem::file_time_type m_gameLibraryTime{};
     Clock::time_point m_nextLibraryCheck{};
@@ -554,7 +557,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     , m_frameBudget(config.maxFrameRate == 0
                         ? std::chrono::nanoseconds::zero()
                         : std::chrono::nanoseconds(std::chrono::seconds(1)) / config.maxFrameRate)
-    , m_configuredVsync(config.presentMode == render::PresentMode::Fifo)
+    , m_configuredVsync(config.presentMode == render::PresentMode::Fifo || config.presentMode == render::PresentMode::FifoRelaxed)
     , m_configuredMaxFrameRate(config.maxFrameRate)
     , m_loadGameCode(config.loadGameCode || config.editor)
     , m_enablePhysics(config.enablePhysics)
@@ -1477,6 +1480,21 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
     {
         shareSystemReport();
     }
+    if (requests.exportAll && m_services.database != nullptr && !m_export)
+    {
+        // Each platform that has what it needs, one after the other.
+        const asset::Project& project = m_services.database->project();
+        m_exportQueue = {"desktop"};
+        if (findOtherDesktopEngine(m_services.platform.baseDirectory()) && GameCodeBuilder::moduleRegistersNothing(project))
+        {
+            m_exportQueue.emplace_back(asset::otherDesktopSystem());
+        }
+        if (!findAndroidBuilds(m_services.platform.baseDirectory()).empty() && findAndroidTools().problem(false).empty())
+        {
+            m_exportQueue.emplace_back("android");
+        }
+        m_exportedFolders.clear();
+    }
     if (requests.exportGame && m_services.database != nullptr && !m_export)
     {
         m_exportWaiting = true;
@@ -1860,6 +1878,7 @@ void ApplicationRunner::closeProject()
     // Everything loaded from the project goes before its database.
     m_export.reset();
     m_exportWaiting = false;
+    m_exportQueue.clear();
     m_services.tools->setExportStatus({});
     m_services.tools->setAssetDatabase(nullptr);
     closeGameCode();
@@ -3420,6 +3439,11 @@ void ApplicationRunner::updateExport()
         {
             m_exportWaiting = false;
             startExport();
+            // What stopped it said so, and the platforms after it wait for nothing.
+            if (!m_export)
+            {
+                m_exportQueue.clear();
+            }
         }
     }
     if (m_export)
@@ -3427,7 +3451,34 @@ void ApplicationRunner::updateExport()
         m_services.tools->setExportStatus(m_export->status());
         if (m_export->finished())
         {
+            tools::ExportStatus status = m_export->status();
+            const bool succeeded = status.state == tools::ExportStatus::State::Succeeded;
             m_export.reset();
+            // The next platform of an Export All; a failure stops it there, and says so.
+            const bool ofAll = !m_exportQueue.empty();
+            if (ofAll)
+            {
+                m_exportQueue.erase(m_exportQueue.begin());
+                m_exportedFolders.push_back(status.output);
+            }
+            if (!succeeded)
+            {
+                m_exportQueue.clear();
+            }
+            m_exportWaiting = !m_exportQueue.empty();
+            if (ofAll && succeeded && m_exportQueue.empty() && m_exportedFolders.size() > 1)
+            {
+                // The folder to open, when they stand side by side, is the one that holds them.
+                const std::filesystem::path shared = status.output.parent_path();
+                const bool together = std::ranges::all_of(m_exportedFolders, [&](const std::filesystem::path& folder) { return folder.parent_path() == shared; });
+                if (together)
+                {
+                    status.output = shared;
+                }
+                status.message = std::format("Exported for {} platforms, in {}", m_exportedFolders.size(), core::toUtf8(status.output));
+                status.executable.clear();
+                m_services.tools->setExportStatus(status);
+            }
         }
     }
 }
@@ -3436,8 +3487,10 @@ void ApplicationRunner::startExport()
 {
     const asset::Project& project = m_services.database->project();
     const std::vector<EngineBuild> builds = findEngineBuilds(m_services.platform.baseDirectory());
-    const bool android = project.exportSettings.platform == "android";
-    const bool otherDesktop = project.exportSettings.targetsOtherDesktop();
+    // The one chosen, or the next of an Export All.
+    const std::string platform = m_exportQueue.empty() ? project.exportSettings.platform : m_exportQueue.front();
+    const bool android = platform == "android";
+    const bool otherDesktop = !asset::otherDesktopSystem().empty() && platform == asset::otherDesktopSystem();
     // A plan for Android or the other system starts from any build, and takes the ones it needs afterwards.
     const std::optional<EngineBuild> engine =
         android || otherDesktop ? EngineBuild{} : findEngineBuild(builds, project.exportSettings.configuration);
@@ -3772,6 +3825,8 @@ int run(Application& application, const ApplicationConfig& config)
     }
     ApplicationConfig effective = config;
     bool fullscreen = false;
+    bool exclusiveFullscreen = false;
+    bool borderless = false;
     if (config.useProjectWindowSettings && launchSettings)
     {
         const asset::WindowSettings& settings = launchSettings->window;
@@ -3780,7 +3835,24 @@ int run(Application& application, const ApplicationConfig& config)
         effective.height = settings.height;
         effective.maxFrameRate = settings.maxFrameRate;
         fullscreen = settings.fullscreen;
-        bool vsync = settings.vsync;
+        exclusiveFullscreen = settings.exclusiveFullscreen;
+        borderless = settings.borderless;
+        effective.resizable = settings.resizable;
+        const auto presentModeOf = [](asset::VSyncMode mode) {
+            switch (mode)
+            {
+            case asset::VSyncMode::Enabled:
+                return render::PresentMode::Fifo;
+            case asset::VSyncMode::Adaptive:
+                return render::PresentMode::FifoRelaxed;
+            case asset::VSyncMode::Mailbox:
+                return render::PresentMode::Mailbox;
+            case asset::VSyncMode::Disabled:
+                break;
+            }
+            return render::PresentMode::Immediate;
+        };
+        std::optional<bool> playerVsync;
         // What the player chose last time comes before what the project says.
         const core::Result<std::filesystem::path> user =
             config.userDirectory.empty() ? platform::userDataLocation("", launchSettings->name)
@@ -3793,7 +3865,8 @@ int run(Application& application, const ApplicationConfig& config)
                 PlayerSettings chosen;
                 chosen.read(*text);
                 fullscreen = chosen.fullscreen().value_or(fullscreen);
-                vsync = chosen.vsync().value_or(vsync);
+                exclusiveFullscreen = exclusiveFullscreen && !chosen.windowMode();
+                playerVsync = chosen.vsync();
                 effective.maxFrameRate = chosen.maxFrameRate().value_or(effective.maxFrameRate);
                 if (const std::optional<math::Extent2D> size = chosen.windowSize())
                 {
@@ -3802,7 +3875,8 @@ int run(Application& application, const ApplicationConfig& config)
                 }
             }
         }
-        effective.presentMode = vsync ? render::PresentMode::Fifo : render::PresentMode::Immediate;
+        // What the player chose is on or off; what the project says may be more.
+        effective.presentMode = playerVsync ? (*playerVsync ? render::PresentMode::Fifo : render::PresentMode::Immediate) : presentModeOf(settings.vsyncMode);
     }
 
     // One of the games Play starts together: its part of the screen, in a window that says which it is.
@@ -3825,7 +3899,12 @@ int run(Application& application, const ApplicationConfig& config)
         .resizable = effective.resizable,
         .vulkan = effective.enableRendering,
         .fullscreen = fullscreen,
+        .borderless = borderless,
     });
+    if (window && exclusiveFullscreen)
+    {
+        window->setMode(platform::WindowMode::Fullscreen);
+    }
     if (!window)
     {
         DEVEX_LOG_FATAL("Cannot create the main window: {}{}", window.error(), effective.enableRendering ? graphicsAdvice : std::string_view{});

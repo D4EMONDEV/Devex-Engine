@@ -59,6 +59,8 @@ public:
     [[nodiscard]] const GpuInfo& gpu() const noexcept;
     [[nodiscard]] PresentMode presentMode() const noexcept;
     void setPresentMode(PresentMode mode);
+    [[nodiscard]] core::Result<std::uint32_t> addWindowTarget(platform::Window& window);
+    void removeWindowTarget(std::uint32_t target);
     // What the machine offers for drawing, in words, for a bug report.
     [[nodiscard]] core::Result<std::string> describeGraphics() const;
     // The same with no renderer: a machine that cannot make one is the first to need a report.
@@ -995,6 +997,27 @@ private:
     std::array<FrameContext, framesInFlight> m_frames{};
     // The views drawn beside the main image, kept by their identifiers from frame to frame.
     std::vector<std::unique_ptr<ExtraView>> m_extraViews;
+    // Another window of the system, which shows one interface surface.
+    struct WindowTarget
+    {
+        std::uint32_t id = 0;
+        platform::Window* window = nullptr;
+        std::optional<Surface> surface;
+        std::optional<Swapchain> swapchain;
+        std::array<VkSemaphore, framesInFlight> acquired{};
+        std::vector<VkSemaphore> presented;
+        bool outdated = false;
+        // Set for the frame being recorded: the image it got, and the surface copied there.
+        bool ready = false;
+        std::uint32_t imageIndex = 0;
+        std::uint32_t surfaceId = 0;
+    };
+    std::vector<std::unique_ptr<WindowTarget>> m_windowTargets;
+    std::uint32_t m_nextWindowTarget = 1;
+    void destroyWindowTarget(WindowTarget& target) noexcept;
+    // Gets an image of each window that shows something this frame, without waiting for one.
+    void acquireWindowTargets(std::uint32_t frameSlot);
+    void presentWindowTargets();
     // Where the descriptor sets of the view being recorded start: 0 for the main frame.
     std::uint32_t m_setBase = 0;
     // The draw calls of the views of the frame, counted with those of the main frame.

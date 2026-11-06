@@ -74,15 +74,30 @@ struct DEVEX_API SortingSettings
 };
 
 // How the window of the game starts, in the player and in exported games.
+// How a game waits for the display between frames, as the project says.
+enum class VSyncMode : std::uint8_t
+{
+    Disabled,
+    Enabled,
+    // Waits, unless the game is late: it then tears rather than losing a whole frame.
+    Adaptive,
+    // Does not wait and never tears, showing the latest frame.
+    Mailbox,
+};
+
 struct DEVEX_API WindowSettings
 {
     // In window coordinates, which the system scales on high-density displays.
     std::uint32_t width = 1280;
     std::uint32_t height = 720;
-    // Borderless, over the whole display.
+    // Over the whole display, without a frame, and sharing it unless exclusive.
     bool fullscreen = false;
-    // Waits for the display refresh; without it, frames are presented as soon as they are ready.
-    bool vsync = true;
+    bool exclusiveFullscreen = false;
+    // Whether the player can change the size of the window.
+    bool resizable = true;
+    // A window without a frame, at its size.
+    bool borderless = false;
+    VSyncMode vsyncMode = VSyncMode::Enabled;
     // 0 leaves the frame rate unlimited.
     std::uint32_t maxFrameRate = 0;
     // A texture of the project, the icon of the window and of the exported executable.
@@ -302,6 +317,9 @@ struct DEVEX_API Project
     std::filesystem::path file;
     // The res:// path of the scene the player opens; empty for the first scene of the project.
     std::string startupScene;
+    // What the game is, and its version, for the system and the player.
+    std::string description;
+    std::string version;
     PhysicsSettings physics;
     AudioSettings audio;
     SortingSettings sorting;

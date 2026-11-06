@@ -46,6 +46,18 @@ void Renderer::setPresentMode(PresentMode mode)
     m_implementation->setPresentMode(mode);
 }
 
+core::Result<std::uint32_t> Renderer::addWindowTarget(platform::Window& window)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->addWindowTarget(window);
+}
+
+void Renderer::removeWindowTarget(std::uint32_t target)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    m_implementation->removeWindowTarget(target);
+}
+
 core::Result<std::string> Renderer::describeGraphics() const
 {
     DEVEX_ASSERT(m_implementation != nullptr);

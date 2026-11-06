@@ -268,7 +268,17 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
             readUnsigned(section, "width", window.width);
             readUnsigned(section, "height", window.height);
             readBool(section, "fullscreen", window.fullscreen);
-            readBool(section, "vsync", window.vsync);
+            readBool(section, "exclusive_fullscreen", window.exclusiveFullscreen);
+            readBool(section, "resizable", window.resizable);
+            readBool(section, "borderless", window.borderless);
+            // On or off, as older projects say, unless it says more.
+            bool vsync = true;
+            readBool(section, "vsync", vsync);
+            window.vsyncMode = vsync ? VSyncMode::Enabled : VSyncMode::Disabled;
+            if (const std::string* const mode = serialization::stringAttribute(section, "vsync_mode"))
+            {
+                window.vsyncMode = *mode == "adaptive" ? VSyncMode::Adaptive : *mode == "mailbox" ? VSyncMode::Mailbox : window.vsyncMode;
+            }
             readUnsigned(section, "max_frame_rate", window.maxFrameRate);
             readBool(section, "desktop_entry", window.desktopEntry);
             readBool(section, "quit_on_back", window.quitOnBack);
@@ -587,6 +597,14 @@ core::Result<Project> parseProject(std::string_view text, const std::filesystem:
     const serialization::TextValue* const name = section->findAttribute("name");
     const std::string* const nameText = name != nullptr ? serialization::asString(*name) : nullptr;
     project.name = nameText != nullptr ? *nameText : core::toUtf8(projectFile.stem());
+    if (const std::string* const description = serialization::stringAttribute(*section, "description"))
+    {
+        project.description = *description;
+    }
+    if (const std::string* const gameVersion = serialization::stringAttribute(*section, "version"))
+    {
+        project.version = *gameVersion;
+    }
     const serialization::TextValue* const startup = section->findAttribute("startup_scene");
     if (const std::string* const startupText = startup != nullptr ? serialization::asString(*startup) : nullptr)
     {
@@ -758,6 +776,14 @@ std::string writeProjectText(const Project& project)
     const bool newer = core::compareVersions(project.engineVersion, core::version()) > 0;
     section.attributes.push_back({"engine", serialization::TextValue(newer ? project.engineVersion : std::string(core::version()))});
     section.attributes.push_back({"name", serialization::TextValue(project.name)});
+    if (!project.description.empty())
+    {
+        section.attributes.push_back({"description", serialization::TextValue(project.description)});
+    }
+    if (!project.version.empty())
+    {
+        section.attributes.push_back({"version", serialization::TextValue(project.version)});
+    }
     if (!project.startupScene.empty())
     {
         section.attributes.push_back({"startup_scene", serialization::TextValue(project.startupScene)});
@@ -832,7 +858,23 @@ std::string writeProjectText(const Project& project)
         window.attributes.push_back({"width", serialization::TextValue(static_cast<std::int64_t>(settings.width))});
         window.attributes.push_back({"height", serialization::TextValue(static_cast<std::int64_t>(settings.height))});
         window.attributes.push_back({"fullscreen", serialization::TextValue(settings.fullscreen)});
-        window.attributes.push_back({"vsync", serialization::TextValue(settings.vsync)});
+        window.attributes.push_back({"vsync", serialization::TextValue(settings.vsyncMode == VSyncMode::Enabled || settings.vsyncMode == VSyncMode::Adaptive)});
+        if (settings.vsyncMode == VSyncMode::Adaptive || settings.vsyncMode == VSyncMode::Mailbox)
+        {
+            window.attributes.push_back({"vsync_mode", serialization::TextValue(std::string(settings.vsyncMode == VSyncMode::Adaptive ? "adaptive" : "mailbox"))});
+        }
+        if (settings.exclusiveFullscreen)
+        {
+            window.attributes.push_back({"exclusive_fullscreen", serialization::TextValue(true)});
+        }
+        if (!settings.resizable)
+        {
+            window.attributes.push_back({"resizable", serialization::TextValue(false)});
+        }
+        if (settings.borderless)
+        {
+            window.attributes.push_back({"borderless", serialization::TextValue(true)});
+        }
         window.attributes.push_back({"max_frame_rate", serialization::TextValue(static_cast<std::int64_t>(settings.maxFrameRate))});
         if (settings.icon.isValid())
         {

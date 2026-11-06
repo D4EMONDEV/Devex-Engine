@@ -54,7 +54,7 @@ Noter ce qui ne va pas, même si c'est petit, et les FPS affichés en bas de l'�
 7. **Les modes** fenêtré, sans bords et plein écran, si le jeu les propose.
 8. **Le son et une manette**, s'il y en a une.
 9. **Exporter** le projet (**Project > Export Game...**), lancer le jeu exporté depuis le gestionnaire de fichiers.
-10. **Un jeu venu de l'autre système** : sous Windows, **Project > Export Game...** avec **Linux** dans **Platform** donne un `.tar.gz`. L'extraire sur la machine Linux et lancer le jeu.
+10. **Un jeu venu de l'autre système** : sous Windows, **Project > Export Game...** avec **Linux** choisi dans sa liste de gauche donne un `.tar.gz`. L'extraire sur la machine Linux et lancer le jeu.
 11. **Une vraie charge** : ouvrir un jeu déjà fait, copié sur la machine avec son dossier, ou `samples/sandbox` du dépôt, et noter les FPS. Sur un GPU intégré, c'est là que le manque de marge se voit.
 
 ## Renvoyer

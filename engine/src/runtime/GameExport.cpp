@@ -70,15 +70,12 @@ struct TargetSystem
     std::string_view dotnetRuntime;
 };
 
-constexpr TargetSystem windowsTarget{.windows = true, .executableSuffix = ".exe", .libraryExtension = ".dll", .dotnetRuntime = "win-x64"};
-constexpr TargetSystem linuxTarget{.desktopFiles = true, .libraryExtension = ".so", .dotnetRuntime = "linux-x64"};
-
 [[nodiscard]] constexpr TargetSystem otherTarget() noexcept
 {
 #ifdef _WIN32
-    return linuxTarget;
+    return {.desktopFiles = true, .libraryExtension = ".so", .dotnetRuntime = "linux-x64"};
 #else
-    return windowsTarget;
+    return {.windows = true, .executableSuffix = ".exe", .libraryExtension = ".dll", .dotnetRuntime = "win-x64"};
 #endif
 }
 
@@ -456,7 +453,7 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
 [[nodiscard]] core::Result<void> writeDesktopFiles(const std::filesystem::path& output, const std::string& name,
                                                    const asset::Project& project, const std::optional<asset::Image>& icon)
 {
-    platform::DesktopEntry entry{.name = project.name, .categories = "Game;"};
+    platform::DesktopEntry entry{.name = project.name, .comment = project.description, .categories = "Game;"};
     if (icon)
     {
         const std::vector<std::byte> png = asset::encodePng(*icon);

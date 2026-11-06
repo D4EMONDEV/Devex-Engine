@@ -31,6 +31,8 @@ namespace {
     {
     case VK_PRESENT_MODE_FIFO_KHR:
         return PresentMode::Fifo;
+    case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+        return PresentMode::FifoRelaxed;
     case VK_PRESENT_MODE_MAILBOX_KHR:
         return PresentMode::Mailbox;
     case VK_PRESENT_MODE_IMMEDIATE_KHR:
@@ -46,6 +48,8 @@ namespace {
     {
     case PresentMode::Fifo:
         return VK_PRESENT_MODE_FIFO_KHR;
+    case PresentMode::FifoRelaxed:
+        return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
     case PresentMode::Mailbox:
         return VK_PRESENT_MODE_MAILBOX_KHR;
     case PresentMode::Immediate:
@@ -184,7 +188,8 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
         .imageExtent = {extent.width, extent.height},
         .imageArrayLayers = 1,
         // Copied from too where the surface allows it, for a picture of the window.
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | (readable ? VkImageUsageFlags{VK_IMAGE_USAGE_TRANSFER_SRC_BIT} : VkImageUsageFlags{0}),
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | (readable ? VkImageUsageFlags{VK_IMAGE_USAGE_TRANSFER_SRC_BIT} : VkImageUsageFlags{0}) |
+                      (config.transferTarget ? VkImageUsageFlags{VK_IMAGE_USAGE_TRANSFER_DST_BIT} : VkImageUsageFlags{0}),
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = transform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,

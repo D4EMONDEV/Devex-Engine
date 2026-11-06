@@ -493,36 +493,58 @@ void fill(Builder& builder, math::Vec2 min, math::Vec2 max, math::Vec4 color)
     builder.quad(draw, min, max, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, color);
 }
 
-// A triangle of one colour: the arrows of dropdowns, foldouts and sorted columns.
-void triangle(Builder& builder, math::Vec2 a, math::Vec2 b, math::Vec2 c, math::Vec4 color)
+// A thin line that follows no row of pixels, with soft edges, since the interface has no antialiasing.
+void softStroke(Builder& builder, math::Vec2 from, math::Vec2 to, float halfWidth, math::Vec4 color)
 {
     if (color.w <= 0.0f)
     {
         return;
     }
-    render::UiDraw& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{},
-                                         math::Vec4{0.0f}, 0.0f, 1.0f);
-    builder.quad(draw, std::array<math::Vec2, 4>{a, b, c, c}, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, color);
+    constexpr float feather = 0.75f;
+    const math::Vec2 direction = math::normalize(to - from);
+    const math::Vec2 normal{-direction.y, direction.x};
+    math::Vec4 clear = color;
+    clear.w = 0.0f;
+    render::UiDraw& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{}, math::Vec4{0.0f}, 0.0f, 1.0f);
+    const auto first = static_cast<std::uint32_t>(builder.world.uiVertices.size());
+    const std::array<std::pair<float, math::Vec4>, 4> across{{{-halfWidth - feather, clear}, {-halfWidth, color}, {halfWidth, color}, {halfWidth + feather, clear}}};
+    for (const math::Vec2 end : {from, to})
+    {
+        for (const auto& [offset, shade] : across)
+        {
+            builder.world.uiVertices.push_back({.position = (end + normal * offset) * builder.scale, .uv = math::Vec2{0.0f}, .color = shade});
+        }
+    }
+    for (std::uint32_t strip = 0; strip < 3; ++strip)
+    {
+        for (const std::uint32_t corner : {strip, strip + 1, strip + 5, strip, strip + 5, strip + 4})
+        {
+            builder.world.uiIndices.push_back(first + corner);
+        }
+    }
+    draw.indexCount += 18;
 }
 
-// An arrow in a square of `size` around a point: down, or right when `right`, or up when `up`.
+// A chevron in a square of `size` around a point, in thin strokes as Godot draws them: down, or right
+// when `right`, or up when `up`. The arrows of foldouts and of sorted columns.
 void arrow(Builder& builder, math::Vec2 centre, float size, bool right, bool up, math::Vec4 color)
 {
     const float half = size * 0.5f;
+    const float width = std::max(size * 0.07f, 0.5f);
     if (right)
     {
-        triangle(builder, centre + math::Vec2{-half * 0.6f, -half}, centre + math::Vec2{half * 0.7f, 0.0f},
-                 centre + math::Vec2{-half * 0.6f, half}, color);
+        softStroke(builder, centre + math::Vec2{-half * 0.5f, -half}, centre + math::Vec2{half * 0.5f, 0.0f}, width, color);
+        softStroke(builder, centre + math::Vec2{half * 0.5f, 0.0f}, centre + math::Vec2{-half * 0.5f, half}, width, color);
     }
     else if (up)
     {
-        triangle(builder, centre + math::Vec2{-half, half * 0.6f}, centre + math::Vec2{0.0f, -half * 0.7f},
-                 centre + math::Vec2{half, half * 0.6f}, color);
+        softStroke(builder, centre + math::Vec2{-half, half * 0.5f}, centre + math::Vec2{0.0f, -half * 0.5f}, width, color);
+        softStroke(builder, centre + math::Vec2{0.0f, -half * 0.5f}, centre + math::Vec2{half, half * 0.5f}, width, color);
     }
     else
     {
-        triangle(builder, centre + math::Vec2{-half, -half * 0.6f}, centre + math::Vec2{half, -half * 0.6f},
-                 centre + math::Vec2{0.0f, half * 0.7f}, color);
+        softStroke(builder, centre + math::Vec2{-half, -half * 0.5f}, centre + math::Vec2{0.0f, half * 0.5f}, width, color);
+        softStroke(builder, centre + math::Vec2{0.0f, half * 0.5f}, centre + math::Vec2{half, -half * 0.5f}, width, color);
     }
 }
 
@@ -605,25 +627,14 @@ void drawControls(Builder& builder, const scene::Scene& scene, const DrawContext
     {
         const auto centre = math::Vec2{rect.max.x - height * 0.55f, rect.min.y + height * 0.5f};
         const float half = height * 0.21f;
-        const auto stroke = [&](math::Vec2 from, math::Vec2 to)
-        {
-            const auto direction = math::normalize(to - from);
-            const auto normal =
-                math::Vec2{-direction.y, direction.x} * std::max(height * 0.035f, 0.75f);
-            auto& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{},
-                                       math::Vec4{0.0f}, 0.0f, 1.0f);
-            builder.quad(
-                draw,
-                std::array<math::Vec2, 4>{from - normal, to - normal, to + normal, from + normal},
-                math::Vec2{0.0f}, math::Vec2{1.0f},
-                withOpacity(dropdown->arrowColor, rect.opacity));
-        };
-        stroke(centre + math::Vec2{-half, -half * 0.4f}, centre + math::Vec2{0, half * 0.6f});
-        stroke(centre + math::Vec2{0, half * 0.6f}, centre + math::Vec2{half, -half * 0.4f});
+        const float width = std::max(height * 0.03f, 0.5f);
+        const math::Vec4 color = withOpacity(dropdown->arrowColor, rect.opacity);
+        softStroke(builder, centre + math::Vec2{-half, -half * 0.4f}, centre + math::Vec2{0, half * 0.6f}, width, color);
+        softStroke(builder, centre + math::Vec2{0, half * 0.6f}, centre + math::Vec2{half, -half * 0.4f}, width, color);
     }
     if (const scene::UiFoldout* const foldout = scene.tryGet<scene::UiFoldout>(rect.entity))
     {
-        const float size = std::min(height, 28.0f) * 0.32f;
+        const float size = std::min(height, 28.0f) * 0.36f;
         arrow(builder, math::Vec2{rect.min.x + std::min(height, 28.0f) * 0.5f, rect.min.y + height * 0.5f}, size,
               !foldout->expanded, false, withOpacity(foldout->arrowColor, rect.opacity));
     }

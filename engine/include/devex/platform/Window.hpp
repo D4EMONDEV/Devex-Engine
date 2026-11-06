@@ -28,6 +28,8 @@ struct DEVEX_API WindowConfig
     bool hidden = false;
     // Borderless over the whole display, at the resolution of the desktop.
     bool fullscreen = false;
+    // Without a frame or a title bar, at its size.
+    bool borderless = false;
 };
 
 namespace detail {
@@ -86,6 +88,13 @@ public:
     void setSize(math::Extent2D size);
     // Centers the window on its display.
     void center();
+    // In the middle of another window.
+    void centerOver(const Window& other);
+    // Stays above another window, as a dialog does. Modal, the other waits until this one closes.
+    // On Windows, it then has no button to minimize, as a window that depends on another has nowhere to go.
+    void setOwner(const Window& owner, bool modal);
+    [[nodiscard]] bool hasKeyboardFocus() const noexcept;
+    [[nodiscard]] bool hasMouseFocus() const noexcept;
     // What the display it is on leaves to windows, without the task bars and the like.
     [[nodiscard]] ScreenArea usableArea() const;
     // Fills a part of a display, its frame included.

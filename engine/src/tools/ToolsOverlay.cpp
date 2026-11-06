@@ -1,3 +1,4 @@
+#include "NativeWindow.hpp"
 #include "EditorFrame.hpp"
 #include "EditorModal.hpp"
 #include "EditorUi.hpp"
@@ -295,14 +296,19 @@ void finishFrame(ToolsState& state)
     // The shape of the pointer; and typing, on while a field takes it, with the input method of the
     // system next to the field. The images of the frame are composed once the panels drew them.
     state.platform.setCursor(state.input.cursor);
-    const std::optional<std::pair<math::Vec2, math::Vec2>> typing = editorUiKit(state).takeTextInput();
+    pruneNativeWindows(state);
+    detail::EditorUiKit& kit = editorUiKit(state);
+    const std::optional<std::pair<math::Vec2, math::Vec2>> typing = kit.takeTextInput();
     state.typing = typing.has_value();
+    // In the window that asked for it.
+    detail::NativeFormWindow* const asking = typing ? kit.textInputWindow() : nullptr;
+    platform::Window& typedIn = asking != nullptr ? asking->window : state.window;
     if (typing)
     {
-        state.platform.setTextInputArea(state.window, math::Vec2{typing->first.x, typing->first.y},
+        state.platform.setTextInputArea(typedIn, math::Vec2{typing->first.x, typing->first.y},
                                         math::Vec2{typing->second.x, typing->second.y});
     }
-    state.platform.setTextInput(state.window, state.typing);
+    state.platform.setTextInput(typedIn, state.typing);
 }
 
 void handleShortcuts(ToolsState& state, scene::Scene& scene)
@@ -632,6 +638,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     state.animating = false;
     state.clock += frameDelta.count();
     state.input.begin(state.platform.toolsInput(), state.clock, static_cast<float>(frameDelta.count()));
+    detail::beginNativeWindows(state);
     // Where the strips and the panels stand, which host the pointer is over, and what the panels read.
     layoutScreen(state);
     using detail::Mouse;

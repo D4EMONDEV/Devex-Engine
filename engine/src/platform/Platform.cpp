@@ -318,6 +318,40 @@ void recordToolsInput(const SDL_Event& event, Input& input)
     }
 }
 
+// The window an event happened in, or 0 when it has none.
+[[nodiscard]] std::uint32_t eventWindow(const SDL_Event& event) noexcept
+{
+    if (event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST)
+    {
+        return event.window.windowID;
+    }
+    switch (event.type)
+    {
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_KEY_UP:
+        return event.key.windowID;
+    case SDL_EVENT_TEXT_INPUT:
+        return event.text.windowID;
+    case SDL_EVENT_TEXT_EDITING:
+        return event.edit.windowID;
+    case SDL_EVENT_MOUSE_MOTION:
+        return event.motion.windowID;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+        return event.button.windowID;
+    case SDL_EVENT_MOUSE_WHEEL:
+        return event.wheel.windowID;
+    case SDL_EVENT_DROP_FILE:
+    case SDL_EVENT_DROP_TEXT:
+    case SDL_EVENT_DROP_BEGIN:
+    case SDL_EVENT_DROP_COMPLETE:
+    case SDL_EVENT_DROP_POSITION:
+        return event.drop.windowID;
+    default:
+        return 0;
+    }
+}
+
 void dispatchEvent(const SDL_Event& event, Input& input, InputCapture capture,
                    const EventCallback& callback)
 {
@@ -520,6 +554,7 @@ Platform::Platform(Platform&& other) noexcept
     : m_initialized(std::exchange(other.m_initialized, false))
     , m_input(other.m_input)
     , m_toolsInput(other.m_toolsInput)
+    , m_trackedWindows(std::move(other.m_trackedWindows))
 {
 }
 
@@ -531,6 +566,7 @@ Platform& Platform::operator=(Platform&& other) noexcept
         m_initialized = std::exchange(other.m_initialized, false);
         m_input = other.m_input;
         m_toolsInput = other.m_toolsInput;
+        m_trackedWindows = std::move(other.m_trackedWindows);
     }
     return *this;
 }
@@ -561,14 +597,15 @@ void Platform::shutdown() noexcept
 void Platform::setTextInput(const Window& window, bool active)
 {
     DEVEX_ASSERT(m_initialized);
-    if (active == m_textInputActive)
+    SDL_Window* const handle = detail::toSdlWindow(window.m_native);
+    if (handle == nullptr || (active == m_textInputActive && (!active || handle == m_textInputWindow)))
     {
         return;
     }
-    SDL_Window* const handle = detail::toSdlWindow(window.m_native);
-    if (handle == nullptr)
+    // Typing goes to one window at a time.
+    if (active && m_textInputActive && m_textInputWindow != nullptr)
     {
-        return;
+        static_cast<void>(SDL_StopTextInput(static_cast<SDL_Window*>(m_textInputWindow)));
     }
     // SDL shows the input method of the system over the window while typing is on.
     const bool changed = active ? SDL_StartTextInput(handle) : SDL_StopTextInput(handle);
@@ -578,6 +615,7 @@ void Platform::setTextInput(const Window& window, bool active)
         return;
     }
     m_textInputActive = active;
+    m_textInputWindow = active ? handle : nullptr;
 }
 
 bool Platform::isTextInputActive() const noexcept
@@ -628,6 +666,10 @@ core::Result<Window> Platform::createWindow(const WindowConfig& config)
     {
         flags |= SDL_WINDOW_FULLSCREEN;
     }
+    if (config.borderless)
+    {
+        flags |= SDL_WINDOW_BORDERLESS;
+    }
 
     SDL_Window* const window =
         SDL_CreateWindow(config.title.c_str(), static_cast<int>(config.width),
@@ -646,6 +688,10 @@ bool Platform::pollEvents(const EventCallback& callback)
 
     m_input.beginFrame();
     m_toolsInput.beginFrame();
+    for (auto& [window, tracked] : m_trackedWindows)
+    {
+        tracked.input.beginFrame();
+    }
     const InputCapture capture{m_toolsCaptureKeyboard, m_toolsCaptureMouse};
     // The messages of the system first, which bring the state of some gamepads, then the gamepads,
     // in the order SDL keeps when it reads them itself.
@@ -656,6 +702,12 @@ bool Platform::pollEvents(const EventCallback& callback)
     while (SDL_PollEvent(&event))
     {
         any = true;
+        if (const auto tracked = m_trackedWindows.find(WindowId{eventWindow(event)}); tracked != m_trackedWindows.end())
+        {
+            recordToolsInput(event, tracked->second.input);
+            tracked->second.closeRequested = tracked->second.closeRequested || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+            continue;
+        }
         recordToolsInput(event, m_toolsInput);
         dispatchEvent(event, m_input, capture, callback);
     }
@@ -724,6 +776,27 @@ void Platform::setToolsInputCapture(bool keyboard, bool mouse) noexcept
 const Input& Platform::input() const noexcept
 {
     return m_input;
+}
+
+void Platform::trackWindowInput(WindowId window)
+{
+    m_trackedWindows.try_emplace(window);
+}
+
+void Platform::untrackWindowInput(WindowId window)
+{
+    m_trackedWindows.erase(window);
+}
+
+const Input& Platform::windowInput(WindowId window) const
+{
+    return m_trackedWindows.at(window).input;
+}
+
+bool Platform::takeWindowCloseRequest(WindowId window)
+{
+    const auto tracked = m_trackedWindows.find(window);
+    return tracked != m_trackedWindows.end() && std::exchange(tracked->second.closeRequested, false);
 }
 
 const Input& Platform::toolsInput() const noexcept

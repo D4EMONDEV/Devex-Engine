@@ -280,6 +280,15 @@ Section& FormUi::card(EditorUiKit& kit, std::string name, std::optional<EntityIc
     return section;
 }
 
+void FormUi::makePlain(Section& section)
+{
+    section.plain = true;
+    scene().get<scene::UiFoldout>(section.header).arrowColor = math::Vec4{0.0f};
+    scene().get<UiRect>(section.title).offsetMin.x = font * 0.35f;
+    scene().get<UiRect>(section.card).style = "transparent";
+    scene().get<UiRect>(section.header).style = "transparent";
+}
+
 FormRow FormUi::formRow(Section& section, std::string label, float height)
 {
     FormRow made;
@@ -572,7 +581,7 @@ void FormUi::layoutCards()
         {
             continue;
         }
-        const bool open = !section.locked && (revealFiltered || !folded.contains(section.name));
+        const bool open = section.plain || (!section.locked && (revealFiltered || !folded.contains(section.name)));
         if (section.type != nullptr || centerSectionTitles)
         {
             // Component categories center their icon and title together, while the disclosure
@@ -593,8 +602,10 @@ void FormUi::layoutCards()
         }
         scene().get<scene::UiFoldout>(section.header).expanded = open;
         scene().get<scene::UiFoldout>(section.header).interactable =
-            !section.locked && !revealFiltered;
-        float height = headerHeight;
+            !section.plain && !section.locked && !revealFiltered;
+        const bool titled = !section.plain || !section.name.empty();
+        scene().get<UiRect>(section.header).visible = titled;
+        float height = titled ? headerHeight : -gap;
         for (const Line& entry : section.lines)
         {
             const bool groupOpen = revealFiltered || entry.group < 0 ||

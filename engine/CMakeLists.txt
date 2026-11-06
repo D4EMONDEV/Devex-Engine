@@ -965,6 +965,7 @@ target_sources(devex_tools
         src/tools/EditorDialogs.cpp
         src/tools/ExportWindow.cpp
         src/tools/FormUi.cpp
+        src/tools/NativeWindow.cpp
         src/tools/FormUi.hpp
         src/tools/Gizmo.cpp
         src/tools/Gizmo.hpp

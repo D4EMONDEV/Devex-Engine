@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -95,6 +96,13 @@ public:
     // Everything the devices did this frame, whatever the tools keep from the game: what the tools
     // of the editor read, the game reading input().
     [[nodiscard]] const Input& toolsInput() const noexcept;
+    // Gives a window other than the main one devices of its own: what happens over it reaches neither
+    // input() nor toolsInput(), nor the callback of pollEvents, only windowInput().
+    void trackWindowInput(WindowId window);
+    void untrackWindowInput(WindowId window);
+    [[nodiscard]] const Input& windowInput(WindowId window) const;
+    // Whether someone asked to close a tracked window since the last call.
+    [[nodiscard]] bool takeWindowCloseRequest(WindowId window);
 
     // The system, the processor and memory, the displays and the drivers in use, in words, for a bug report.
     [[nodiscard]] std::string describeMachine() const;
@@ -156,11 +164,19 @@ private:
 
     bool m_initialized = false;
     bool m_textInputActive = false;
+    // The window that takes what is typed, while it is on.
+    void* m_textInputWindow = nullptr;
     bool m_toolsCaptureKeyboard = false;
     bool m_toolsCaptureMouse = false;
     Cursor m_cursor = Cursor::Arrow;
     Input m_input;
     Input m_toolsInput;
+    struct TrackedWindow
+    {
+        Input input;
+        bool closeRequested = false;
+    };
+    std::map<WindowId, TrackedWindow> m_trackedWindows;
 };
 
 // Sleeps for the given duration with sub-millisecond precision.

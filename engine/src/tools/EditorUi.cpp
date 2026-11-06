@@ -1,4 +1,5 @@
 #include "EditorUi.hpp"
+#include "NativeWindow.hpp"
 
 #include <devex/asset/TextureData.hpp>
 #include <devex/asset/import/Importer.hpp>
@@ -108,6 +109,21 @@ void EditorUiKit::showTooltip(std::string text, math::Vec2 at, asset::AssetId im
     m_tooltip = Tooltip{.text = std::move(text), .at = at, .image = image};
 }
 
+void EditorUiKit::setNativeHost(NativeFormWindow* window) noexcept
+{
+    m_nativeHost = window;
+}
+
+NativeFormWindow* EditorUiKit::nativeHost() const noexcept
+{
+    return m_nativeHost;
+}
+
+NativeFormWindow* EditorUiKit::textInputWindow() const noexcept
+{
+    return m_textInputWindow;
+}
+
 void EditorUiKit::setFrame(EditorHosts& hosts, const EditorInput& input, platform::Platform& platform) noexcept
 {
     m_hosts = &hosts;
@@ -154,6 +170,7 @@ void EditorUiKit::forgetCarried() noexcept
 void EditorUiKit::requestTextInput(math::Vec2 min, math::Vec2 max) noexcept
 {
     m_textInput = std::pair{min, max};
+    m_textInputWindow = m_nativeHost;
 }
 
 std::optional<std::pair<math::Vec2, math::Vec2>> EditorUiKit::takeTextInput() noexcept
@@ -517,6 +534,7 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
         clickable(image(written(math::Vec4(colors.panel.x, colors.panel.y, colors.panel.z, 0.0f)),
                         0.0f)));
     add("group_separator", image(written(math::Vec4(mono.x, mono.y, mono.z, 0.12f)), 0.0f));
+    add("transparent", image(written(math::Vec4(0.0f, 0.0f, 0.0f, 0.0f)), 0.0f));
     add("label", text(mixed(colors.text, colors.textDim, 0.2f)));
     add("number", [&] {
         std::vector<asset::ThemeOverride> values = clickable(image(written(colors.field), 4.0f));
@@ -662,22 +680,33 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
     DEVEX_PROFILE_SCOPE("Panel update");
     EditorHosts& hosts = kit.hosts();
     const EditorInput& devices = kit.input();
-    const float pixelsPerPoint = editorScreen().pixelsPerPoint;
-    const math::Vec2 room = hosts.available();
+    NativeFormWindow* const native = kit.nativeHost();
+    const float pixelsPerPoint = native != nullptr ? native->pixelsPerPoint() : editorScreen().pixelsPerPoint;
+    const math::Vec2 room = native != nullptr ? native->sizeInPoints() : hosts.available();
     const math::Vec2 available(std::max(room.x, 1.0f), std::max(height > 0.0f ? height : room.y, 1.0f));
     // A panel's texels must land on framebuffer pixels without a second, fractional resampling.
-    const PanelImagePlacement placement = placePanelImage(hosts.cursor(), available, math::Vec2(0.0f, 0.0f), pixelsPerPoint);
+    const PanelImagePlacement placement = placePanelImage(native != nullptr ? math::Vec2(0.0f) : hosts.cursor(), available, math::Vec2(0.0f, 0.0f), pixelsPerPoint);
     const math::Vec2 origin = placement.origin;
     m_origin = origin;
     m_pixelsPerPoint = pixelsPerPoint;
     m_zoom = std::max(zoom, 0.1f);
     m_pixels = placement.pixels;
-    hosts.setCursor(origin);
-    hosts.image(HostImage{.source = render::UiSource::Surface, .surface = m_surface}, placement.size);
+    if (native != nullptr)
+    {
+        // The window is all there is: what stands past the edges has nowhere to go.
+        native->surface = m_surface;
+        setPopupsOutside(false);
+        setTooltipsOutside(false);
+    }
+    else
+    {
+        hosts.setCursor(origin);
+        hosts.image(HostImage{.source = render::UiSource::Surface, .surface = m_surface}, placement.size);
+    }
     // Its image, or what stood past its edges at the last frame.
     const bool overOpen = m_over.has_value();
-    m_hovered = hosts.itemHovered() || (overOpen && hosts.hoveredId() == m_overHost);
-    m_focused = hosts.focused();
+    m_hovered = native != nullptr ? native->window.hasMouseFocus() : hosts.itemHovered() || (overOpen && hosts.hoveredId() == m_overHost);
+    m_focused = native != nullptr ? native->window.hasKeyboardFocus() : hosts.focused();
     if (!m_connected)
     {
         m_world.setFonts(kit.fonts(), EditorUiKit::regularFont());

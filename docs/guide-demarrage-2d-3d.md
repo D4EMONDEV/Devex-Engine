@@ -703,7 +703,7 @@ Un trigger détecte les passages sans bloquer le joueur. Laisser le collider du 
 
 ### Scène de départ et objets réutilisables
 
-Enregistrer la scène voulue puis choisir **Project > Set Scene as Startup**. Vérifier aussi **Project Settings > Application > Startup Scene**. Le projet peut contenir plusieurs scènes ; l'export et Run doivent savoir laquelle démarrer.
+Enregistrer la scène voulue puis choisir **Project > Set Scene as Startup**. Vérifier aussi **Project Settings > Application > Run > Startup Scene**. Le projet peut contenir plusieurs scènes ; l'export et Run doivent savoir laquelle démarrer.
 
 Pour réutiliser un joueur, conserver sa hiérarchie et ses composants dans une scène dédiée, puis l'instancier comme prefab dans les niveaux. Devex utilise des scènes `.dvxscene` pour ces objets réutilisables. Une caméra de suivi placée dans chaque niveau doit alors cibler **l'instance** du joueur de ce niveau.
 
@@ -741,14 +741,14 @@ coupe en plus les actions du joueur.
 1. Arrêter Play et sauvegarder les scènes.
 2. Compiler le code ; résoudre les erreurs avant d'exporter.
 3. Définir la bonne scène de démarrage.
-4. Ouvrir **Project > Export Game…**. Sa liste **Platform** propose Windows, Linux et Android. Depuis Windows, un jeu pour Linux sort en `.tar.gz`, à extraire sous Linux ; depuis Linux, un jeu pour Windows sort en dossier. Le premier export d'un jeu en C# télécharge .NET pour ce système. Le code C++ ne se compile que sur le système où il tourne : le module d'un nouveau projet, qui n'enregistre rien, est laissé de côté, et un jeu dont le C++ fait quelque chose s'exporte depuis l'éditeur de ce système. **Terminal** ouvre, pour un jeu Windows, un terminal avec le jeu pour voir son journal, qui reste dans un fichier de toute façon. Android demande le moteur
+4. Ouvrir **Project > Export Game…**. Sa liste de gauche propose Windows, Linux et Android, chacune avec ses réglages dans l'onglet **Options**. Les problèmes qui empêchent d'exporter s'écrivent en rouge en bas, et **Export All** exporte pour chaque plateforme qui a ce qu'il lui faut, l'une après l'autre. Depuis Windows, un jeu pour Linux sort en `.tar.gz`, à extraire sous Linux ; depuis Linux, un jeu pour Windows sort en dossier. Le premier export d'un jeu en C# télécharge .NET pour ce système. Le code C++ ne se compile que sur le système où il tourne : le module d'un nouveau projet, qui n'enregistre rien, est laissé de côté, et un jeu dont le C++ fait quelque chose s'exporte depuis l'éditeur de ce système. **Terminal** ouvre, pour un jeu Windows, un terminal avec le jeu pour voir son journal, qui reste dans un fichier de toute façon. Android demande le moteur
    construit pour Android à côté de l'éditeur (voir le README) : nom de paquet, version, orientation,
    téléphones ou émulateur, APK ou AAB, clé de publication, et installation sur l'appareil branché. Le
    C# n'y tourne pas encore.
-5. Choisir un dossier de sortie dédié, par exemple `export/windows` (`export/linux` sous Linux, le dossier proposé).
+5. Dans **Export Path**, choisir un dossier de sortie dédié, par exemple `export/windows` (`export/linux` sous Linux, le dossier proposé).
 6. Choisir **Release** pour distribuer le jeu. Devex doit disposer d'un build Release du moteur ; consulter le README pour le produire si seul le build Debug existe.
-7. Inclure les autres scènes utilisées par le jeu. Pour les assets chargés uniquement par chemin à l'exécution, utiliser les dossiers à inclure afin de ne pas dépendre seulement des références directes.
-8. Lancer l'export et consulter son résultat dans la fenêtre et Output.
+7. Dans l'onglet **Resources**, inclure les autres scènes utilisées par le jeu. Pour les assets chargés uniquement par chemin à l'exécution, utiliser les dossiers à inclure afin de ne pas dépendre seulement des références directes.
+8. Lancer l'export avec **Export Project** et consulter son résultat dans la fenêtre et Output.
 9. Tester l'exécutable produit, nommé d'après le projet, **depuis le dossier exporté**.
 
 Partager tout le dossier exporté : l'exécutable dépend du paquet d'assets et des bibliothèques livrées à côté. Un jeu C# exporté emporte son runtime .NET ; le joueur n'a pas besoin du SDK utilisé pour développer. Un export Debug est réservé au développement et demande les dépendances de debug appropriées.
@@ -999,9 +999,10 @@ réglages de largeur et de couleur des gizmos.
 ## 13. Soigner les réglages et utiliser Globals
 
 **Project Settings** sépare les réglages généraux, **Input Map**, **Localization** et **Globals**
-en onglets. **General** conserve les catégories à gauche : Application, Window, Physics, Collision
-Layers, Sorting Layers et Audio. La fenêtre est plus large et s'adapte aux petits écrans.
-**Editor Settings** reprend la navigation avec icônes, la recherche et le bouton **Close** en bas.
+en onglets. **General** montre à gauche un arbre comme celui de Godot : Application (Config, Run),
+Display (Window), Physics, Audio et Layer Names (Collision, Sorting). Ces fenêtres sont de vraies
+fenêtres du système, et l'éditeur attend qu'elles se ferment.
+**Editor Settings** reprend le même arbre, la recherche et le bouton **Close** en bas.
 Les champs et les commandes de suppression ont des zones de clic plus grandes.
 
 **Filter Settings** cherche par mots dans toutes les catégories et révèle temporairement les
