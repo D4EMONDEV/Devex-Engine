@@ -40,6 +40,10 @@ struct DEVEX_API PlaySession
 };
 [[nodiscard]] DEVEX_API core::Result<PlaySession> readPlaySession(const std::filesystem::path& directory);
 
+// The scene Play starts, by its resource path: the startup scene of the project when it has one, whatever the
+// editor shows, and otherwise the scene being edited, which is empty when that scene was never saved.
+[[nodiscard]] DEVEX_API std::string scenePlayStarts(const asset::Project& project, std::string edited);
+
 // The part of an area one game of several has: two side by side, three or four in a grid.
 [[nodiscard]] DEVEX_API platform::ScreenArea playWindowArea(const platform::ScreenArea& area, std::uint32_t index, std::uint32_t count);
 

@@ -2870,6 +2870,29 @@ TEST_CASE("2D lights shine on sprites over the tint of the canvas, through norma
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("The swapchain follows the way the window takes the screen", "[render][gpu][settings]")
+{
+    const ErrorCapture capture;
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer);
+    using devex::platform::WindowMode;
+    for (const WindowMode mode : {WindowMode::Windowed, WindowMode::Fullscreen, WindowMode::Borderless, WindowMode::Fullscreen, WindowMode::Windowed})
+    {
+        window->setMode(mode);
+        static_cast<void>(renderer->beginFrame());
+        REQUIRE(renderer->endFrame());
+    }
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("The present mode changes while the renderer runs", "[render][gpu][settings]")
 {
     auto platform = devex::platform::Platform::create();

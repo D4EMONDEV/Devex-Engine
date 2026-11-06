@@ -41,6 +41,7 @@ sert à faire de vrais petits jeux et à trouver ce qui manque avant la 1.0.
 
 - `Time.Scale` en C# et `Application::setTimeScale` en C++ : 0 met le jeu en pause et l'interface continue de répondre, entre 0 et 1 il ralentit.
 - `Entity.TryGet` marche aussi sur les composants écrits en C#.
+- `Input.MouseMode` en C# et `Window::setMouseMode` en C++ : visible, caché, capturé, ou confiné dans la fenêtre.
 - Pour un écran d'options en C# : `PlayerSettings.WindowMode` (fenêtré, sans bords, plein écran), `MaxFrameRate` et `SetWindowSize`, `Screen.FrameRate` et `UsableSize`, et `PlayerSettings.VSync` qui s'applique tout de suite. Avec la synchro verticale, l'écran décide du rythme.
 - Les personnages 2D et 3D suivent ce qui bouge sous leurs pieds, même un collider déplacé par un script, et en 2D une plateforme à sens unique qui monte.
 
@@ -50,10 +51,16 @@ sert à faire de vrais petits jeux et à trouver ce qui manque avant la 1.0.
 - Un écran caché au-dessus d'un menu lui prenait le clavier.
 - Une palette de grille d'une seule pièce avec un enfant faisait disparaître le sol sans un mot.
 - Un projet ouvert pour la première fois démarre sur sa scène de démarrage.
+- Quand le code de jeu ne compile pas, l'Output montre tout ce que dit CMake, et une erreur du compilateur passe avant le nom de l'étape qui a échoué.
+
+**Changé dans l'éditeur**
+
+- Play lance la Startup Scene de **Project Settings** quand elle est définie, même si une autre scène est ouverte, et la scène courante sinon.
 
 **Limites connues**
 
 - Testé surtout sur un GPU de bureau NVIDIA. Les GPU intégrés, AMD et Intel restent à essayer.
 - Le multijoueur se limite au réseau local et aux adresses IP : pas de serveurs relais.
 - L'export Android reste un aperçu, sans C#.
+- Sous Windows, le code C++ d'un jeu demande un chemin de projet d'environ 130 caractères au plus. Au-delà, l'éditeur le dit et demande de rapprocher le projet de la racine du disque.
 - La documentation est en français.

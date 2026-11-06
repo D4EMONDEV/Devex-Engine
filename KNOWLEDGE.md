@@ -878,7 +878,9 @@ public static unsafe class Input
     public static Vec2 MouseDelta { get; }
     // Where the mouse is in the window, in pixels.
     public static Vec2 MousePosition { get; }
-    // A captured mouse is hidden and reports unbounded motion, as a first-person camera needs.
+    // What the mouse does over the window: Visible, Hidden, Captured, Confined or ConfinedHidden.
+    public static MouseMode MouseMode { get; set; }
+    // A captured mouse is hidden and reports unbounded motion, as a first-person camera needs. Off, the cursor shows.
     public static bool MouseCaptured { get; set; }
     // A button held down; an axis or a vector pushed at least halfway.
     public static bool IsActionDown(string action);
@@ -2163,6 +2165,10 @@ namespace devex::ui {
   `GeneratedMesh` sur chaque racine, appelé avant la physique et l'extraction), `AssetManager::addGeneratedMesh`. Guide `docs/level-design.md`.
 - Chemins : `scene/PathComponents.hpp` (`Path3D`, `PathFollower`, `PathCurve`), `runtime/PathFollowers.hpp`, `Paths` en C#,
   l'outil dans la vue `tools/PathEditor.cpp`. Guide `docs/level-design.md`, plan dans `docs/decisions.md`.
+- Échec du code de jeu : `GameCodeBuilder::readBuildLine` garde la suite indentée des messages de CMake, et `finishBuild` dit qu'un projet est trop profond quand CMake a prévenu (`CMAKE_OBJECT_PATH_MAX`) et que le compilateur a échoué au test de CMake.
+- Écran exclusif : `SwapchainConfig::exclusiveDisplay`, lu dans `Window::mode` par `VulkanRenderer`. Seul `WindowMode::Fullscreen` l'autorise, avec `VK_EXT_full_screen_exclusive` sous Windows.
+- Souris : `platform::MouseMode`, `Window::setMouseMode`, `Input.MouseMode` en C#. Arrêter le jeu dans l'éditeur remet `Visible`.
+- Ce que lance Play : `detail::scenePlayStarts` (`runtime/EditorPlay`) et `ApplicationRunner::sceneToPlay`, avec `ToolsOverlay::backgroundScene` pour une scène ouverte dans un autre onglet.
 - Réglages du joueur : `runtime/PlayerSettings` (`windowMode`, `maxFrameRate`, `windowSize`), appliqués par `ApplicationRunner::applyPlayerSettings`, `platform::WindowMode` et `Window::setMode`,
   `Renderer::setPresentMode`, `Application::setTimeScale` et `framesPerSecond` ; en C#, `PlayerSettings`, `Time.Scale` et `Screen.FrameRate`. Guide : section *Options du joueur* de `docs/guide-demarrage-2d-3d.md`.
 - Personnage porté : `Physics2DWorld::moveCharacters` retient le point du sol sous les pieds (`CharacterRecord::groundBody`, `groundAnchor`, `groundPoint`) et y va avant le reste du mouvement. En 3D, Jolt suit la vitesse du sol, et le même point sert pour les corps statiques déplacés par le code.
@@ -3663,7 +3669,9 @@ public static unsafe class Input
     public static Vec2 MouseDelta { get; }
     // Where the mouse is in the window, in pixels.
     public static Vec2 MousePosition { get; }
-    // A captured mouse is hidden and reports unbounded motion, as a first-person camera needs.
+    // What the mouse does over the window: Visible, Hidden, Captured, Confined or ConfinedHidden.
+    public static MouseMode MouseMode { get; set; }
+    // A captured mouse is hidden and reports unbounded motion, as a first-person camera needs. Off, the cursor shows.
     public static bool MouseCaptured { get; set; }
     // A button held down; an axis or a vector pushed at least halfway.
     public static bool IsActionDown(string action);

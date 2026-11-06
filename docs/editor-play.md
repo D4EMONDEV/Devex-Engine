@@ -1,11 +1,12 @@
 # Tester son jeu dans une fenêtre séparée
 
-Par défaut, **Play (F5)** lance la scène courante dans `devex-player`, dans un **processus séparé**
+**Play (F5)** lance la **Startup Scene** de **Project Settings** quand elle est définie, même si une autre scène est
+ouverte, et la scène courante sinon. Par défaut, il la lance dans `devex-player`, dans un **processus séparé**
 avec sa propre fenêtre. La simulation C++/C#, la physique, l'audio et le rendu du jeu s'exécutent
 dans ce processus. L'éditeur reste disponible pour travailler sur ses scènes et ses scripts.
 Un plantage ou un blocage de cette partie ne détruit pas la scène éditée.
 
-Le lancement utilise une copie temporaire de la scène courante, **modifications non enregistrées
+Le lancement utilise une copie temporaire de cette scène, **modifications non enregistrées
 comprises**. Il n'enregistre pas ces modifications dans le fichier de scène et ne remplace pas
 la scène de démarrage du projet. Une scène qui n'a pas encore de fichier peut donc être testée.
 Ses ressources doivent avoir fini d'être importées, et son code doit avoir une compilation valide.

@@ -176,7 +176,8 @@ core::Result<std::unique_ptr<VulkanRenderer>> VulkanRenderer::create(
     Surface surface(instance->handle(), std::bit_cast<VkSurfaceKHR>(*surfaceHandle));
 
     core::Result<Device> device =
-        Device::create(instance->handle(), surface.handle(), config.preferredGpu);
+        Device::create(instance->handle(), surface.handle(), config.preferredGpu,
+                       instance->canChooseExclusiveDisplay());
     if (!device)
     {
         return std::unexpected(device.error());
@@ -937,7 +938,8 @@ core::Result<void> VulkanRenderer::endFrame()
         }
     }
 
-    if (!m_swapchain || m_swapchainOutdated || windowPixelSize != m_swapchainWindowPixelSize)
+    if (!m_swapchain || m_swapchainOutdated || windowPixelSize != m_swapchainWindowPixelSize ||
+        (m_window.mode() == platform::WindowMode::Fullscreen) != m_swapchainExclusive)
     {
         if (core::Result<void> recreated = recreateSwapchain(windowPixelSize); !recreated)
         {
@@ -2421,11 +2423,13 @@ core::Result<void> VulkanRenderer::recreateSwapchain(math::Extent2D windowPixelS
     const VkDevice device = m_device.handle();
     DEVEX_VK_TRY(vkDeviceWaitIdle, device);
 
+    m_swapchainExclusive = m_window.mode() == platform::WindowMode::Fullscreen;
     core::Result<Swapchain> swapchain =
         Swapchain::create(m_device, m_surface.handle(),
                           {
                               .windowPixelSize = windowPixelSize,
                               .presentMode = m_requestedPresentMode,
+                              .exclusiveDisplay = m_swapchainExclusive,
                               .previous = m_swapchain ? m_swapchain->handle() : VK_NULL_HANDLE,
                           });
     if (!swapchain)
@@ -2467,9 +2471,12 @@ core::Result<void> VulkanRenderer::recreateSwapchain(math::Extent2D windowPixelS
     const math::Extent2D extent = m_swapchain->extent();
     if (isFirstSwapchain)
     {
-        DEVEX_LOG_INFO("Swapchain {}x{} with {} images, {} presentation", extent.width,
+        DEVEX_LOG_INFO("Swapchain {}x{} with {} images, {} presentation, {}", extent.width,
                        extent.height, m_swapchain->imageCount(),
-                       toString(m_swapchain->presentMode()));
+                       toString(m_swapchain->presentMode()),
+                       !m_device.supportsExclusiveDisplayChoice() ? "the driver decides who has the display"
+                       : m_swapchainExclusive                     ? "the display to itself"
+                                                                  : "the display shared");
         if (m_swapchain->presentMode() != m_requestedPresentMode)
         {
             DEVEX_LOG_WARNING("The display does not support {} presentation, using FIFO",

@@ -15,6 +15,9 @@ struct SwapchainConfig
 {
     math::Extent2D windowPixelSize;
     PresentMode presentMode = PresentMode::Fifo;
+    // Whether the driver may give it the display to itself. Otherwise the display stays shared, even when
+    // the window covers all of it, and leaving the window does not make the screen flicker.
+    bool exclusiveDisplay = false;
     // Swapchain being replaced, which lets the driver reuse its resources.
     VkSwapchainKHR previous = VK_NULL_HANDLE;
 };

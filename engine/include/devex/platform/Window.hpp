@@ -45,6 +45,21 @@ struct DEVEX_API ScreenArea
 
 // An operating system window, created by Platform::createWindow. It must be destroyed before the
 // Platform that created it.
+// What the mouse does over a window.
+enum class MouseMode : std::uint8_t
+{
+    // The cursor shows and goes where it wants.
+    Visible,
+    // No cursor over the window, as in a game played with the keyboard. The mouse still moves and clicks.
+    Hidden,
+    // No cursor, and motion without bounds, as first-person cameras need.
+    Captured,
+    // The cursor shows and stays inside the window.
+    Confined,
+    // No cursor, and the mouse stays inside the window.
+    ConfinedHidden,
+};
+
 class DEVEX_API Window
 {
 public:
@@ -90,7 +105,9 @@ public:
     // The icon of the window and its taskbar button, from 8-bit RGBA pixels.
     void setIcon(std::span<const std::uint8_t> rgba, std::uint32_t width, std::uint32_t height);
 
-    // A captured mouse is hidden and reports unbounded motion, as needed by first-person cameras.
+    void setMouseMode(MouseMode mode);
+    [[nodiscard]] MouseMode mouseMode() const noexcept;
+    // Captured, or the cursor as it normally is.
     void setMouseCaptured(bool captured);
     [[nodiscard]] bool isMouseCaptured() const noexcept;
 

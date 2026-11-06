@@ -315,6 +315,13 @@ private:
     void loadRequestedScene();
     void render(bool gameplay);
     void handleEditorRequests(tools::EditorRequests requests);
+    // What Play starts, as the editor holds it: unsaved changes are part of it.
+    struct SceneToPlay
+    {
+        scene::Scene scene;
+        asset::AssetId asset;
+    };
+    [[nodiscard]] core::Result<SceneToPlay> sceneToPlay();
     void startPlaying();
     void startExternalPlay(bool waitForDebugger);
     void updatePlayerControl();
@@ -1054,9 +1061,9 @@ void ApplicationRunner::handleEvent(const platform::Event& event)
         const bool visible = !m_services.tools->isVisible();
         m_services.tools->setVisible(visible);
         // The panels need the cursor.
-        if (visible && m_services.window.isMouseCaptured())
+        if (visible)
         {
-            m_services.window.setMouseCaptured(false);
+            m_services.window.setMouseMode(platform::MouseMode::Visible);
         }
     }
 
@@ -1546,6 +1553,38 @@ void ApplicationRunner::updateDebugger()
     });
 }
 
+core::Result<ApplicationRunner::SceneToPlay> ApplicationRunner::sceneToPlay()
+{
+    const asset::Project& project = m_services.database->project();
+    const std::string edited = project.resourcePath(m_services.tools->scenePath());
+    const std::string path = detail::scenePlayStarts(project, edited);
+    const std::optional<asset::AssetId> sceneAsset = path.empty() ? std::nullopt : m_services.database->findByPath(path);
+    DEVEX_LOG_INFO("Play starts {}", path.empty() ? std::string_view("the unsaved scene") : std::string_view(path));
+    if (path == edited)
+    {
+        return SceneToPlay{.scene = m_services.scene.clone(), .asset = sceneAsset.value_or(asset::AssetId{})};
+    }
+    // A tab in the background may be newer than the file.
+    if (const std::optional<std::filesystem::path> file = project.absolutePath(path))
+    {
+        if (const scene::Scene* const open = m_services.tools->backgroundScene(*file))
+        {
+            return SceneToPlay{.scene = open->clone(), .asset = sceneAsset.value_or(asset::AssetId{})};
+        }
+    }
+    if (!sceneAsset)
+    {
+        return core::makeError(core::ErrorCode::NotFound,
+                               "the startup scene {} does not exist: choose another one in Project Settings", path);
+    }
+    core::Result<scene::Scene> read = readScene(*sceneAsset);
+    if (!read)
+    {
+        return std::unexpected(read.error());
+    }
+    return SceneToPlay{.scene = std::move(*read), .asset = *sceneAsset};
+}
+
 void ApplicationRunner::startPlaying()
 {
     const tools::GameCodeStatus status = gameCodeStatus();
@@ -1554,7 +1593,13 @@ void ApplicationRunner::startPlaying()
         DEVEX_LOG_WARNING("Cannot play yet: {}", status.message);
         return;
     }
-    m_playScene.emplace(m_services.scene.clone());
+    core::Result<SceneToPlay> played = sceneToPlay();
+    if (!played)
+    {
+        DEVEX_LOG_ERROR("Cannot play: {}", played.error());
+        return;
+    }
+    m_playScene.emplace(std::move(played->scene));
     m_application.m_scene = &*m_playScene;
     if (auto globals = startGlobalScenes(*m_application.m_scene); !globals)
     {
@@ -1574,11 +1619,7 @@ void ApplicationRunner::startPlaying()
     createAnimation();
     createUi();
     createInput();
-    if (m_services.database != nullptr)
-    {
-        const std::string edited = m_services.database->project().resourcePath(m_services.tools->scenePath());
-        m_sceneAsset = edited.empty() ? asset::AssetId{} : m_services.database->findByPath(edited).value_or(asset::AssetId{});
-    }
+    m_sceneAsset = played->asset;
     createGameData();
     chooseLanguage();
     DEVEX_LOG_INFO("Playing");
@@ -1608,16 +1649,18 @@ void ApplicationRunner::startExternalPlay(bool waitForDebugger)
         return;
     }
     const auto& project = m_services.database->project();
-    const auto resource = project.resourcePath(m_services.tools->scenePath());
-    const auto source = resource.empty()
-                            ? asset::AssetId{}
-                            : m_services.database->findByPath(resource).value_or(asset::AssetId{});
+    core::Result<SceneToPlay> played = sceneToPlay();
+    if (!played)
+    {
+        DEVEX_LOG_ERROR("Cannot play: {}", played.error());
+        return;
+    }
 #ifdef _WIN32
     const auto player = m_services.platform.baseDirectory() / "devex-player.exe";
 #else
     const auto player = m_services.platform.baseDirectory() / "devex-player";
 #endif
-    if (auto started = m_externalPlay.start(project, m_services.scene, source, player, waitForDebugger, m_services.tools->playInstances(),
+    if (auto started = m_externalPlay.start(project, played->scene, played->asset, player, waitForDebugger, m_services.tools->playInstances(),
                                             m_services.tools->connectPlayInstances(), m_services.window.usableArea());
         !started)
         DEVEX_LOG_ERROR("Cannot start the game process: {}", started.error());
@@ -1689,10 +1732,7 @@ void ApplicationRunner::stopPlaying()
     m_stepRequested = false;
     // The editor previews its own language again.
     m_previewedLanguage.reset();
-    if (m_services.window.isMouseCaptured())
-    {
-        m_services.window.setMouseCaptured(false);
-    }
+    m_services.window.setMouseMode(platform::MouseMode::Visible);
     DEVEX_LOG_INFO("Stopped playing");
 }
 
@@ -1780,10 +1820,7 @@ void ApplicationRunner::abandonPlay()
     m_playState = tools::PlayState::Editing;
     m_stepRequested = false;
     m_previewedLanguage.reset();
-    if (m_services.window.isMouseCaptured())
-    {
-        m_services.window.setMouseCaptured(false);
-    }
+    m_services.window.setMouseMode(platform::MouseMode::Visible);
 }
 
 void ApplicationRunner::closeProject()

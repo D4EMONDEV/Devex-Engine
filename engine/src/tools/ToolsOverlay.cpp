@@ -932,6 +932,25 @@ void ToolsOverlay::forEachBackgroundScene(const std::function<void(scene::Scene&
     m_state->tabs.forEachBackgroundScene(function);
 }
 
+const scene::Scene* ToolsOverlay::backgroundScene(const std::filesystem::path& path) const
+{
+    detail::SceneTabs& tabs = m_state->tabs;
+    std::error_code error;
+    for (std::size_t index = 0; index < tabs.size(); ++index)
+    {
+        if (index == tabs.active())
+        {
+            continue;
+        }
+        detail::SceneDocument& document = tabs.background(index);
+        if (document.path == path || (!document.path.empty() && std::filesystem::equivalent(document.path, path, error)))
+        {
+            return &document.scene;
+        }
+    }
+    return nullptr;
+}
+
 void ToolsOverlay::setAssetDatabase(asset::AssetDatabase* database) noexcept
 {
     ToolsState& state = *m_state;

@@ -388,6 +388,8 @@ public:
     // Editor only: calls the function with the scenes of the tabs in the background, which live in
     // the editor rather than in the application.
     void forEachBackgroundScene(const std::function<void(scene::Scene&)>& function);
+    // Editor only: the scene of the tab in the background that shows this file, null without one.
+    [[nodiscard]] const scene::Scene* backgroundScene(const std::filesystem::path& path) const;
 
     // Lists the project assets in the panels; null when there is no project. The database must
     // outlive the overlay or be replaced first. In the editor, a new project opens its last scene

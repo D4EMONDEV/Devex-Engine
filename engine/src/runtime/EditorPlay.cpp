@@ -59,6 +59,11 @@ platform::ScreenArea playWindowArea(const platform::ScreenArea& area, std::uint3
     return {.x = area.x + static_cast<int>((place % 2) * width), .y = area.y + static_cast<int>((place / 2) * height), .width = width, .height = height};
 }
 
+std::string scenePlayStarts(const asset::Project& project, std::string edited)
+{
+    return project.startupScene.empty() ? std::move(edited) : project.startupScene;
+}
+
 core::Result<void> PlayProcess::start(const asset::Project& project, const scene::Scene& scene,
                                       asset::AssetId source, const std::filesystem::path& player,
                                       bool waitForDebugger)

@@ -68,7 +68,14 @@ add_custom_target(Game ALL
         REQUIRE(devex::core::writeTextFile(project.codeDirectory() / "Build.cmake", R"(
 file(READ "${CMAKE_CURRENT_LIST_DIR}/mode.txt" mode)
 file(APPEND "${CMAKE_CURRENT_LIST_DIR}/attempts.txt" "${BUILD_DIRECTORY}\n")
+set(path_warning "The object file directory\n\n    somewhere\n\n  has 241 characters.  The maximum full path to an object file is 250\n  characters (see CMAKE_OBJECT_PATH_MAX).")
 if(mode STREQUAL "fail")
+    message(FATAL_ERROR "controlled game build failure")
+elseif(mode STREQUAL "too-deep")
+    message(WARNING "${path_warning}")
+    message(FATAL_ERROR "The C++ compiler\n\n    cl.exe\n\n  is not able to compile a simple test program.")
+elseif(mode STREQUAL "long-and-broken")
+    message(WARNING "${path_warning}")
     message(FATAL_ERROR "controlled game build failure")
 elseif(mode STREQUAL "missing")
     return()
@@ -545,6 +552,59 @@ TEST_CASE("Failed engine updates preserve the last working game build", "[runtim
     CHECK(GameCodeBuilder::buildStatus(fixture.project, fixture.engineConfig, "Debug").needsUpdate);
     const GameCodeBuilder reopened(fixture.project, fixture.engineConfig, "Debug");
     CHECK(reopened.pending());
+}
+
+TEST_CASE("A failed build tells why, and a project too deep says so", "[runtime][game][build]")
+{
+    const TemporaryGameProject fixture;
+    fixture.createBuildFixture();
+    std::string_view mode;
+    bool tooDeep = false;
+    SECTION("What CMake says after the first line of its message is the reason")
+    {
+        mode = "fail";
+    }
+    SECTION("CMake warns about the path, and the compiler gives up")
+    {
+        mode = "too-deep";
+        tooDeep = true;
+    }
+    SECTION("CMake warns about the path, and something else fails")
+    {
+        mode = "long-and-broken";
+    }
+    fixture.setBuildMode(mode);
+
+    GameCodeBuilder builder(fixture.project, fixture.engineConfig, "Debug");
+    CHECK_FALSE(finishBuild(builder));
+    CAPTURE(builder.message());
+    CHECK((builder.message().find("too deep") != std::string::npos) == tooDeep);
+    CHECK((builder.message().find("closer to the root") != std::string::npos) == tooDeep);
+    if (!tooDeep)
+    {
+        CHECK(builder.message().find("controlled game build failure") != std::string::npos);
+    }
+}
+
+TEST_CASE("Fresh build folders are short, and those of older versions still count", "[runtime][game][build]")
+{
+    const TemporaryGameProject fixture;
+    fixture.createBuildFixture();
+    fixture.createLegacyModule();
+    GameCodeBuilder builder(fixture.project, fixture.engineConfig, "Debug");
+    REQUIRE(finishBuild(builder));
+    const auto active = devex::core::readTextFile(fixture.cache() / "active-build.txt");
+    REQUIRE(active);
+    CHECK(active->size() == 8);
+    CHECK(GameCodeBuilder::libraryPath(fixture.project, "Debug").parent_path().parent_path().filename() == *active);
+
+    const std::string older = devex::core::Uuid::generate().toString();
+    REQUIRE(devex::core::writeTextFile(fixture.cache() / "active-build.txt", older));
+    CHECK(GameCodeBuilder::libraryPath(fixture.project, "Debug").parent_path().parent_path().filename() == older);
+
+    // Never a path from the cache of a project.
+    REQUIRE(devex::core::writeTextFile(fixture.cache() / "active-build.txt", "../../.."));
+    CHECK(GameCodeBuilder::libraryPath(fixture.project, "Debug").parent_path().parent_path() == fixture.cache());
 }
 
 TEST_CASE("Debug symbol write failures get only one retry in a fresh build folder", "[runtime][game][build]")

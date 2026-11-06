@@ -702,8 +702,8 @@ void MenuBarUi::sync(ToolsState& state, EditorUiKit& kit)
                                       paused && controllable};
     const std::array<bool, 4> lit{!editing, paused, false, false};
     const std::array<const char*, 4> hints{
-        codeReady ? (state.scripts.playsSeparately() ? "Play the scene in a separate process (F5)"
-                                                     : "Play the scene inside the editor (F5)")
+        codeReady ? (state.scripts.playsSeparately() ? "Play the startup scene, or else this one, in a separate process (F5)"
+                                                     : "Play the startup scene, or else this one, inside the editor (F5)")
                   : "Wait for the game code to build successfully before playing",
         "Pause (F7)", "Stop (F8)", "Step one fixed update (F9)"};
     for (std::size_t index = 0; index < bar.play.size(); ++index)

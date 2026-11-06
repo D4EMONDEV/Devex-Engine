@@ -175,6 +175,13 @@ private:
     std::string m_reason;
     bool m_symbolFailure = false;
     bool m_retriedSymbols = false;
+    // CMake's warning that the build folder leaves too little room for its files, and its verdict on the compiler.
+    bool m_pathTooLong = false;
+    bool m_compilerRefused = false;
+    // Inside a message of CMake, whose first line says where and the next ones, indented, say why.
+    bool m_insideCMakeMessage = false;
+    // That message is the one m_message tells, and it goes on.
+    bool m_messageContinues = false;
     std::vector<Diagnostic> m_diagnostics;
 };
 

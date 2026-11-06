@@ -272,6 +272,8 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<float> FrameRate;
     public delegate* unmanaged<int> SettingsWindowMode;
     public delegate* unmanaged<int, void> SetSettingsWindowMode;
+    public delegate* unmanaged<int> MouseMode;
+    public delegate* unmanaged<int, void> SetMouseMode;
 }
 
 /// <summary>An event an animation passed, as the engine gives it: its name lives until the next frame.</summary>
@@ -308,7 +310,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 37;
+    internal const int Version = 38;
 
     internal static NativeApi Native;
     private static byte[]? _description;

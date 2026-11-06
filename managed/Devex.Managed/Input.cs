@@ -10,6 +10,21 @@ public enum MouseButton
     X2 = 4,
 }
 
+/// <summary>What the mouse does over the window of the game.</summary>
+public enum MouseMode
+{
+    /// <summary>The cursor shows and goes where it wants.</summary>
+    Visible = 0,
+    /// <summary>No cursor over the window, as in a game played with the keyboard. The mouse still moves and clicks.</summary>
+    Hidden = 1,
+    /// <summary>No cursor, and motion without bounds, as a first-person camera needs.</summary>
+    Captured = 2,
+    /// <summary>The cursor shows and stays inside the window.</summary>
+    Confined = 3,
+    /// <summary>No cursor, and the mouse stays inside the window.</summary>
+    ConfinedHidden = 4,
+}
+
 /// <summary>Keyboard and mouse of the current frame. "Pressed" is true only on the frame of the press.</summary>
 public static unsafe class Input
 {
@@ -44,7 +59,14 @@ public static unsafe class Input
         }
     }
 
-    /// <summary>A captured mouse is hidden and reports unbounded motion, as a first-person camera needs.</summary>
+    /// <summary>What the mouse does over the window: the cursor comes back by itself over other windows.</summary>
+    public static MouseMode MouseMode
+    {
+        get => (MouseMode)Bootstrap.Native.MouseMode();
+        set => Bootstrap.Native.SetMouseMode((int)value);
+    }
+
+    /// <summary>A captured mouse is hidden and reports unbounded motion, as a first-person camera needs. Off, the cursor shows.</summary>
     public static bool MouseCaptured
     {
         get => Bootstrap.Native.IsMouseCaptured() != 0;

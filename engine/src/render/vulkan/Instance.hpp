@@ -30,6 +30,8 @@ public:
 
     [[nodiscard]] VkInstance handle() const noexcept;
     [[nodiscard]] bool isValidationEnabled() const noexcept;
+    // Whether the device may use VK_EXT_full_screen_exclusive, which needs an extension of the instance.
+    [[nodiscard]] bool canChooseExclusiveDisplay() const noexcept;
 
 private:
     Instance() = default;
@@ -38,6 +40,7 @@ private:
     VkInstance m_instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT m_messenger = VK_NULL_HANDLE;
     bool m_validation = false;
+    bool m_canChooseExclusiveDisplay = false;
 };
 
 // Owns a VkSurfaceKHR created on an instance.

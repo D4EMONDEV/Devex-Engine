@@ -10,6 +10,18 @@
 #include <optional>
 #include <utility>
 
+// Last: it needs the types of windows.h, for the one structure that says who has the display.
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <vulkan/vulkan_win32.h>
+#endif
+
 namespace devex::render::vulkan {
 namespace {
 
@@ -148,9 +160,22 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
     };
 
     const bool readable = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
+    const void* next = toolsView ? &formatList : nullptr;
+#ifdef _WIN32
+    const VkSurfaceFullScreenExclusiveInfoEXT displayChoice{
+        .sType = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT,
+        .pNext = const_cast<void*>(next),
+        .fullScreenExclusive = config.exclusiveDisplay ? VK_FULL_SCREEN_EXCLUSIVE_ALLOWED_EXT
+                                                       : VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT,
+    };
+    if (device.supportsExclusiveDisplayChoice())
+    {
+        next = &displayChoice;
+    }
+#endif
     const VkSwapchainCreateInfoKHR createInfo{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .pNext = toolsView ? &formatList : nullptr,
+        .pNext = next,
         .flags = toolsView ? VkSwapchainCreateFlagsKHR{VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR} : VkSwapchainCreateFlagsKHR{0},
         .surface = surface,
         .minImageCount = chooseImageCount(capabilities.minImageCount, capabilities.maxImageCount),

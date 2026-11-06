@@ -5580,6 +5580,7 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+114. ✅ **Ce que les deux jeux ont montré une fois joués** — le mode sans bords ne cède plus l'écran au pilote, `Input.MouseMode` en C#, et Play lance la Startup Scene quand elle est définie. Détails plus bas.
 113. ✅ **Options du joueur** — fenêtré, sans bords ou plein écran, synchro verticale qui s'applique tout de suite et décide alors du rythme, limite de FPS, taille de la fenêtre et compteur, en C#.
      Détails plus bas.
 112. ✅ **Deuxième vrai jeu, une aventure 3D** — sur une grille et du CSG, avec une plateforme sur chemin, des ennemis sur navmesh et un personnage animé. Un personnage 3D suit aussi un collider déplacé par le code, et une palette d'une
@@ -5648,6 +5649,13 @@ Troisième point de la liste pour une 1.0 : faire de vrais petits jeux avec la 0
 - **Une palette d'une seule pièce** : une entité du haut avec un enfant passait pour ce qui tient les pièces, et le sol disparaissait sans un mot. Elle reste une pièce quand elle a un mesh.
 - **Le personnage 3D sur un collider déplacé par le code** : comme en 2D, il va où va le point sous ses pieds. Sur ce qui a une vitesse, Jolt le portait déjà, et on le laisse faire.
 - **Le clavier va au canevas du haut qui a de quoi être pressé** : un écran d'options caché, sur son canevas au-dessus, lui prenait le clavier, et le menu dessous ne répondait plus.
+- **Un projet trop profond le dit** : sous Windows, le compilateur s'arrête dès que le dossier de build dépasse environ 165 caractères, et l'Output ne montrait que la première ligne de CMake. Il montre maintenant tout son message, et l'échec nomme la cause avec le remède. Seuls l'avertissement de CMake
+  et l'échec de son test du compilateur, ensemble, l'affirment : l'avertissement arrive bien avant l'échec, et seul il ne prouve rien. Le dossier `builds/<uuid>` prend 8 chiffres au lieu de 36, ce qui donne au projet environ 130 caractères au lieu de 100. Écarté : construire hors du projet, dans un dossier court de l'utilisateur, ce qui lèverait presque toute la limite mais change où vivent les builds. À reconsidérer si la limite gêne vraiment.
+- **Sans bords ne clignote plus** : c'était bien une fenêtre de la taille de l'écran, mais un pilote Vulkan sous Windows lui donne alors l'écran à elle seule, et revenir au bureau fait clignoter. Le swapchain le refuse désormais avec
+  `VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT`, et ne l'autorise qu'en `Fullscreen`. Écarté en premier recours : une fenêtre plus grande que l'écran d'un pixel, le contournement de Godot, qui dessine une ligne pour rien et oblige Windows à tout recomposer. Il reste possible si un pilote passe outre.
+- **`Input.MouseMode`, comme Godot** : visible, caché, capturé, et confiné dans la fenêtre avec ou sans curseur. `MouseCaptured` reste, et passe par les mêmes modes.
+- **Play lance la Startup Scene quand elle est définie, sinon la scène courante** : tester un jeu, c'est le lancer par son début. Un onglet ouvert sur cette scène compte, avec ce qu'il n'a pas encore enregistré, comme pour la scène courante. Si le fichier n'existe plus, Play le dit et ne lance rien :
+  lancer autre chose cacherait l'erreur.
 - **Trois façons de montrer un jeu**, `PlayerSettings.WindowMode` : fenêtré, sans bords et plein écran. Ce que le moteur appelait plein écran était déjà sans bords, ce que les anciens fichiers de réglages gardent.
   Le plein écran prend l'écran à la résolution du bureau : changer la résolution du moniteur demanderait une liste de modes, et personne ne le demande aujourd'hui. `Fullscreen` reste, pour ce qui a été écrit avec.
 - **Avec la synchro verticale, l'écran décide du rythme** : la limite de FPS n'a alors plus d'effet, et l'écran d'options la grise. Écarté : les combiner, utile pour jouer à 30 sur un écran à 60, mais

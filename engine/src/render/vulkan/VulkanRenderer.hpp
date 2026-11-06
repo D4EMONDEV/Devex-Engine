@@ -981,6 +981,8 @@ private:
     bool m_historyValid = false;
     float m_historyExposure = 1.0f;
     math::Extent2D m_swapchainWindowPixelSize;
+    // Whether the swapchain may have the display to itself, which only full screen asks for.
+    bool m_swapchainExclusive = false;
     // The size of the scene image of the frame being recorded.
     math::Extent2D m_sceneExtent;
     bool m_swapchainOutdated = false;

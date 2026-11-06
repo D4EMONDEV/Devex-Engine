@@ -583,6 +583,7 @@ Devex.Input: Boolean WasActionPressed(System.String)
 Devex.Input: Boolean WasActionReleased(System.String)
 Devex.Input: Boolean WasKeyPressed(Devex.Key)
 Devex.Input: Boolean WasMouseButtonPressed(Devex.MouseButton)
+Devex.Input: Devex.MouseMode MouseMode
 Devex.Input: Devex.Vec2 ActionVector(System.String)
 Devex.Input: Devex.Vec2 MouseDelta
 Devex.Input: Devex.Vec2 MousePosition
@@ -781,6 +782,11 @@ Devex.MouseButton: Devex.MouseButton Middle
 Devex.MouseButton: Devex.MouseButton Right
 Devex.MouseButton: Devex.MouseButton X1
 Devex.MouseButton: Devex.MouseButton X2
+Devex.MouseMode: Devex.MouseMode Captured
+Devex.MouseMode: Devex.MouseMode Confined
+Devex.MouseMode: Devex.MouseMode ConfinedHidden
+Devex.MouseMode: Devex.MouseMode Hidden
+Devex.MouseMode: Devex.MouseMode Visible
 Devex.Multiplayer: Boolean Host(Int32, Int32)
 Devex.Multiplayer: Boolean IsAuthority(Devex.Entity)
 Devex.Multiplayer: Boolean IsHost
@@ -1997,6 +2003,7 @@ type Devex.MeshRenderer
 type Devex.MeshVertex
 type Devex.Meshes
 type Devex.MouseButton
+type Devex.MouseMode
 type Devex.Multiplayer
 type Devex.MultiplayerState
 type Devex.NativeComponentAccess

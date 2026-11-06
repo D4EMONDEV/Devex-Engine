@@ -15,7 +15,8 @@ class Device
 public:
     // Selects a GPU able to present to the surface and creates the logical device on it.
     [[nodiscard]] static core::Result<Device> create(VkInstance instance, VkSurfaceKHR surface,
-                                                     std::string_view preferredGpu);
+                                                     std::string_view preferredGpu,
+                                                     bool canChooseExclusiveDisplay = false);
 
     Device(Device&& other) noexcept;
     Device& operator=(Device&& other) noexcept;
@@ -44,6 +45,8 @@ public:
     [[nodiscard]] bool supportsDrawIndirectFirstInstance() const noexcept;
     // Swapchain images can be viewed in another format than their own (VK_KHR_swapchain_mutable_format).
     [[nodiscard]] bool supportsMutableSwapchainFormat() const noexcept;
+    // A swapchain can say whether it may have the display to itself (VK_EXT_full_screen_exclusive).
+    [[nodiscard]] bool supportsExclusiveDisplayChoice() const noexcept;
 
 private:
     Device() = default;
@@ -62,6 +65,7 @@ private:
     bool m_textureCompressionAstc = false;
     bool m_drawIndirectFirstInstance = false;
     bool m_mutableSwapchainFormat = false;
+    bool m_exclusiveDisplayChoice = false;
 };
 
 } // namespace devex::render::vulkan

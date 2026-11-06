@@ -342,12 +342,19 @@ DEVEX_GAME_MODULE(game)
     return project.cacheDirectory() / "code" / core::pathFromUtf8(std::string(configuration));
 }
 
+// A name this builder made, never an arbitrary path supplied by a project's cache: eight hexadecimal digits, as short
+// as can be because the compiler allows paths of 260 characters and CMake uses most of them, or the UUID of older builds.
+[[nodiscard]] bool isBuildName(std::string_view name)
+{
+    return core::Uuid::parse(name).has_value() ||
+           (name.size() == 8 && std::ranges::all_of(name, [](char digit) { return std::isxdigit(static_cast<unsigned char>(digit)) != 0; }));
+}
+
 [[nodiscard]] std::filesystem::path buildDirectory(const asset::Project& project, std::string_view configuration)
 {
     const std::filesystem::path root = buildRoot(project, configuration);
     const core::Result<std::string> active = core::readTextFile(root / "active-build.txt");
-    // A generated UUID, never an arbitrary path supplied by a project's cache.
-    if (active && core::Uuid::parse(*active))
+    if (active && isBuildName(*active))
     {
         return root / "builds" / core::pathFromUtf8(*active);
     }
@@ -756,7 +763,11 @@ void GameCodeBuilder::startBuild()
     const auto previous = core::readTextFile(m_buildDirectory / "devex-engine.txt");
     if (m_freshBuildRequested || (previous && *previous != m_engineStamp))
     {
-        m_buildDirectory = buildRoot(m_project, m_configuration) / "builds" / core::Uuid::generate().toString();
+        std::error_code taken;
+        do
+        {
+            m_buildDirectory = buildRoot(m_project, m_configuration) / "builds" / core::Uuid::generate().toString().substr(0, 8);
+        } while (std::filesystem::exists(m_buildDirectory, taken));
         m_freshBuildRequested = false;
         DEVEX_LOG_DEBUG_IN(buildLogCategory, "Building in a fresh cache for this engine; the sources of the project are unchanged");
     }
@@ -822,6 +833,10 @@ exec cmake --build {0}
     m_state = State::Building;
     m_message.clear();
     m_symbolFailure = false;
+    m_pathTooLong = false;
+    m_compilerRefused = false;
+    m_insideCMakeMessage = false;
+    m_messageContinues = false;
     m_diagnostics.clear();
     m_buildStart = Clock::now();
     DEVEX_LOG_INFO_IN(buildLogCategory, "Building the game code...");
@@ -989,14 +1004,35 @@ void GameCodeBuilder::readBuildLine(const std::string& line)
     }
     // The diagnostic number is stable in localized Visual Studio installations too.
     m_symbolFailure = m_symbolFailure || contains(line, "LNK1201");
+    m_pathTooLong = m_pathTooLong || contains(line, "CMAKE_OBJECT_PATH_MAX");
+    m_compilerRefused = m_compilerRefused || contains(line, "is not able to compile a simple test program");
+    const std::size_t text = line.find_first_not_of(" \r");
+    if (m_insideCMakeMessage && (text == std::string::npos || line.starts_with("  ")))
+    {
+        if (text != std::string::npos)
+        {
+            DEVEX_LOG_INFO_IN(buildLogCategory, "{}", line);
+            // Enough to tell the reason wherever a single line has to, as when Play refuses to start.
+            if (m_messageContinues && m_message.size() < 300)
+            {
+                m_message += ' ';
+                m_message += std::string_view(line).substr(text);
+            }
+        }
+        return;
+    }
+    m_messageContinues = false;
+    const bool cmakeError = contains(line, "CMake Error");
+    m_insideCMakeMessage = cmakeError || contains(line, "CMake Warning");
     const std::optional<bool> severity = severityOf(line);
-    if (severity.value_or(false) || contains(line, "CMake Error") || line.starts_with("FAILED:") ||
-        line.starts_with("error:"))
+    if (severity.value_or(false) || cmakeError || line.starts_with("FAILED:") || line.starts_with("error:"))
     {
         DEVEX_LOG_ERROR_IN(buildLogCategory, "{}", line);
-        if (m_message.empty() || contains(line, "LNK1201"))
+        // Ninja names the step that failed first, and what went wrong just after.
+        if (m_message.empty() || m_message.starts_with("FAILED:") || contains(line, "LNK1201"))
         {
             m_message = line;
+            m_messageContinues = cmakeError;
         }
     }
     else if (severity == false || contains(line, "CMake Warning"))
@@ -1053,9 +1089,21 @@ void GameCodeBuilder::finishBuild(int exitCode)
         return;
     }
     m_state = State::Failed;
+    // CMake warns well before the compiler gives up: the warning alone explains no failure.
+    if (m_pathTooLong && m_compilerRefused)
+    {
+        m_message = std::format("the folder of this project is too deep for the C++ compiler: its path has {} characters. Move the project closer to the root of its drive",
+                                m_project.root.native().size());
+        DEVEX_LOG_ERROR_IN(buildLogCategory, "Game code build failed: {}", m_message);
+        return;
+    }
     if (m_message.empty())
     {
         m_message = std::format("the build failed with code {}", exitCode);
+    }
+    if (m_pathTooLong)
+    {
+        DEVEX_LOG_WARNING_IN(buildLogCategory, "The path of this project is long, which may be why: moving it closer to the root of its drive may help");
     }
     DEVEX_LOG_ERROR_IN(buildLogCategory, "Game code build failed: see the errors above");
 }

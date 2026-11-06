@@ -722,12 +722,15 @@ dit ce que le projet a décidé dans **Project Settings**.
 
 | Réglage | C# | Ce qu'il fait |
 | --- | --- | --- |
-| Affichage | `PlayerSettings.WindowMode` | `Windowed`, `Borderless` (sans bords, sur tout l'écran à la résolution du bureau) ou `Fullscreen` |
+| Affichage | `PlayerSettings.WindowMode` | `Windowed`, `Borderless` (sans bords, sur tout l'écran à la résolution du bureau, et l'écran ne clignote pas quand on change de fenêtre) ou `Fullscreen` (l'écran pour lui seul) |
 | Taille de la fenêtre | `PlayerSettings.SetWindowSize(1600, 900)` | En mode fenêtré. `Screen.UsableSize` dit ce que l'écran peut montrer |
 | Synchro verticale | `PlayerSettings.VSync` | Cale les images sur l'écran : 240 FPS sur un écran à 240 Hz, 60 sur un écran à 60 Hz |
 | Limite de FPS | `PlayerSettings.MaxFrameRate` | 0 pour aucune. Sans effet avec la synchro verticale, puisque l'écran décide alors |
 | Compteur de FPS | `Screen.FrameRate` | Les images par seconde, moyennées sur les derniers instants |
 | Volume | `PlayerSettings.SetVolume(Audio.Master, 0.5f)` | De 0 à 1 |
+
+La souris se règle avec `Input.MouseMode` : `Visible`, `Hidden` pour un jeu au clavier, `Captured` pour une caméra à la première personne, `Confined` et `ConfinedHidden` pour la garder dans la fenêtre.
+Le curseur revient de lui-même au-dessus des autres fenêtres, mais c'est au jeu de le remettre dans ses menus.
 
 Pour mettre le jeu en pause, `Time.Scale = 0.0f` fige le monde : `Update` continue d'être appelé avec un `Time.Delta` nul, et l'interface répond. `Input.SetContextActive("Gameplay", false)`
 coupe en plus les actions du joueur.

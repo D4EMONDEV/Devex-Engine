@@ -190,7 +190,7 @@ struct RequiredFeatures
 } // namespace
 
 core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
-                                    std::string_view preferredGpu)
+                                    std::string_view preferredGpu, bool canChooseExclusiveDisplay)
 {
     auto physicalDevices = enumerate<VkPhysicalDevice>("vkEnumeratePhysicalDevices",
                                                        vkEnumeratePhysicalDevices, instance);
@@ -288,6 +288,15 @@ core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
         {
             extensions.push_back(VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME);
         }
+        // Spelled out: its constant lives in a header that comes with windows.h.
+        device.m_exclusiveDisplayChoice =
+            canChooseExclusiveDisplay && std::ranges::any_of(*available, [](const VkExtensionProperties& extension) {
+                return std::string_view(extension.extensionName) == "VK_EXT_full_screen_exclusive";
+            });
+        if (device.m_exclusiveDisplayChoice)
+        {
+            extensions.push_back("VK_EXT_full_screen_exclusive");
+        }
     }
     const VkDeviceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -318,6 +327,7 @@ Device::Device(Device&& other) noexcept
     , m_textureCompressionAstc(other.m_textureCompressionAstc)
     , m_drawIndirectFirstInstance(other.m_drawIndirectFirstInstance)
     , m_mutableSwapchainFormat(other.m_mutableSwapchainFormat)
+    , m_exclusiveDisplayChoice(other.m_exclusiveDisplayChoice)
 {
 }
 
@@ -339,6 +349,7 @@ Device& Device::operator=(Device&& other) noexcept
         m_textureCompressionAstc = other.m_textureCompressionAstc;
         m_drawIndirectFirstInstance = other.m_drawIndirectFirstInstance;
         m_mutableSwapchainFormat = other.m_mutableSwapchainFormat;
+        m_exclusiveDisplayChoice = other.m_exclusiveDisplayChoice;
     }
     return *this;
 }
@@ -427,6 +438,11 @@ bool Device::supportsDrawIndirectFirstInstance() const noexcept
 bool Device::supportsMutableSwapchainFormat() const noexcept
 {
     return m_mutableSwapchainFormat;
+}
+
+bool Device::supportsExclusiveDisplayChoice() const noexcept
+{
+    return m_exclusiveDisplayChoice;
 }
 
 } // namespace devex::render::vulkan

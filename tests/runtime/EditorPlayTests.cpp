@@ -171,6 +171,17 @@ namespace
 }
 } // namespace
 
+TEST_CASE("Play starts the startup scene when the project has one, and the current scene otherwise", "[runtime][playprocess]")
+{
+    devex::asset::Project project;
+    CHECK(runtime::detail::scenePlayStarts(project, "res://assets/level.dvxscene") == "res://assets/level.dvxscene");
+    CHECK(runtime::detail::scenePlayStarts(project, "").empty());
+
+    project.startupScene = "res://assets/menu.dvxscene";
+    CHECK(runtime::detail::scenePlayStarts(project, "res://assets/level.dvxscene") == "res://assets/menu.dvxscene");
+    CHECK(runtime::detail::scenePlayStarts(project, "") == "res://assets/menu.dvxscene");
+}
+
 TEST_CASE("Play starts several games, connected to one another, stopped together", "[runtime][playprocess][net]")
 {
     Fixture fixture;

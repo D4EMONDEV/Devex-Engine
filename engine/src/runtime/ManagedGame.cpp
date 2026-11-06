@@ -380,6 +380,8 @@ struct NativeApi
     float (*frameRate)();
     int (*settingsWindowMode)();
     void (*setSettingsWindowMode)(int mode);
+    int (*mouseMode)();
+    void (*setMouseMode)(int mode);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -395,7 +397,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 37;
+constexpr int bootstrapVersion = 38;
 
 struct BootstrapArguments
 {
@@ -813,6 +815,19 @@ void apiSetMouseCaptured(int captured)
     if (window() != nullptr)
     {
         window()->setMouseCaptured(captured != 0);
+    }
+}
+
+int apiMouseMode()
+{
+    return static_cast<int>(window() != nullptr ? window()->mouseMode() : platform::MouseMode::Visible);
+}
+
+void apiSetMouseMode(int mode)
+{
+    if (window() != nullptr && mode >= 0 && mode <= static_cast<int>(platform::MouseMode::ConfinedHidden))
+    {
+        window()->setMouseMode(static_cast<platform::MouseMode>(mode));
     }
 }
 
@@ -3310,6 +3325,8 @@ int apiRaycastSolid(const math::Vec3* origin, const math::Vec3* direction, float
         .frameRate = &apiFrameRate,
         .settingsWindowMode = &apiSettingsWindowMode,
         .setSettingsWindowMode = &apiSetSettingsWindowMode,
+        .mouseMode = &apiMouseMode,
+        .setMouseMode = &apiSetMouseMode,
     };
 }
 

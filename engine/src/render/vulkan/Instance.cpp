@@ -107,6 +107,22 @@ core::Result<Instance> Instance::create(const InstanceConfig& config)
         }
     }
 
+    // A Windows driver otherwise decides alone whether a window over the whole display gets it to itself.
+    bool canChooseExclusiveDisplay = false;
+#ifdef _WIN32
+    if (const auto available = enumerate<VkExtensionProperties>("vkEnumerateInstanceExtensionProperties",
+                                                                vkEnumerateInstanceExtensionProperties, nullptr))
+    {
+        canChooseExclusiveDisplay = std::ranges::any_of(*available, [](const VkExtensionProperties& extension) {
+            return std::string_view(extension.extensionName) == VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME;
+        });
+        if (canChooseExclusiveDisplay)
+        {
+            extensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+        }
+    }
+#endif
+
     const std::string applicationName(config.applicationName);
     const VkApplicationInfo applicationInfo{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -141,6 +157,7 @@ core::Result<Instance> Instance::create(const InstanceConfig& config)
     Instance instance;
     DEVEX_VK_TRY(vkCreateInstance, &createInfo, nullptr, &instance.m_instance);
     volkLoadInstance(instance.m_instance);
+    instance.m_canChooseExclusiveDisplay = canChooseExclusiveDisplay;
 
     if (validation)
     {
@@ -156,6 +173,7 @@ Instance::Instance(Instance&& other) noexcept
     : m_instance(std::exchange(other.m_instance, VK_NULL_HANDLE))
     , m_messenger(std::exchange(other.m_messenger, VK_NULL_HANDLE))
     , m_validation(std::exchange(other.m_validation, false))
+    , m_canChooseExclusiveDisplay(std::exchange(other.m_canChooseExclusiveDisplay, false))
 {
 }
 
@@ -167,6 +185,7 @@ Instance& Instance::operator=(Instance&& other) noexcept
         m_instance = std::exchange(other.m_instance, VK_NULL_HANDLE);
         m_messenger = std::exchange(other.m_messenger, VK_NULL_HANDLE);
         m_validation = std::exchange(other.m_validation, false);
+        m_canChooseExclusiveDisplay = std::exchange(other.m_canChooseExclusiveDisplay, false);
     }
     return *this;
 }
@@ -198,6 +217,11 @@ VkInstance Instance::handle() const noexcept
 bool Instance::isValidationEnabled() const noexcept
 {
     return m_validation;
+}
+
+bool Instance::canChooseExclusiveDisplay() const noexcept
+{
+    return m_canChooseExclusiveDisplay;
 }
 
 Surface::Surface(VkInstance instance, VkSurfaceKHR surface) noexcept

@@ -362,6 +362,29 @@ TEST_CASE("The way the player shows the game comes back from its file, and older
     CHECK(older.windowMode() == WindowMode::Windowed);
 }
 
+TEST_CASE("The mouse does what the window is asked for", "[platform][window]")
+{
+    using devex::platform::MouseMode;
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 320, .height = 240, .hidden = true});
+    REQUIRE(window);
+    CHECK(window->mouseMode() == MouseMode::Visible);
+
+    for (const MouseMode mode : {MouseMode::Hidden, MouseMode::Captured, MouseMode::Confined, MouseMode::ConfinedHidden, MouseMode::Visible})
+    {
+        window->setMouseMode(mode);
+        CHECK(window->mouseMode() == mode);
+    }
+
+    // The older way goes through the same modes, and brings the cursor back.
+    window->setMouseMode(MouseMode::Hidden);
+    window->setMouseCaptured(true);
+    CHECK(window->isMouseCaptured());
+    window->setMouseCaptured(false);
+    CHECK(window->mouseMode() == MouseMode::Visible);
+}
+
 TEST_CASE("A window takes the screen in the mode it is asked for", "[platform][window]")
 {
     using devex::platform::WindowMode;

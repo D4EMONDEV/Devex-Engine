@@ -253,14 +253,40 @@ void Window::setTitle(std::string_view title)
     SDL_SetWindowTitle(detail::toSdlWindow(m_native), terminatedTitle.c_str());
 }
 
-void Window::setMouseCaptured(bool captured)
+void Window::setMouseMode(MouseMode mode)
 {
     DEVEX_ASSERT(m_native != nullptr);
-    if (!SDL_SetWindowRelativeMouseMode(detail::toSdlWindow(m_native), captured))
+    SDL_Window* const window = detail::toSdlWindow(m_native);
+    const bool confined = mode == MouseMode::Confined || mode == MouseMode::ConfinedHidden;
+    const bool hidden = mode == MouseMode::Hidden || mode == MouseMode::ConfinedHidden;
+    // While captured, SDL hides the cursor by itself and brings it back after.
+    if (!SDL_SetWindowRelativeMouseMode(window, mode == MouseMode::Captured) ||
+        !SDL_SetWindowMouseGrab(window, confined) || !(hidden ? SDL_HideCursor() : SDL_ShowCursor()))
     {
-        DEVEX_LOG_WARNING("Cannot {} the mouse: {}", captured ? "capture" : "release",
-                          SDL_GetError());
+        DEVEX_LOG_WARNING("Cannot change what the mouse does: {}", SDL_GetError());
     }
+}
+
+MouseMode Window::mouseMode() const noexcept
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    SDL_Window* const window = detail::toSdlWindow(m_native);
+    if (SDL_GetWindowRelativeMouseMode(window))
+    {
+        return MouseMode::Captured;
+    }
+    // What was asked: SDL_GetWindowMouseGrab says false while the window does not have the focus.
+    const bool confined = (SDL_GetWindowFlags(window) & SDL_WINDOW_MOUSE_GRABBED) != 0;
+    if (SDL_CursorVisible())
+    {
+        return confined ? MouseMode::Confined : MouseMode::Visible;
+    }
+    return confined ? MouseMode::ConfinedHidden : MouseMode::Hidden;
+}
+
+void Window::setMouseCaptured(bool captured)
+{
+    setMouseMode(captured ? MouseMode::Captured : MouseMode::Visible);
 }
 
 bool Window::isMouseCaptured() const noexcept
