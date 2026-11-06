@@ -465,6 +465,7 @@ struct EditorSettingsUi : SettingsUi
     bool serversDetected = false;
     Button restartServers;
     Entity playMode;
+    Entity terminalMode;
     std::array<Entity, viewportNumbers.size()> viewportNumberFields{};
     std::array<Entity, viewportColors.size()> viewportColorFields{};
     std::array<Entity, viewportToggles.size()> viewportToggleFields{};
@@ -633,6 +634,14 @@ void EditorSettingsUi::build(EditorUiKit& kit)
          "Inside Editor keeps the embedded game view and live inspection. Play uses a temporary "
          "scene copy in either mode, including unsaved changes.",
          "dim", 4.0f);
+#ifdef _WIN32
+    Section& terminal = pageCard(kit, compilationPage, "Terminal");
+    terminalMode = choice(formRow(terminal, "Terminal").editor);
+    note(&terminal,
+         "The log is always in the Output panel. Shown, a terminal shows it beside the editor too. "
+         "Closing that terminal closes the editor, and what is not saved waits in its copies.",
+         "dim", 4.0f);
+#endif
 }
 
 void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
@@ -755,6 +764,10 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     }
     setChoice(playMode, {"Separate Process", "Inside Editor"},
               state.scripts.separateProcess ? 0 : 1);
+    if (terminalMode.isValid())
+    {
+        setChoice(terminalMode, {"Hidden", "Shown"}, state.scripts.showTerminal ? 1 : 0);
+    }
     serversDetected = true;
     if (editedColor && colorPopupOpen())
     {
@@ -857,6 +870,10 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     }
     if (world.wasChanged(playMode))
         scripts.separateProcess = scene().get<scene::UiDropdown>(playMode).selected == 0;
+    if (terminalMode.isValid() && world.wasChanged(terminalMode))
+    {
+        scripts.showTerminal = scene().get<scene::UiDropdown>(terminalMode).selected == 1;
+    }
 
     if (world.wasChanged(preset))
     {
@@ -935,6 +952,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         {
             scripts.automaticCompilation = true;
             scripts.separateProcess = true;
+            scripts.showTerminal = false;
         }
         else if (selected == 0)
         {
@@ -955,6 +973,10 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         }
     }
 
+    if (scripts.showTerminal != state.scripts.showTerminal)
+    {
+        platform::showTerminal(scripts.showTerminal);
+    }
     if (scripts != state.scripts)
     {
         state.scripts = std::move(scripts);

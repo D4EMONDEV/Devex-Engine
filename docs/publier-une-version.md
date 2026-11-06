@@ -25,7 +25,8 @@ git push origin v0.9.0
 La CI fait ses vérifications habituelles sur Windows, Linux et Android. Si toutes passent, le job *Draft the release* :
 
 - vérifie que le tag, `CMakeLists.txt`, le bac à sable, les formats figés et le journal disent la même version ;
-- construit le zip et l'installateur pour Windows, et reprend le `.tar.gz` pour Linux ;
+- met dans chaque paquet le moteur de l'autre système, dans `platforms/`, avec ce qu'un jeu demande et rien de plus ;
+- construit le zip et l'installateur pour Windows, et le `.tar.gz` pour Linux ;
 - ajoute `SHA256SUMS.txt`, et crée la release en brouillon.
 
 Ensuite, sur la page *Releases* du dépôt, relire le texte, essayer un fichier, et publier.

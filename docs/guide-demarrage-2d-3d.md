@@ -725,6 +725,7 @@ dit ce que le projet a décidé dans **Project Settings**.
 | Affichage | `PlayerSettings.WindowMode` | `Windowed`, `Borderless` (sans bords, sur tout l'écran à la résolution du bureau, et l'écran ne clignote pas quand on change de fenêtre) ou `Fullscreen` (l'écran pour lui seul) |
 | Taille de la fenêtre | `PlayerSettings.SetWindowSize(1600, 900)` | En mode fenêtré. `Screen.UsableSize` dit ce que l'écran peut montrer |
 | Synchro verticale | `PlayerSettings.VSync` | Cale les images sur l'écran : 240 FPS sur un écran à 240 Hz, 60 sur un écran à 60 Hz |
+| Sans synchro | `PlayerSettings.VSync = false` | Le jeu n'attend plus l'écran. Sous Wayland, où l'image ne peut pas se déchirer, l'écran n'en montre pas plus que son rythme, mais le jeu en calcule autant qu'il peut |
 | Limite de FPS | `PlayerSettings.MaxFrameRate` | 0 pour aucune. Sans effet avec la synchro verticale, puisque l'écran décide alors |
 | Compteur de FPS | `Screen.FrameRate` | Les images par seconde, moyennées sur les derniers instants |
 | Volume | `PlayerSettings.SetVolume(Audio.Master, 0.5f)` | De 0 à 1 |
@@ -740,7 +741,7 @@ coupe en plus les actions du joueur.
 1. Arrêter Play et sauvegarder les scènes.
 2. Compiler le code ; résoudre les erreurs avant d'exporter.
 3. Définir la bonne scène de démarrage.
-4. Ouvrir **Project > Export Game…**. Sa liste **Platform** propose aussi Android, une fois le moteur
+4. Ouvrir **Project > Export Game…**. Sa liste **Platform** propose Windows, Linux et Android. Depuis Windows, un jeu pour Linux sort en `.tar.gz`, à extraire sous Linux ; depuis Linux, un jeu pour Windows sort en dossier. Le premier export d'un jeu en C# télécharge .NET pour ce système. Le code C++ ne se compile que sur le système où il tourne : le module d'un nouveau projet, qui n'enregistre rien, est laissé de côté, et un jeu dont le C++ fait quelque chose s'exporte depuis l'éditeur de ce système. **Terminal** ouvre, pour un jeu Windows, un terminal avec le jeu pour voir son journal, qui reste dans un fichier de toute façon. Android demande le moteur
    construit pour Android à côté de l'éditeur (voir le README) : nom de paquet, version, orientation,
    téléphones ou émulateur, APK ou AAB, clé de publication, et installation sur l'appareil branché. Le
    C# n'y tourne pas encore.

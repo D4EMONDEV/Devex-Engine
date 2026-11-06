@@ -123,7 +123,17 @@ core::Result<std::size_t> selectGpu(std::span<const GpuCandidate> candidates,
 PresentMode choosePresentMode(PresentMode requested,
                               std::span<const PresentMode> supported) noexcept
 {
-    return std::ranges::contains(supported, requested) ? requested : PresentMode::Fifo;
+    if (std::ranges::contains(supported, requested))
+    {
+        return requested;
+    }
+    // Asked not to wait for the display, as without vertical sync. Under Wayland nothing may tear, so there is no
+    // immediate mode, but mailbox does not wait either: with FIFO, the display would set the rate after all.
+    if (requested == PresentMode::Immediate && std::ranges::contains(supported, PresentMode::Mailbox))
+    {
+        return PresentMode::Mailbox;
+    }
+    return PresentMode::Fifo;
 }
 
 math::Extent2D chooseSwapchainExtent(std::optional<math::Extent2D> surfaceExtent,

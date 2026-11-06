@@ -20,6 +20,17 @@
 #include <utility>
 
 namespace devex::asset {
+
+std::string_view otherDesktopSystem() noexcept
+{
+#if defined(_WIN32)
+    return "linux";
+#elif defined(__linux__) && !defined(__ANDROID__)
+    return "windows";
+#else
+    return {};
+#endif
+}
 namespace {
 
 constexpr std::int64_t projectFormatVersion = 1;
@@ -281,6 +292,14 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
             if (const std::string* const configuration = serialization::stringAttribute(section, "configuration"))
             {
                 project.exportSettings.configuration = *configuration;
+            }
+            if (const std::string* const otherOutput = serialization::stringAttribute(section, "other_output"))
+            {
+                project.exportSettings.otherOutput = *otherOutput;
+            }
+            if (const auto* const terminal = section.findAttribute("show_terminal"))
+            {
+                project.exportSettings.showTerminal = serialization::asBool(*terminal).value_or(false);
             }
         }
         else if (section.type == "export_android")
@@ -853,12 +872,21 @@ std::string writeProjectText(const Project& project)
 
     const ExportSettings exportDefaults;
     const ExportSettings& exportSettings = project.exportSettings;
-    if (exportSettings.output != exportDefaults.output || exportSettings.configuration != exportDefaults.configuration)
+    if (exportSettings.output != exportDefaults.output || exportSettings.configuration != exportDefaults.configuration ||
+        exportSettings.otherOutput != exportDefaults.otherOutput || exportSettings.showTerminal != exportDefaults.showTerminal)
     {
         serialization::TextSection& exportSection = document.sections.emplace_back();
         exportSection.type = "export";
         exportSection.attributes.push_back({"output", serialization::TextValue(exportSettings.output)});
         exportSection.attributes.push_back({"configuration", serialization::TextValue(exportSettings.configuration)});
+        if (exportSettings.otherOutput != exportDefaults.otherOutput)
+        {
+            exportSection.attributes.push_back({"other_output", serialization::TextValue(exportSettings.otherOutput)});
+        }
+        if (exportSettings.showTerminal)
+        {
+            exportSection.attributes.push_back({"show_terminal", true});
+        }
     }
     if (exportSettings.platform != exportDefaults.platform || exportSettings.android != exportDefaults.android)
     {

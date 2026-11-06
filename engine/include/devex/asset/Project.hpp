@@ -134,9 +134,14 @@ struct DEVEX_API AndroidSigning
     bool operator==(const AndroidSigning&) const = default;
 };
 
+// The desktop system an editor can export for besides its own, with that system's engine beside it: "linux" on Windows,
+// "windows" on Linux, and empty on a system with no other.
+[[nodiscard]] DEVEX_API std::string_view otherDesktopSystem() noexcept;
+
 struct DEVEX_API ExportSettings
 {
-    // The system the Export window exports for: "desktop" or "android".
+    // The system the Export window exports for: "desktop" for the one the editor runs on, "android", or the
+    // other desktop system by its name.
     std::string platform = "desktop";
     AndroidExportSettings android;
     // Scenes exported with the startup scene, as res:// paths. The scenes, prefabs and other assets
@@ -153,10 +158,23 @@ struct DEVEX_API ExportSettings
 #else
     std::string output = "export/linux";
 #endif
+    // The folder a game for the other desktop system is exported to.
+#if defined(_WIN32)
+    std::string otherOutput = "export/linux";
+#else
+    std::string otherOutput = "export/windows";
+#endif
     // The configuration of the engine build the game is exported with: "Release" or "Debug".
     std::string configuration = "Release";
+    // Windows: a terminal opens with the game and shows its log, which is kept in a file either way.
+    bool showTerminal = false;
 
     bool operator==(const ExportSettings&) const = default;
+
+    [[nodiscard]] bool targetsOtherDesktop() const noexcept
+    {
+        return !otherDesktopSystem().empty() && platform == otherDesktopSystem();
+    }
 };
 
 // The value an input action gives: a button is pressed or not, an axis goes from -1 to 1 (a wheel,

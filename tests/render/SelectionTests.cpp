@@ -76,6 +76,13 @@ TEST_CASE("Unsupported present modes fall back to FIFO", "[render][selection]")
     CHECK(devex::render::choosePresentMode(PresentMode::Immediate, supported) ==
           PresentMode::Immediate);
     CHECK(devex::render::choosePresentMode(PresentMode::Mailbox, supported) == PresentMode::Fifo);
+
+    // Under Wayland: not waiting for the display is still possible, where it would be a pity to end up with FIFO.
+    const std::array wayland{PresentMode::Mailbox, PresentMode::Fifo};
+    CHECK(devex::render::choosePresentMode(PresentMode::Immediate, wayland) == PresentMode::Mailbox);
+    CHECK(devex::render::choosePresentMode(PresentMode::Fifo, wayland) == PresentMode::Fifo);
+    const std::array onlyFifo{PresentMode::Fifo};
+    CHECK(devex::render::choosePresentMode(PresentMode::Immediate, onlyFifo) == PresentMode::Fifo);
 }
 
 TEST_CASE("Swapchain extent follows the surface or the clamped window", "[render][selection]")

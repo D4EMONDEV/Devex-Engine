@@ -8,9 +8,23 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace devex::platform {
+
+// A resource of a Windows executable: a type and a name, each a number unless it has text.
+struct DEVEX_API ExecutableResource
+{
+    std::uint32_t type = 0;
+    std::u16string typeName;
+    std::uint32_t id = 0;
+    std::u16string name;
+    std::uint32_t language = 0;
+    std::uint32_t codePage = 0;
+    std::vector<std::byte> data;
+};
+[[nodiscard]] DEVEX_API core::Result<std::vector<ExecutableResource>> readExecutableResources(const std::filesystem::path& executable);
 
 // One size of an application icon: square 8-bit RGBA pixels, row by row from the top-left corner.
 struct DEVEX_API IconImage
@@ -21,8 +35,8 @@ struct DEVEX_API IconImage
     std::vector<std::byte> png;
 };
 
-// Replaces the icon that the file manager and the taskbar show for an executable file, which must
-// not be running. Sizes from 16 to 256 pixels; Windows only.
+// Replaces the icon that the file manager and the taskbar show for a Windows executable, which must
+// not be running. Sizes from 16 to 256 pixels. It works from any system, since it reads and writes bytes.
 [[nodiscard]] DEVEX_API core::Result<void> setExecutableIcon(const std::filesystem::path& executable,
                                                              std::span<const IconImage> images);
 

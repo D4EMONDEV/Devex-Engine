@@ -27,6 +27,7 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 - [options du joueur](docs/guide-demarrage-2d-3d.md#options-du-joueur) en C# : fenêtré, sans bords ou plein écran, synchro verticale, limite de FPS, taille de la fenêtre, gardés d'une
   partie à l'autre, et `Time.Scale` pour mettre le jeu en pause ;
 - [copies de secours](docs/decisions.md#copies-de-secours--décidé-le-2026-11-05) : ce qui n'est pas enregistré est copié, et proposé après un plantage ;
+- [essayer Devex sur une machine](docs/essayer-sur-une-machine.md) : quoi essayer, et un rapport système à joindre aux bugs ;
 - [compatibilité des projets](docs/compatibilite.md) : les fichiers des versions passées s'ouvrent,
   un projet dit sa version, prévient et se copie avant d'être repris ;
 - traductions comme chez Godot : tables `.csv` (une colonne par langue) éditées dans le panneau
@@ -237,7 +238,7 @@ complétion, les diagnostics en direct, les définitions, les références et le
   tâches attendus sur le thread du jeu) et les vues des composants du
   moteur, compilée dans `bin/managed` quand le SDK .NET est installé ;
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
-- `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets ;
+- `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets. Sous Windows, il n'ouvre pas de terminal, sauf si **Editor Settings > Compilation > Terminal** le demande. Pour les scripts, `devex-editor-console` est le même programme, dont le terminal attend la fin et lit le code de sortie ;
 - `devex-player` : lance un projet hors de l'éditeur, en recompilant d'abord son code s'il est
   périmé, ou le paquet d'un jeu exporté (scène de démarrage, réglages de fenêtre et code du jeu) ;
   le lecteur, les jeux exportés et l'éditeur tiennent un journal dans un fichier et, s'ils
@@ -359,7 +360,7 @@ ne tourne pas encore sur Android : la fenêtre le signale (voir *Android* dans
 $env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA/Android/Sdk/ndk/<version>"
 cmake --preset android-x86_64
 cmake --build --preset build-android-x86_64
-out\build\x64-release\bin\devex-editor.exe --export <Jeu>.dvxproj --platform android --abi x86_64 --install
+out\build\x64-release\bin\devex-editor-console.exe --export <Jeu>.dvxproj --platform android --abi x86_64 --install
 ```
 
 Chaque push sur `main` ou `ci` est construit et testé par GitHub Actions (Windows et Linux, Debug
@@ -423,7 +424,7 @@ d'assets, son code et les bibliothèques du moteur. Un export en Release demande
 moteur (`cmake --build --preset build-x64-release`). La même chose sans fenêtre :
 
 ```powershell
-out/build/x64-debug/bin/devex-editor.exe --export samples/sandbox/Sandbox.dvxproj
+out/build/x64-debug/bin/devex-editor-console.exe --export samples/sandbox/Sandbox.dvxproj
 samples/sandbox/export/windows/Sandbox.exe
 ```
 

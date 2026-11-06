@@ -5,6 +5,8 @@
 #include <devex/platform/Platform.hpp>
 #include <devex/runtime/Application.hpp>
 #include <devex/runtime/GameExport.hpp>
+#include <devex/runtime/SystemReport.hpp>
+#include <devex/tools/ToolsOverlay.hpp>
 
 #include <filesystem>
 #include <memory>
@@ -28,8 +30,17 @@ class EditorApplication final : public devex::runtime::Application
 // or "info,build=warning,render=trace".
 // devex-editor --export <project.dvxproj> [--output <folder>] [--configuration <Release|Debug>]:
 // exports the game without opening a window.
+// devex-editor --report [file]: says what this machine offers, for a bug report, without opening a window.
 int main(int argc, char** argv)
 {
+    // No terminal opens by itself, for the editor or for what it starts, unless it was started from one.
+    devex::platform::useParentTerminal();
+    devex::platform::showTerminal(false);
+    if (argc > 1 && std::string_view(argv[1]) == "--report")
+    {
+        const std::vector<std::string_view> arguments(argv + 1, argv + argc);
+        return devex::runtime::reportFromCommandLine(arguments);
+    }
     if (argc > 1 && std::string_view(argv[1]) == "--export")
     {
         const std::vector<std::string_view> arguments(argv + 1, argv + argc);
@@ -71,6 +82,11 @@ int main(int argc, char** argv)
     if (const devex::core::Result<std::filesystem::path> user = devex::platform::userDataDirectory("Devex", "Editor"))
     {
         logs = *user / "logs";
+        // Before the first line of the log, for the terminal to show them all.
+        if (devex::tools::settingsShowTerminal(*user / "editor.dvx"))
+        {
+            devex::platform::showTerminal(true);
+        }
         if (devex::core::Result<std::unique_ptr<devex::core::LogFile>> opened =
                 devex::core::LogFile::open(logs / "editor.log"))
         {
@@ -96,5 +112,6 @@ int main(int argc, char** argv)
     {
         DEVEX_LOG_WARNING("The editor is not listed among the applications of the desktop: {}", registered.error());
     }
-    return devex::runtime::run<EditorApplication>(config);
+    return devex::runtime::runShowingFatalError("Devex cannot start", log ? log->path() : std::filesystem::path{},
+                                                [&config] { return devex::runtime::run<EditorApplication>(config); });
 }

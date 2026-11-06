@@ -18,6 +18,11 @@ public:
                                                      std::string_view preferredGpu,
                                                      bool canChooseExclusiveDisplay = false);
 
+    // What each GPU of the machine offers, in words, and whether it can run Devex: what a bug report needs, on the
+    // machines where no device can be created too. inUse names the GPU that is running, if any.
+    [[nodiscard]] static core::Result<std::string> describeAll(VkInstance instance, VkSurfaceKHR surface,
+                                                               std::string_view inUse = {});
+
     Device(Device&& other) noexcept;
     Device& operator=(Device&& other) noexcept;
     ~Device();

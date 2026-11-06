@@ -95,6 +95,7 @@ class Player final : public devex::runtime::Application
 // --log-level <levels> anywhere sets what the log keeps, as the DEVEX_LOG variable does.
 int main(int argc, char** argv)
 {
+    devex::platform::useParentTerminal();
     devex::runtime::ApplicationConfig config{
         .title = "Devex Player",
         .loadGameCode = true,
@@ -161,29 +162,12 @@ int main(int argc, char** argv)
         DEVEX_LOG_WARNING("The log is not kept in a file: {}", log.error());
     }
 
-    // A windowed game has no console to say why it cannot start: the first fatal error is shown.
-    std::string fatal;
-    const devex::core::LogSinkId fatalSink = devex::core::addLogSink([&fatal](const devex::core::LogRecord& record) {
-        if (record.level == devex::core::LogLevel::Fatal && fatal.empty())
-        {
-            fatal = record.message;
-        }
-    });
     Player player(!config.editorSession.empty());
-    const int result = devex::runtime::run(player, config);
-    devex::core::removeLogSink(fatalSink);
-    if (result != 0 && !fatal.empty() && config.editorSession.empty() &&
-        devex::platform::isWindowedApplication())
+    // A game the editor started tells the editor.
+    if (!config.editorSession.empty())
     {
-        std::string message = fatal;
-        if (log)
-        {
-            // Written the way the file manager writes it, for a player to find it.
-            std::filesystem::path shown = (*log)->path();
-            const std::u8string native = shown.make_preferred().u8string();
-            message += "\n\nLog: " + std::string(native.begin(), native.end());
-        }
-        devex::platform::showErrorMessage("The game cannot start", message);
+        return devex::runtime::run(player, config);
     }
-    return result;
+    return devex::runtime::runShowingFatalError("The game cannot start", log ? (*log)->path() : std::filesystem::path{},
+                                                [&player, &config] { return devex::runtime::run(player, config); });
 }

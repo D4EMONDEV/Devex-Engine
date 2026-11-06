@@ -46,6 +46,8 @@ struct ScriptSettings
     std::array<LanguageServerSettings, 2> languageServers;
     bool automaticCompilation = true;
     bool separateProcess = true;
+    // Windows: a terminal beside the editor, which shows the log that the Output panel shows anyway.
+    bool showTerminal = false;
     // How many games Play starts, each with its own process and window, and whether they connect to one
     // another by themselves: the first hosts and the others join.
     std::uint32_t playInstances = 1;

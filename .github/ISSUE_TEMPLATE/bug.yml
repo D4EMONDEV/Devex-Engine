@@ -1,0 +1,26 @@
+name: Signaler un bug
+description: Quelque chose ne marche pas dans Devex, ou dans un jeu fait avec.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Ce qui se passe
+      description: Ce que tu as fait, ce que tu attendais, et ce qui est arrivé à la place.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pour le reproduire
+      description: Les étapes, et un petit projet si le problème en dépend.
+  - type: textarea
+    id: report
+    attributes:
+      label: Rapport système
+      description: >
+        Dans l'éditeur, Help > Copy System Report, puis coller ici. S'il ne démarre pas, lancer `devex-editor --report`
+        depuis un terminal. Relis-le avant de l'envoyer : les lignes du journal peuvent contenir des chemins de fichiers.
+      render: text
+    validations:
+      required: true

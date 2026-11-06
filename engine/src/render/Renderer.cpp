@@ -46,6 +46,17 @@ void Renderer::setPresentMode(PresentMode mode)
     m_implementation->setPresentMode(mode);
 }
 
+core::Result<std::string> Renderer::describeGraphics() const
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->describeGraphics();
+}
+
+core::Result<std::string> Renderer::describeGraphicsWithoutRenderer(const platform::Platform& platform, platform::Window& window)
+{
+    return vulkan::VulkanRenderer::describeGraphicsWithoutRenderer(platform, window);
+}
+
 core::Result<MeshHandle> Renderer::createMesh(const asset::MeshData& mesh)
 {
     DEVEX_ASSERT(m_implementation != nullptr);

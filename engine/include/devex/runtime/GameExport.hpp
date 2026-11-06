@@ -65,6 +65,8 @@ struct DEVEX_API EngineBuild
 // the GPUs of phones read.
 enum class ExportPlatform : std::uint8_t
 {
+    // The other desktop system: Linux from Windows, and Windows from Linux. See prepareOtherDesktopExport.
+    OtherDesktop,
     Desktop,
     Android,
 };
@@ -123,6 +125,9 @@ struct DEVEX_API ExportPlan
     // Writes the package only, without building the code or copying the engine, as tests do.
     bool packageOnly = false;
     ExportPlatform platform = ExportPlatform::Desktop;
+    // The archive the game ends up in, in which case the output folder is only where it is put together: a folder written
+    // under Windows cannot say that a Linux program is executable.
+    std::filesystem::path archive;
     // For Android: the builds of the chosen architectures, and the key of a release.
     std::vector<AndroidBuild> androidBuilds;
     asset::AndroidSigning signing;
@@ -144,7 +149,9 @@ struct DEVEX_API ExportProgress
 struct DEVEX_API ExportResult
 {
     std::filesystem::path output;
+    // Empty when the game cannot run here, as with one for the other desktop system in an archive.
     std::filesystem::path executable;
+    std::filesystem::path archive;
     std::size_t assets = 0;
     std::uint64_t packageBytes = 0;
     double seconds = 0.0;
@@ -163,11 +170,21 @@ struct DEVEX_API ExportResult
 [[nodiscard]] DEVEX_API core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
                                                                                   std::span<const std::byte> artifact);
 
-// devex-editor --export <project.dvxproj> [--output <folder>] [--configuration <Release|Debug>]
+// devex-editor --export <project.dvxproj> [--output <folder>] [--configuration <Release|Debug>] [--platform <system>]
+// The system is desktop, the one of the editor, android, or the other desktop system by its name, windows or linux.
 // Imports the assets of the project, exports the game as its export settings say, and prints the
 // progress. Returns the exit code of the process.
 [[nodiscard]] DEVEX_API int exportFromCommandLine(std::span<const std::string_view> arguments,
                                                   const std::filesystem::path& binDirectory);
+
+// The engine of the other desktop system, in platforms/ next to the bin/ of the editor, where the installer puts it.
+// Fails when it is not there, or is not the version of this editor, saying so.
+[[nodiscard]] DEVEX_API core::Result<EngineBuild> findOtherDesktopEngine(const std::filesystem::path& binDirectory);
+// Fills a plan for an export to the other desktop system: to the folder given, or else the one of the project settings.
+// Fails when the game has C++ code that does something, which only builds on the system it runs on. A module a new project
+// starts with registers nothing, and is left out.
+[[nodiscard]] DEVEX_API core::Result<void> prepareOtherDesktopExport(ExportPlan& plan, const std::filesystem::path& binDirectory,
+                                                                     const std::optional<std::filesystem::path>& output = std::nullopt);
 
 // Fills a plan for an export to Android from the settings of its project.
 [[nodiscard]] DEVEX_API core::Result<void> prepareAndroidExport(ExportPlan& plan, const std::filesystem::path& binDirectory);

@@ -8,6 +8,7 @@
 #include <devex/asset/Project.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/platform/Executable.hpp>
 #include <devex/platform/Process.hpp>
 
 #include <algorithm>
@@ -27,6 +28,36 @@ using namespace rects;
 using Button = PanelButton;
 
 namespace {
+
+// The system the editor runs on, how its programs end, and the other one it can export for.
+#if defined(_WIN32)
+constexpr const char* desktopPlatform = "Windows";
+constexpr const char* desktopSuffix = ".exe";
+constexpr const char* otherPlatform = "Linux";
+constexpr bool desktopIsWindows = true;
+#elif defined(__APPLE__)
+constexpr const char* desktopPlatform = "macOS";
+constexpr const char* desktopSuffix = "";
+constexpr const char* otherPlatform = nullptr;
+constexpr bool desktopIsWindows = false;
+#else
+constexpr const char* desktopPlatform = "Linux";
+constexpr const char* desktopSuffix = "";
+constexpr const char* otherPlatform = "Windows";
+constexpr bool desktopIsWindows = false;
+#endif
+
+// The list of platforms: the system of the editor, the other one where there is one, and Android, last.
+[[nodiscard]] std::vector<std::string> platformChoices()
+{
+    std::vector<std::string> choices{desktopPlatform};
+    if (otherPlatform != nullptr)
+    {
+        choices.emplace_back(otherPlatform);
+    }
+    choices.emplace_back("Android");
+    return choices;
+}
 
 inline constexpr const char* exportWindow = "Export Game";
 
@@ -126,6 +157,7 @@ struct ExportUi : FormUi
     Entity output;
     Button browse;
     Entity configuration;
+    Entity terminal;
     Entity buildNote;
     std::vector<SceneRow> scenes;
     std::vector<FolderRow> folders;
@@ -155,9 +187,10 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
     const float tool = line - 6.0f;
 
     const bool android = settings.platform == "android";
+    const bool other = settings.targetsOtherDesktop();
     Section& game = card(kit, "Game");
-    platform = choice(formRow(game, "Platform").editor, {"Desktop", "Android"});
-    const FormRow executableRow = formRow(game, android ? "File" : "Executable");
+    platform = choice(formRow(game, "Platform").editor, platformChoices());
+    const FormRow executableRow = formRow(game, android ? "File" : other && desktopIsWindows ? "Archive" : "Executable");
     executable = text(executableRow.editor, whole(math::Vec4{font * 0.3f, 0.0f, 0.0f, 0.0f}), "", "text");
     tooltip(executableRow.row, "Named after the game: rename it in Project > Project Settings");
     const FormRow outputRow = formRow(game, "Output Folder");
@@ -166,7 +199,15 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
     tooltip(outputRow.row, "Relative to the project folder, or absolute. A previous export there is replaced.");
     browse = toolButton(kit, outputRow.editor, Icon::FolderOpen, rightButton(tool, 0.0f));
     tooltip(browse.entity, "Choose the folder");
-    configuration = android ? Entity{} : choice(formRow(game, "Configuration").editor, {"Release", "Debug"});
+    // The engine of the other system comes in one configuration.
+    configuration = android || other ? Entity{} : choice(formRow(game, "Configuration").editor, {"Release", "Debug"});
+    terminal = Entity{};
+    if (!android && (desktopIsWindows != other))
+    {
+        const FormRow terminalRow = formRow(game, "Terminal");
+        terminal = choice(terminalRow.editor, {"Hidden", "Shown"});
+        tooltip(terminalRow.row, "Shown, a terminal opens with the game and shows its log. The log is kept in a file either way.");
+    }
     buildNote = note(&game, "", "dim", 2.0f);
 
     if (android)
@@ -281,11 +322,19 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
     const ThemeColors& colors = themeColors();
     const asset::Project& project = state.database->project();
     const bool android = settings.platform == "android";
+    const bool other = settings.targetsOtherDesktop();
     const std::string gameFile = asset::gameFileName(project.name);
-    setChoice(platform, {"Desktop", "Android"}, android ? 1 : 0);
+    const std::vector<std::string> choices = platformChoices();
+    setChoice(platform, choices, android ? static_cast<std::int32_t>(choices.size()) - 1 : other ? 1 : 0);
     scene().get<scene::UiText>(executable).text =
-        gameFile + (!android ? ".exe" : settings.android.format == "aab" ? ".aab" : ".apk");
-    setText(output, android ? settings.android.output : settings.output);
+        gameFile + (android ? (settings.android.format == "aab" ? ".aab" : ".apk")
+                    : other ? (desktopIsWindows ? "-linux-x64.tar.gz" : ".exe")
+                            : desktopSuffix);
+    if (terminal.isValid())
+    {
+        setChoice(terminal, {"Hidden", "Shown"}, settings.showTerminal ? 1 : 0);
+    }
+    setText(output, android ? settings.android.output : other ? settings.otherOutput : settings.output);
     if (configuration.isValid())
     {
         setChoice(configuration, {"Release", "Debug"}, settings.configuration == "Debug" ? 1 : 0);
@@ -346,6 +395,16 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
         buildText.text = "The first export downloads Gradle and what it needs, which takes some minutes.";
         scene().get<UiRect>(buildNote).style = "dim";
     }
+    else if (other)
+    {
+        const bool ready = state.otherDesktopProblem.empty();
+        exportable = ready && !settings.otherOutput.empty();
+        buildText.text = !ready ? state.otherDesktopProblem + "."
+                                : std::format("With the engine for {} that comes with Devex. C# needs .NET for {}, which the first export downloads. "
+                                              "C++ code only builds on the system it runs on: a module that registers nothing is left out.{}",
+                                              otherPlatform, otherPlatform, desktopIsWindows ? " Extract the archive on Linux and start the game." : "");
+        scene().get<UiRect>(buildNote).style = ready ? "dim" : "warning";
+    }
     else if (build == state.engineBuilds.end())
     {
         buildText.text = std::format("There is no {} build of the engine next to the editor. Build it first, for instance with cmake --build --preset "
@@ -397,7 +456,7 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
     const bool succeeded = status.state == ExportStatus::State::Succeeded;
     const bool failed = status.state == ExportStatus::State::Failed;
     scene().get<UiRect>(openFolder.entity).visible = succeeded;
-    scene().get<UiRect>(runGame.entity).visible = succeeded && !android;
+    scene().get<UiRect>(runGame.entity).visible = succeeded && !android && !other;
     enable(runGame, !status.executable.empty());
     showLine(run, progressLine, running);
     showLine(run, statusLine, succeeded || failed);
@@ -415,14 +474,22 @@ void ExportUi::answer(ToolsState& state)
 {
     const ui::UiWorld& world = panel.world();
     const bool android = settings.platform == "android";
+    const bool other = settings.targetsOtherDesktop();
     const auto typed = [&](Entity field) -> const std::string& { return scene().get<scene::UiText>(field).text; };
     if (endedField.isValid() && endedField == output)
     {
-        (android ? settings.android.output : settings.output) = typed(output);
+        (android ? settings.android.output : other ? settings.otherOutput : settings.output) = typed(output);
     }
     if (world.wasChanged(platform))
     {
-        settings.platform = scene().get<scene::UiDropdown>(platform).selected == 1 ? "android" : "desktop";
+        const auto chosen = static_cast<std::size_t>(scene().get<scene::UiDropdown>(platform).selected);
+        settings.platform = chosen + 1 == platformChoices().size() ? std::string("android")
+                            : chosen == 1                          ? std::string(asset::otherDesktopSystem())
+                                                                   : std::string("desktop");
+    }
+    if (terminal.isValid() && world.wasChanged(terminal))
+    {
+        settings.showTerminal = scene().get<scene::UiDropdown>(terminal).selected == 1;
     }
     if (android)
     {
@@ -548,7 +615,14 @@ void ExportUi::answer(ToolsState& state)
     }
     if (world.wasClicked(runGame.entity) && !status.executable.empty())
     {
-        const std::array<std::string, 1> arguments{core::toUtf8(status.executable)};
+        std::vector<std::string> arguments{core::toUtf8(status.executable)};
+#ifdef _WIN32
+        // Started by the editor, it would share the console without a window: the file manager gives it its own terminal.
+        if (platform::opensConsole(status.executable).value_or(false))
+        {
+            arguments.insert(arguments.begin(), "explorer.exe");
+        }
+#endif
         if (core::Result<void> launched = platform::Process::launch(arguments, status.output); !launched)
         {
             DEVEX_LOG_ERROR("Cannot run the game: {}", launched.error());
@@ -620,7 +694,7 @@ void ExportUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
     {
         // Folders inside the project are kept relative to it, so that the project can move.
         const std::string resource = project.resourcePath(*folder);
-        (settings.platform == "android" ? settings.android.output : settings.output) =
+        (settings.platform == "android" ? settings.android.output : settings.targetsOtherDesktop() ? settings.otherOutput : settings.output) =
             resource.empty() ? core::toUtf8(*folder) : resource.substr(asset::resourceScheme.size());
         dirty = true;
     }

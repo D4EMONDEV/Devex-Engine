@@ -3,6 +3,7 @@
 #include <devex/core/Path.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Uuid.hpp>
+#include <devex/tools/ToolsOverlay.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -21,6 +22,7 @@ TEST_CASE("Script editor preferences survive serialization independently for eac
     ScriptSettings settings;
     settings.automaticCompilation = false;
     settings.separateProcess = false;
+    settings.showTerminal = true;
     settings.playInstances = 3;
     settings.connectPlayInstances = false;
     settings.editors[0] = {ScriptEditor::Custom, "C:/Program Files/Editor/rider64.exe", "\"{project}\" \"{file}\""};
@@ -184,4 +186,17 @@ TEST_CASE("Editor paths recognize filesystem aliases and keep distinct files sep
     CHECK_FALSE(sameEditorPath(directory.path / "missing.exe", directory.path / "absent.exe"));
     const std::array candidates{executable, alias, other};
     CHECK(findScriptEditors(candidates).size() == 2);
+}
+
+TEST_CASE("The editor knows whether to show a terminal before it exists", "[tools][settings]")
+{
+    const std::filesystem::path file =
+        std::filesystem::temp_directory_path() / ("devex-terminal-" + devex::core::Uuid::generate().toString() + ".dvx");
+    CHECK_FALSE(devex::tools::settingsShowTerminal(file));
+    REQUIRE(devex::core::writeTextFile(file, "[scripts separate_process=true]\n"));
+    CHECK_FALSE(devex::tools::settingsShowTerminal(file));
+    REQUIRE(devex::core::writeTextFile(file, "[scripts show_terminal=true]\n"));
+    CHECK(devex::tools::settingsShowTerminal(file));
+    std::error_code ignored;
+    std::filesystem::remove(file, ignored);
 }

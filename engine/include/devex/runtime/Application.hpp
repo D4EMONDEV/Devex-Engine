@@ -32,6 +32,7 @@
 #include <concepts>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 
 namespace devex::runtime {
@@ -279,6 +280,11 @@ DEVEX_API void configureLogging(std::string_view commandLine = {});
 // Runs the application until it requests to quit or its main window is closed. Returns a process
 // exit code.
 [[nodiscard]] DEVEX_API int run(Application& application, const ApplicationConfig& config);
+
+// Calls the function, which runs the application. A program started from the desktop has no console to say why it
+// cannot start: the first fatal error is then shown, with the log that holds the rest. Returns what the function does.
+[[nodiscard]] DEVEX_API int runShowingFatalError(std::string_view title, const std::filesystem::path& logFile,
+                                                 const std::function<int()>& runApplication);
 
 template <std::derived_from<Application> App>
 [[nodiscard]] int run(const ApplicationConfig& config)

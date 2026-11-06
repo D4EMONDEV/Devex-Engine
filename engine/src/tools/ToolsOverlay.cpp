@@ -896,6 +896,11 @@ void ToolsOverlay::setDebuggerStatus(DebuggerStatus status)
     m_state->debugger = status;
 }
 
+void ToolsOverlay::setOtherDesktopExport(std::string problem)
+{
+    m_state->otherDesktopProblem = std::move(problem);
+}
+
 void ToolsOverlay::setAndroidExport(std::vector<std::string> abis, std::string problem)
 {
     m_state->androidAbis = std::move(abis);

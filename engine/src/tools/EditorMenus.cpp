@@ -280,7 +280,8 @@ void addPanelEntries(ToolsState& state, std::vector<MenuEntry>& entries)
 
 [[nodiscard]] std::vector<MenuEntry> helpMenu()
 {
-    return {MenuEntry{.icon = Icon::Info, .label = "About Devex", .action = [](ToolsState& tools, scene::Scene&) { tools.openAboutPopup = true; }}};
+    return {MenuEntry{.label = "Copy System Report", .action = [](ToolsState& tools, scene::Scene&) { tools.requests.systemReport = true; }},
+            MenuEntry{.icon = Icon::Info, .label = "About Devex", .action = [](ToolsState& tools, scene::Scene&) { tools.openAboutPopup = true; }}};
 }
 
 // The View menu of the tools over a game: its panels, and their places.

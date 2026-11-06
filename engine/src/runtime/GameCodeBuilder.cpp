@@ -516,6 +516,70 @@ bool GameCodeBuilder::hasCode(const asset::Project& project)
     return found;
 }
 
+bool GameCodeBuilder::moduleRegistersNothing(const asset::Project& project)
+{
+    // Without the comments, where a new component says how to register it.
+    const auto withoutComments = [](const std::string& text) {
+        std::string code;
+        for (std::size_t index = 0; index < text.size();)
+        {
+            if (text.compare(index, 2, "//") == 0)
+            {
+                index = std::min(text.find('\n', index), text.size());
+            }
+            else if (text.compare(index, 2, "/*") == 0)
+            {
+                const std::size_t end = text.find("*/", index + 2);
+                index = end == std::string::npos ? text.size() : end + 2;
+            }
+            else
+            {
+                code.push_back(text[index++]);
+            }
+        }
+        return code;
+    };
+    bool empty = true;
+    visitCodeFiles(project, [&](const auto& file) {
+        if (!cppSource(file.path()))
+        {
+            return true;
+        }
+        const core::Result<std::string> text = core::readTextFile(file.path());
+        if (!text)
+        {
+            empty = false;
+            return false;
+        }
+        const std::string code = withoutComments(*text);
+        constexpr std::string_view macro = "DEVEX_GAME_MODULE(";
+        const std::size_t start = code.find(macro);
+        if (start == std::string::npos)
+        {
+            return true;
+        }
+        // The name of the parameter, and what the module does with it.
+        const std::size_t close = code.find(')', start);
+        const std::size_t open = close == std::string::npos ? close : code.find('{', close);
+        const std::size_t end = open == std::string::npos ? open : code.find('}', open);
+        if (end == std::string::npos)
+        {
+            empty = false;
+            return false;
+        }
+        const auto squeezed = [](std::string_view words) {
+            std::string result;
+            std::ranges::copy_if(words, std::back_inserter(result), [](char letter) { return std::isspace(static_cast<unsigned char>(letter)) == 0; });
+            return result;
+        };
+        const std::string name = squeezed(std::string_view(code).substr(start + macro.size(), close - start - macro.size()));
+        const std::string body = squeezed(std::string_view(code).substr(open + 1, end - open - 1));
+        empty = body.empty() || body == "static_cast<void>(" + name + ");" || body == "(void)" + name + ";";
+        return false;
+    });
+    return empty;
+}
+
 core::Result<void>
 GameCodeBuilder::prepareProjectFiles(const asset::Project& project,
                                      const std::filesystem::path& devexConfigDirectory,

@@ -1055,6 +1055,7 @@ target_sources(devex_runtime
     PRIVATE
         src/runtime/Application.cpp
         src/runtime/EditorPlay.cpp
+        src/runtime/GameArchive.cpp
         src/runtime/EditorPlay.hpp
         src/runtime/GlobalScenes.cpp
         src/runtime/GlobalScenes.hpp
@@ -1080,6 +1081,7 @@ target_sources(devex_runtime
         src/runtime/ManagedGame.cpp
         src/runtime/ManagedGame.hpp
         src/runtime/SceneExtraction.cpp
+        src/runtime/SystemReport.cpp
         src/runtime/TerrainQueries.cpp
     PUBLIC
         FILE_SET HEADERS

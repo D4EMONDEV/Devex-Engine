@@ -3,6 +3,15 @@
 Ce qui change d'une version publiée à l'autre. Ce que promet chaque version aux projets existants est dans
 [docs/compatibilite.md](docs/compatibilite.md). Les décisions et leurs raisons sont dans [docs/decisions.md](docs/decisions.md).
 
+## À venir
+
+- **Help > Copy System Report** dans l'éditeur, et `devex-editor --report` quand il ne démarre pas : le système, les GPU et ce qu'ils offrent, les outils trouvés et les derniers problèmes du journal, à joindre à un bug. Rien ne part tout seul.
+- **Plus de terminal par défaut** sous Windows : le journal est dans le panneau Output. **Editor Settings > Compilation > Terminal** en montre un à côté de l'éditeur, et **Terminal** dans la fenêtre d'export en ouvre un avec le jeu. Pour les scripts, `devex-editor-console` attend la fin de la commande et rend son code de sortie.
+- **Exporter pour l'autre système** : la liste **Platform** propose Windows, Linux et Android. Depuis Windows, un jeu pour Linux sort en `.tar.gz`, à extraire sous Linux. Depuis Linux, un jeu pour Windows sort en dossier, avec son icône. Le moteur de l'autre système vient avec Devex, ce qui ajoute environ 10 Mo à l'installateur et à l'archive Linux. Le code C# suit, et le premier export télécharge .NET pour ce système. Le code C++ ne se compile que sur le système où il tourne : le module d'un nouveau projet, qui n'enregistre rien, est laissé de côté, et un jeu dont le C++ fait quelque chose est refusé en le disant.
+- Sans synchro verticale, un jeu n'est plus bloqué au rythme de l'écran sous Wayland, comme sur Ubuntu récent : `immediate` n'y existe pas, et le moteur retombait sur FIFO au lieu de `mailbox`.
+- Un modèle de bug sur GitHub, et [une page](docs/essayer-sur-une-machine.md) pour essayer Devex sur une machine.
+- Si l'éditeur ne peut pas démarrer, il le dit dans une fenêtre, comme les jeux, avec le conseil de mettre à jour le pilote graphique quand Vulkan manque. Sous Linux, ce message apparaît aussi quand le programme est lancé depuis le bureau.
+
 ## 0.9.0 — 2026-11-06
 
 La première version publiée de Devex : un moteur de jeu 2D et 3D en C++23 sur Vulkan, avec son éditeur. C'est un aperçu : il

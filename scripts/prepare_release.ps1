@@ -48,6 +48,54 @@ $Output = (Resolve-Path $Output).Path
 $notes = Join-Path $Output "notes.md"
 [IO.File]::WriteAllText($notes, $section.Groups[1].Value.Trim())
 
+# Each system's editor exports for the other with its engine, which comes along: only what a game takes.
+function Copy-GameEngine([string] $From, [string] $To) {
+    New-Item -ItemType Directory -Force (Join-Path $To "bin") | Out-Null
+    Get-ChildItem (Join-Path $From "bin") -File | Where-Object { $_.Name -in "devex-player", "devex-player.exe" -or $_.Extension -in ".dll", ".so" } |
+        ForEach-Object { Copy-Item $_.FullName (Join-Path $To "bin") }
+    foreach ($folder in "bin/managed", "bin/shaders", "bin/redist", "cmake") {
+        $source = Join-Path $From $folder
+        if (Test-Path $source) {
+            Copy-Item -Recurse -Force $source (Join-Path $To $folder)
+        }
+    }
+    $library = Join-Path $From "lib/libdevex-engine.so"
+    if (Test-Path $library) {
+        New-Item -ItemType Directory -Force (Join-Path $To "lib") | Out-Null
+        Copy-Item $library (Join-Path $To "lib")
+    }
+}
+if ($Linux) {
+    # The tar of the system, which reads a whole archive with @ and keeps what its entries say is executable.
+    $tar = Join-Path $env:SystemRoot "System32/tar.exe"
+    $work = Join-Path $Output "other-engines"
+    Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
+    $forLinux = Join-Path $work "windows"
+    # First, while the Windows engine does not hold the one for Linux yet.
+    Copy-GameEngine $Windows (Join-Path $forLinux "devex-linux-x64/platforms/windows-x64")
+    $extracted = Join-Path $work "linux"
+    New-Item -ItemType Directory -Force $extracted | Out-Null
+    & $tar -xzf $Linux -C $extracted
+    if ($LASTEXITCODE -ne 0) {
+        throw "The Linux archive does not extract"
+    }
+    Remove-Item -Recurse -Force (Join-Path $Windows "platforms") -ErrorAction SilentlyContinue
+    Copy-GameEngine (Join-Path $extracted "devex-linux-x64") (Join-Path $Windows "platforms/linux-x64")
+    foreach ($needed in (Join-Path $Windows "platforms/linux-x64/bin/devex-player"), (Join-Path $Windows "platforms/linux-x64/lib/libdevex-engine.so"),
+                        (Join-Path $forLinux "devex-linux-x64/platforms/windows-x64/bin/devex-player.exe")) {
+        if (-not (Test-Path $needed)) {
+            throw "$needed is missing from the engine for the other system"
+        }
+    }
+    $linuxArchive = Join-Path $Output "devex-$Version-linux-x64.tar.gz"
+    # In this format: left to itself, this tar adds headers that the tar of Linux warns about, file after file.
+    & $tar --format=gnutar -czf $linuxArchive "@$Linux" -C $forLinux "devex-linux-x64/platforms"
+    if ($LASTEXITCODE -ne 0) {
+        throw "The Linux archive did not take the engine for Windows"
+    }
+    Remove-Item -Recurse -Force $work
+}
+
 $windowsZip = Join-Path $Output "devex-$Version-windows-x64.zip"
 Remove-Item -Force $windowsZip -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $Windows "*") -DestinationPath $windowsZip -CompressionLevel Optimal
@@ -59,8 +107,6 @@ if ($LASTEXITCODE -ne 0) {
 
 $files = @($windowsZip, (Join-Path $Output "devex-$Version-windows-x64-setup.exe"))
 if ($Linux) {
-    $linuxArchive = Join-Path $Output "devex-$Version-linux-x64.tar.gz"
-    Copy-Item -Force $Linux $linuxArchive
     $files += $linuxArchive
 }
 

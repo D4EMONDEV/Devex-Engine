@@ -1,3 +1,4 @@
+#include "GameArchive.hpp"
 #include "GameCodeBuilder.hpp"
 #include "ManagedCodeBuilder.hpp"
 
@@ -38,9 +39,9 @@ constexpr std::string_view libraryExtension = ".dll";
 #else
 constexpr std::string_view executableSuffix = "";
 constexpr std::string_view libraryExtension = ".so";
-// In lib/ next to bin/, where the libraries of vcpkg are linked into it.
-constexpr std::string_view engineLibrary = "libdevex-engine.so";
 #endif
+// In lib/ next to bin/ on Linux, where the libraries of vcpkg are linked into it.
+constexpr std::string_view engineLibrary = "libdevex-engine.so";
 
 // The .NET runtime published with a game in C#: the one of the system and the processor the game
 // is exported for, which are those the editor runs on.
@@ -57,6 +58,57 @@ constexpr std::string_view dotnetRuntime = "linux-arm64";
 #else
 constexpr std::string_view dotnetRuntime = "linux-x64";
 #endif
+
+// What differs between the systems a game can be exported for.
+struct TargetSystem
+{
+    bool windows = false;
+    // A Linux desktop lists a game through these files.
+    bool desktopFiles = false;
+    std::string_view executableSuffix;
+    std::string_view libraryExtension;
+    std::string_view dotnetRuntime;
+};
+
+constexpr TargetSystem windowsTarget{.windows = true, .executableSuffix = ".exe", .libraryExtension = ".dll", .dotnetRuntime = "win-x64"};
+constexpr TargetSystem linuxTarget{.desktopFiles = true, .libraryExtension = ".so", .dotnetRuntime = "linux-x64"};
+
+[[nodiscard]] constexpr TargetSystem otherTarget() noexcept
+{
+#ifdef _WIN32
+    return linuxTarget;
+#else
+    return windowsTarget;
+#endif
+}
+
+// The names the command line knows: desktop, android, and the desktop systems this one can export for, its own included.
+[[nodiscard]] bool isExportPlatformName(std::string_view name) noexcept
+{
+#if defined(_WIN32)
+    constexpr std::string_view own = "windows";
+#elif defined(__linux__)
+    constexpr std::string_view own = "linux";
+#else
+    constexpr std::string_view own = "desktop";
+#endif
+    return name == "desktop" || name == "android" || name == own || (!asset::otherDesktopSystem().empty() && name == asset::otherDesktopSystem());
+}
+
+[[nodiscard]] TargetSystem targetOf(const ExportPlan& plan) noexcept
+{
+    if (plan.platform == ExportPlatform::OtherDesktop)
+    {
+        return otherTarget();
+    }
+    TargetSystem host{.executableSuffix = executableSuffix, .libraryExtension = libraryExtension, .dotnetRuntime = dotnetRuntime};
+#if defined(_WIN32)
+    host.windows = true;
+#elif defined(__linux__)
+    host.desktopFiles = true;
+#endif
+    return host;
+}
 
 [[nodiscard]] bool equalsIgnoringCase(std::string_view left, std::string_view right)
 {
@@ -83,11 +135,12 @@ constexpr std::string_view dotnetRuntime = "linux-x64";
     return text->substr(start + marker.size(), end - start - marker.size());
 }
 
-[[nodiscard]] std::optional<EngineBuild> engineBuildAt(const std::filesystem::path& directory)
+[[nodiscard]] std::optional<EngineBuild> engineBuildAt(const std::filesystem::path& directory,
+                                                       std::string_view playerSuffix = executableSuffix)
 {
     std::error_code error;
     std::filesystem::path player = directory / "bin" / "devex-player";
-    player += executableSuffix;
+    player += playerSuffix;
     if (!std::filesystem::is_regular_file(player, error))
     {
         return std::nullopt;
@@ -230,7 +283,7 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     const std::filesystem::path host = plan.project.cacheDirectory() / "export" / "dotnet";
     const std::filesystem::path managedSource = plan.engine.binDirectory() / "managed";
     if (core::Result<void> written =
-            core::writeTextFile(host / "Devex.Host.csproj", std::format(hostTemplate, core::toUtf8(managedSource), dotnetRuntime));
+            core::writeTextFile(host / "Devex.Host.csproj", std::format(hostTemplate, core::toUtf8(managedSource), targetOf(plan).dotnetRuntime));
         !written)
     {
         return written;
@@ -283,23 +336,26 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
 [[nodiscard]] core::Result<std::filesystem::path> copyEngine(const ExportPlan& plan, const std::string& name,
                                                              const std::optional<std::filesystem::path>& library)
 {
+    const TargetSystem target = targetOf(plan);
     const std::filesystem::path bin = plan.engine.binDirectory();
     std::filesystem::path player = bin / "devex-player";
-    player += executableSuffix;
+    player += target.executableSuffix;
     std::filesystem::path executable = plan.output / core::pathFromUtf8(name);
-    executable += executableSuffix;
+    executable += target.executableSuffix;
     if (core::Result<void> copied = copyFile(player, executable); !copied)
     {
         return std::unexpected(copied.error());
     }
-#ifdef _WIN32
     // The player prints to a console while a game is made; a player of the game double-clicks it,
-    // and a console window would open behind it. The game keeps its log in a file instead.
-    if (core::Result<void> windowed = platform::setWindowedApplication(executable); !windowed)
+    // and a console window would open behind it. The game keeps its log in a file instead, unless
+    // the project asks to see it.
+    if (target.windows && !plan.project.exportSettings.showTerminal)
     {
-        return std::unexpected(windowed.error());
+        if (core::Result<void> windowed = platform::setWindowedApplication(executable); !windowed)
+        {
+            return std::unexpected(windowed.error());
+        }
     }
-#endif
 
     std::error_code error;
     const auto copyLibraries = [&](const std::filesystem::path& folder) -> core::Result<void> {
@@ -308,7 +364,7 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
             const std::string fileName = core::toUtf8(entry.path().filename());
             const bool test = fileName.starts_with("devex_test") || fileName.find("_tests") != std::string::npos;
             if (entry.is_regular_file(error) && !test &&
-                equalsIgnoringCase(core::toUtf8(entry.path().extension()), libraryExtension))
+                equalsIgnoringCase(core::toUtf8(entry.path().extension()), target.libraryExtension))
             {
                 if (core::Result<void> copied = copyFile(entry.path(), plan.output / entry.path().filename()); !copied)
                 {
@@ -322,14 +378,15 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     {
         return std::unexpected(copied.error());
     }
-#ifndef _WIN32
-    // The game finds it beside itself ($ORIGIN in the search path of the player).
-    const std::filesystem::path engine = plan.engine.directory / "lib" / engineLibrary;
-    if (core::Result<void> copied = copyFile(engine, plan.output / engineLibrary); !copied)
+    if (!target.windows)
     {
-        return std::unexpected(copied.error());
+        // The game finds it beside itself ($ORIGIN in the search path of the player).
+        const std::filesystem::path engine = plan.engine.directory / "lib" / engineLibrary;
+        if (core::Result<void> copied = copyFile(engine, plan.output / engineLibrary); !copied)
+        {
+            return std::unexpected(copied.error());
+        }
     }
-#endif
     // The C++ runtime, which the engine build copies there when it may be redistributed.
     if (std::filesystem::is_directory(bin / "redist", error))
     {
@@ -375,7 +432,6 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     return asset::resizeImage(*image, packageIconSize, packageIconSize);
 }
 
-#ifdef _WIN32
 // The icon of the executable, in its resources. Linux desktops take it from the desktop entry.
 [[nodiscard]] core::Result<void> setIcon(const std::filesystem::path& executable, const asset::Image& icon)
 {
@@ -392,9 +448,7 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     }
     return platform::setExecutableIcon(executable, images);
 }
-#endif
 
-#ifdef __linux__
 // What a Linux desktop needs to list the game, for whoever installs it (Flatpak, a store, or a copy
 // into ~/.local/share/applications and the icons of the theme): <game>.desktop, which starts the game
 // found in PATH, and its icon, <game>.png. The game also lists itself when it starts, with that icon
@@ -415,7 +469,6 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     return core::writeTextFile(output / core::pathFromUtf8(name + ".desktop"),
                                platform::desktopEntryText(entry, core::pathFromUtf8(name)));
 }
-#endif
 
 // A texture artifact as Android packages it: its BC levels in ASTC, kept in the cache of the project
 // under the hash of the artifact, so that the next exports only convert what changed.
@@ -451,6 +504,74 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
 }
 
 } // namespace
+
+core::Result<EngineBuild> findOtherDesktopEngine(const std::filesystem::path& binDirectory)
+{
+    const std::string_view system = asset::otherDesktopSystem();
+    if (system.empty())
+    {
+        return core::makeError(core::ErrorCode::Unsupported, "this system exports for no other one");
+    }
+    std::filesystem::path bin = binDirectory.lexically_normal();
+    if (!bin.has_filename())
+    {
+        bin = bin.parent_path();
+    }
+    const std::string_view label = system == "linux" ? "Linux" : "Windows";
+    const std::filesystem::path directory =
+        bin.parent_path() / "platforms" / core::pathFromUtf8(std::string(system == "linux" ? "linux-x64" : "windows-x64"));
+    std::optional<EngineBuild> build = engineBuildAt(directory, otherTarget().executableSuffix);
+    if (!build)
+    {
+        return core::makeError(core::ErrorCode::NotFound,
+                               "the engine for {} is not next to the editor. The installer brings it; with your own build, "
+                               "extract the {} archive of this version into {}",
+                               label, label, core::toUtf8(directory));
+    }
+    // The package, the shaders and the code of the engine go together, so the versions must match.
+    const core::Result<std::string> config = core::readTextFile(build->cmakeDirectory() / "DevexConfig.cmake");
+    constexpr std::string_view marker = "set(DEVEX_ENGINE_VERSION \"";
+    const std::size_t start = config ? config->find(marker) : std::string::npos;
+    const std::size_t end = start == std::string::npos ? start : config->find('"', start + marker.size());
+    const std::string version = end == std::string::npos ? "older" : config->substr(start + marker.size(), end - start - marker.size());
+    if (version != core::version())
+    {
+        return core::makeError(core::ErrorCode::InvalidState, "the engine for {} next to the editor is version {}, and the editor {}",
+                               label, version, core::version());
+    }
+    return *build;
+}
+
+core::Result<void> prepareOtherDesktopExport(ExportPlan& plan, const std::filesystem::path& binDirectory,
+                                             const std::optional<std::filesystem::path>& output)
+{
+    const asset::Project& project = plan.project;
+    const std::string_view system = asset::otherDesktopSystem();
+    if (!detail::GameCodeBuilder::moduleRegistersNothing(project))
+    {
+        return core::makeError(core::ErrorCode::Unsupported,
+                               "this game has C++ code, which only builds on the system it runs on: export it from the editor on {}",
+                               system == "linux" ? "Linux" : "Windows");
+    }
+    core::Result<EngineBuild> engine = findOtherDesktopEngine(binDirectory);
+    if (!engine)
+    {
+        return std::unexpected(engine.error());
+    }
+    plan.engine = std::move(*engine);
+    plan.platform = ExportPlatform::OtherDesktop;
+    const std::filesystem::path configured = core::pathFromUtf8(project.exportSettings.otherOutput);
+    const std::filesystem::path chosen = output ? *output : configured.is_absolute() ? configured : project.root / configured;
+    if (otherTarget().windows)
+    {
+        plan.output = chosen.lexically_normal();
+        return {};
+    }
+    const std::string name = executableName(project.name);
+    plan.archive = (chosen / core::pathFromUtf8(name + "-linux-x64.tar.gz")).lexically_normal();
+    plan.output = project.cacheDirectory() / "export" / "other-desktop" / core::pathFromUtf8(name);
+    return {};
+}
 
 std::vector<EngineBuild> findEngineBuilds(const std::filesystem::path& binDirectory)
 {
@@ -800,7 +921,8 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
     const std::string name = executableName(project.name);
 
     std::optional<std::filesystem::path> library;
-    if (!plan.packageOnly && detail::GameCodeBuilder::hasCode(project))
+    // On the other system, the C++ of the game cannot build, and it was checked that it does nothing.
+    if (!plan.packageOnly && plan.platform != ExportPlatform::OtherDesktop && detail::GameCodeBuilder::hasCode(project))
     {
         report(std::format("Building the game code ({})", plan.engine.configuration), 0.02f);
         detail::GameCodeBuilder builder(project, plan.engine.cmakeDirectory(), plan.engine.configuration);
@@ -998,21 +1120,21 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
                 return std::unexpected(copied.error());
             }
         }
-#ifdef _WIN32
-        if (icon)
+        const TargetSystem target = targetOf(plan);
+        if (target.windows && icon)
         {
             if (core::Result<void> set = setIcon(result.executable, *icon); !set)
             {
                 DEVEX_LOG_WARNING("The executable keeps the default icon: {}", set.error());
             }
         }
-#endif
-#ifdef __linux__
-        if (core::Result<void> written = writeDesktopFiles(plan.output, name, project, icon); !written)
+        if (target.desktopFiles)
         {
-            return std::unexpected(written.error());
+            if (core::Result<void> written = writeDesktopFiles(plan.output, name, project, icon); !written)
+            {
+                return std::unexpected(written.error());
+            }
         }
-#endif
     }
     if (core::Result<void> marked = core::writeTextFile(
             plan.output / exportMarker,
@@ -1022,6 +1144,18 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
     {
         return std::unexpected(marked.error());
     }
+    if (!plan.archive.empty() && !plan.packageOnly)
+    {
+        report("Packing the game", 0.96f);
+        core::Result<std::filesystem::path> archive = detail::packGame(plan.output, name, plan.archive);
+        if (!archive)
+        {
+            return std::unexpected(archive.error());
+        }
+        result.archive = std::move(*archive);
+        result.output = result.archive.parent_path();
+        result.executable.clear();
+    }
     result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     report("Exported", 1.0f);
     return result;
@@ -1030,7 +1164,7 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
 int exportFromCommandLine(std::span<const std::string_view> arguments, const std::filesystem::path& binDirectory)
 {
     constexpr std::string_view usage = "usage: devex-editor --export <project.dvxproj> [--output <folder>] "
-                                       "[--configuration <Release|Debug>] [--platform <desktop|android>] "
+                                       "[--configuration <Release|Debug>] [--platform <desktop|windows|linux|android>] "
                                        "[--abi <arm64-v8a|x86_64>]... [--format <apk|aab>] [--release] [--install] [--package-only]";
     if (arguments.size() < 2 || arguments.front() != "--export")
     {
@@ -1075,10 +1209,21 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
         {
             packageOnly = true;
         }
-        else if (index + 1 < arguments.size() && arguments[index] == "--platform" &&
-                 (arguments[index + 1] == "desktop" || arguments[index + 1] == "android"))
+        else if (index + 1 < arguments.size() && arguments[index] == "--platform" && isExportPlatformName(arguments[index + 1]))
         {
-            platform = arguments[++index] == "android" ? ExportPlatform::Android : ExportPlatform::Desktop;
+            const std::string_view chosen = arguments[++index];
+            if (chosen == "android")
+            {
+                platform = ExportPlatform::Android;
+            }
+            else if (!asset::otherDesktopSystem().empty() && chosen == asset::otherDesktopSystem())
+            {
+                platform = ExportPlatform::OtherDesktop;
+            }
+            else
+            {
+                platform = ExportPlatform::Desktop;
+            }
         }
         else
         {
@@ -1133,6 +1278,14 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
     }
     plan->platform = platform;
     plan->packageOnly = plan->packageOnly || packageOnly;
+    if (platform == ExportPlatform::OtherDesktop)
+    {
+        if (core::Result<void> prepared = prepareOtherDesktopExport(*plan, binDirectory, plan->packageOnly ? plan->output : output); !prepared)
+        {
+            DEVEX_LOG_ERROR("Cannot export {}: {}", project->name, prepared.error());
+            return 1;
+        }
+    }
     if (platform == ExportPlatform::Android && !plan->packageOnly)
     {
         asset::AndroidExportSettings& android = plan->project.exportSettings.android;

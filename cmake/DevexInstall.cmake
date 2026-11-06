@@ -17,7 +17,7 @@ if(POLICY CMP0207)
 endif()
 
 set(_devex_programs devex_engine)
-foreach(program IN ITEMS devex_bindgen devex_editor devex_player)
+foreach(program IN ITEMS devex_bindgen devex_editor devex_editor_console devex_player)
     if(TARGET ${program})
         list(APPEND _devex_programs ${program})
     endif()

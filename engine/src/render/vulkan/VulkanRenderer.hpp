@@ -59,6 +59,11 @@ public:
     [[nodiscard]] const GpuInfo& gpu() const noexcept;
     [[nodiscard]] PresentMode presentMode() const noexcept;
     void setPresentMode(PresentMode mode);
+    // What the machine offers for drawing, in words, for a bug report.
+    [[nodiscard]] core::Result<std::string> describeGraphics() const;
+    // The same with no renderer: a machine that cannot make one is the first to need a report.
+    [[nodiscard]] static core::Result<std::string> describeGraphicsWithoutRenderer(const platform::Platform& platform,
+                                                                                   platform::Window& window);
 
     [[nodiscard]] core::Result<MeshHandle> createMesh(const asset::MeshData& mesh);
     [[nodiscard]] bool isReady(MeshHandle mesh) const noexcept;

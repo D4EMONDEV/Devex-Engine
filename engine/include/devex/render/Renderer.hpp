@@ -181,6 +181,12 @@ public:
     [[nodiscard]] PresentMode presentMode() const noexcept;
     // Asks for another present mode, from the next frame.
     void setPresentMode(PresentMode mode);
+    // What the machine offers for drawing, in words, for a bug report.
+    [[nodiscard]] core::Result<std::string> describeGraphics() const;
+    // The same with no renderer: a machine that cannot make one is the first to need a report. Refused while a renderer
+    // exists. The window must have been created with WindowConfig::vulkan.
+    [[nodiscard]] static core::Result<std::string> describeGraphicsWithoutRenderer(const platform::Platform& platform,
+                                                                                   platform::Window& window);
 
     // Creates the mesh at once; its data reaches the GPU with the next frames, within the upload
     // budget of each (RendererConfig::uploadBytesPerFrame). Until then it is not drawn.

@@ -601,6 +601,8 @@ TEST_CASE("Project settings are saved and read back", "[asset][project]")
     edited.physics.gravity = {0.0f, -1.0f, 0.0f};
     edited.window.maxFrameRate = 30;
     edited.exportSettings.configuration = "Debug";
+    edited.exportSettings.showTerminal = true;
+    edited.exportSettings.otherOutput = "far/away";
     edited.root = project.project.root / "elsewhere";
     REQUIRE((*database)->updateProject(edited));
     CHECK((*database)->project().root == project.project.root);
@@ -609,6 +611,8 @@ TEST_CASE("Project settings are saved and read back", "[asset][project]")
     CHECK(saved->physics.gravity.y == -1.0f);
     CHECK(saved->window.maxFrameRate == 30);
     CHECK(saved->exportSettings.configuration == "Debug");
+    CHECK(saved->exportSettings.showTerminal);
+    CHECK(saved->exportSettings.otherOutput == "far/away");
     edited.physics = {};
     edited.window = {};
     edited.exportSettings = {};

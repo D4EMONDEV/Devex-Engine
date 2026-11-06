@@ -301,6 +301,40 @@ void VulkanRenderer::setPresentMode(PresentMode mode)
     }
 }
 
+core::Result<std::string> VulkanRenderer::describeGraphics() const
+{
+    return Device::describeAll(m_instance.handle(), m_surface.handle(), m_device.gpu().name);
+}
+
+core::Result<std::string> VulkanRenderer::describeGraphicsWithoutRenderer(const platform::Platform& platform,
+                                                                          platform::Window& window)
+{
+    if (rendererExists.load())
+    {
+        return core::makeError(core::ErrorCode::InvalidState, "a Renderer already exists");
+    }
+    const core::Result<std::span<const char* const>> extensions = platform.vulkanInstanceExtensions();
+    if (!extensions)
+    {
+        return std::unexpected(extensions.error());
+    }
+    const core::Result<Instance> instance = Instance::create({
+        .applicationName = "Devex report",
+        .requiredExtensions = *extensions,
+    });
+    if (!instance)
+    {
+        return std::unexpected(instance.error());
+    }
+    const core::Result<std::uint64_t> surfaceHandle = window.createVulkanSurface(instance->handle());
+    if (!surfaceHandle)
+    {
+        return std::unexpected(surfaceHandle.error());
+    }
+    const Surface surface(instance->handle(), std::bit_cast<VkSurfaceKHR>(*surfaceHandle));
+    return Device::describeAll(instance->handle(), surface.handle());
+}
+
 core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
 {
     if (core::Result<void> valid = asset::validate(mesh); !valid)
@@ -2479,8 +2513,8 @@ core::Result<void> VulkanRenderer::recreateSwapchain(math::Extent2D windowPixelS
                                                                   : "the display shared");
         if (m_swapchain->presentMode() != m_requestedPresentMode)
         {
-            DEVEX_LOG_WARNING("The display does not support {} presentation, using FIFO",
-                              toString(m_requestedPresentMode));
+            DEVEX_LOG_INFO("The display does not offer {} presentation, using {}",
+                           toString(m_requestedPresentMode), toString(m_swapchain->presentMode()));
         }
     }
     else

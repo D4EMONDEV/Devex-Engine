@@ -5,6 +5,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 set(DEVEX_BUILD_TYPE "@CMAKE_BUILD_TYPE@")
+set(DEVEX_ENGINE_VERSION "@PROJECT_VERSION@")
 # The compiler the engine was built with, which the editor gives CMake for game modules on Linux.
 set(DEVEX_CXX_COMPILER "@DEVEX_CXX_COMPILER_NAME@")
 if(CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE STREQUAL DEVEX_BUILD_TYPE)

@@ -69,6 +69,9 @@ public:
 
     // Reads "file(line,col): error C1234: message" and the clang and MSBuild spellings of it.
     // Localized compilers name the severity in their own language, which is also recognized.
+    // Whether the C++ code of a project gives the game nothing: its module, if it has one, only has the body a new project
+    // starts with, and it can be left out. Anything else counts as code, even a function that may do nothing.
+    [[nodiscard]] static bool moduleRegistersNothing(const asset::Project& project);
     [[nodiscard]] static std::optional<Diagnostic> parseDiagnostic(const std::string& line);
     // Whether a line of build output reports an error (true) or a warning (false).
     [[nodiscard]] static std::optional<bool> severityOf(const std::string& line);

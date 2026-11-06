@@ -36,6 +36,7 @@
 #include <devex/runtime/GameModule.hpp>
 #include <devex/runtime/GridWorld.hpp>
 #include <devex/runtime/NetworkReplication.hpp>
+#include <devex/runtime/SystemReport.hpp>
 #include <devex/runtime/PathFollowers.hpp>
 #include <devex/scene/AssetReferences.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
@@ -322,6 +323,7 @@ private:
         asset::AssetId asset;
     };
     [[nodiscard]] core::Result<SceneToPlay> sceneToPlay();
+    void shareSystemReport();
     void startPlaying();
     void startExternalPlay(bool waitForDebugger);
     void updatePlayerControl();
@@ -627,6 +629,8 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
             androidAbis.push_back(build.abi);
         }
         services.tools->setAndroidExport(std::move(androidAbis), findAndroidTools().problem(false));
+        const core::Result<EngineBuild> otherEngine = findOtherDesktopEngine(services.platform.baseDirectory());
+        services.tools->setOtherDesktopExport(otherEngine ? std::string{} : otherEngine.error().message);
     }
 }
 
@@ -1469,6 +1473,10 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
     {
         m_managedBuilder->requestBuild();
     }
+    if (requests.systemReport)
+    {
+        shareSystemReport();
+    }
     if (requests.exportGame && m_services.database != nullptr && !m_export)
     {
         m_exportWaiting = true;
@@ -1583,6 +1591,25 @@ core::Result<ApplicationRunner::SceneToPlay> ApplicationRunner::sceneToPlay()
         return std::unexpected(read.error());
     }
     return SceneToPlay{.scene = std::move(*read), .asset = *sceneAsset};
+}
+
+void ApplicationRunner::shareSystemReport()
+{
+    const core::Result<std::filesystem::path> user = platform::userDataDirectory("Devex", "Editor");
+    const std::filesystem::path logs = user ? *user / "logs" : std::filesystem::path{};
+    const core::Result<std::string> graphics = m_services.renderer != nullptr
+                                                   ? m_services.renderer->describeGraphics()
+                                                   : core::Result<std::string>(std::string("The editor draws nothing.\n"));
+    const std::string report = systemReport(m_services.platform.describeMachine(),
+                                            graphics ? *graphics : std::format("Cannot read: {}\n", graphics.error()), logs);
+    m_services.platform.setClipboardText(report);
+    const std::filesystem::path file = logs / "system-report.txt";
+    if (const core::Result<void> written = core::writeTextFile(file, report); !written)
+    {
+        DEVEX_LOG_WARNING("The system report is only on the clipboard: {}", written.error());
+        return;
+    }
+    DEVEX_LOG_INFO("System report copied to the clipboard and written to {}. Read it before sending it", core::toUtf8(file));
 }
 
 void ApplicationRunner::startPlaying()
@@ -3410,8 +3437,10 @@ void ApplicationRunner::startExport()
     const asset::Project& project = m_services.database->project();
     const std::vector<EngineBuild> builds = findEngineBuilds(m_services.platform.baseDirectory());
     const bool android = project.exportSettings.platform == "android";
-    // A plan for Android starts from any build, and takes those of its architectures afterwards.
-    const std::optional<EngineBuild> engine = android ? EngineBuild{} : findEngineBuild(builds, project.exportSettings.configuration);
+    const bool otherDesktop = project.exportSettings.targetsOtherDesktop();
+    // A plan for Android or the other system starts from any build, and takes the ones it needs afterwards.
+    const std::optional<EngineBuild> engine =
+        android || otherDesktop ? EngineBuild{} : findEngineBuild(builds, project.exportSettings.configuration);
     if (!engine)
     {
         const std::string message =
@@ -3426,6 +3455,15 @@ void ApplicationRunner::startExport()
         DEVEX_LOG_ERROR("Cannot export {}: {}", project.name, plan.error());
         m_services.tools->setExportStatus({.state = tools::ExportStatus::State::Failed, .message = plan.error().message});
         return;
+    }
+    if (otherDesktop)
+    {
+        if (core::Result<void> prepared = prepareOtherDesktopExport(*plan, m_services.platform.baseDirectory()); !prepared)
+        {
+            DEVEX_LOG_ERROR("Cannot export {}: {}", project.name, prepared.error());
+            m_services.tools->setExportStatus({.state = tools::ExportStatus::State::Failed, .message = prepared.error().message});
+            return;
+        }
     }
     if (android)
     {
@@ -3778,6 +3816,8 @@ int run(Application& application, const ApplicationConfig& config)
             fullscreen = false;
         }
     }
+    // What someone can do about a machine that cannot draw: most often, its driver is older than the engine.
+    constexpr std::string_view graphicsAdvice = ". Devex needs a graphics driver with Vulkan 1.3: updating it may solve this";
     core::Result<platform::Window> window = platform->createWindow({
         .title = effective.title,
         .width = effective.width,
@@ -3788,7 +3828,7 @@ int run(Application& application, const ApplicationConfig& config)
     });
     if (!window)
     {
-        DEVEX_LOG_FATAL("Cannot create the main window: {}", window.error());
+        DEVEX_LOG_FATAL("Cannot create the main window: {}{}", window.error(), effective.enableRendering ? graphicsAdvice : std::string_view{});
         return EXIT_FAILURE;
     }
     if (instance && instance->area)
@@ -3834,7 +3874,7 @@ int run(Application& application, const ApplicationConfig& config)
         });
         if (!created)
         {
-            DEVEX_LOG_FATAL("Cannot initialize rendering: {}", created.error());
+            DEVEX_LOG_FATAL("Cannot initialize rendering: {}{}", created.error(), graphicsAdvice);
             return EXIT_FAILURE;
         }
         renderer.emplace(std::move(*created));
@@ -3942,6 +3982,31 @@ int run(Application& application, const ApplicationConfig& config)
                                          .package = package,
                                      });
     return runner.execute();
+}
+
+int runShowingFatalError(std::string_view title, const std::filesystem::path& logFile, const std::function<int()>& runApplication)
+{
+    std::string fatal;
+    const core::LogSinkId sink = core::addLogSink([&fatal](const core::LogRecord& record) {
+        if (record.level == core::LogLevel::Fatal && fatal.empty())
+        {
+            fatal = record.message;
+        }
+    });
+    const int result = runApplication();
+    core::removeLogSink(sink);
+    if (result != 0 && !fatal.empty() && (platform::isWindowedApplication() || platform::terminalClosesWithProgram()))
+    {
+        if (!logFile.empty())
+        {
+            // Written the way the file manager writes it, for the user to find it.
+            std::filesystem::path shown = logFile;
+            const std::u8string native = shown.make_preferred().u8string();
+            fatal += "\n\nLog: " + std::string(native.begin(), native.end());
+        }
+        platform::showErrorMessage(title, fatal);
+    }
+    return result;
 }
 
 } // namespace devex::runtime

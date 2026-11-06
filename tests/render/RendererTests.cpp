@@ -2893,6 +2893,29 @@ TEST_CASE("The swapchain follows the way the window takes the screen", "[render]
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("A machine says what its GPUs offer, with or without a renderer", "[render][gpu][settings]")
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+
+    const auto alone = devex::render::Renderer::describeGraphicsWithoutRenderer(*platform, *window);
+    REQUIRE(alone);
+    CHECK(alone->find("Can run Devex: yes") != std::string::npos);
+    CHECK(alone->find("Present modes:") != std::string::npos);
+    CHECK(alone->find("FIFO") != std::string::npos);
+
+    auto renderer = devex::render::Renderer::create(*platform, *window, {});
+    REQUIRE(renderer);
+    const auto running = renderer->describeGraphics();
+    REQUIRE(running);
+    CHECK(running->find(renderer->gpu().name + " (in use)") != std::string::npos);
+
+    // Two instances would share what volk loads: the report refuses rather than break the renderer.
+    CHECK_FALSE(devex::render::Renderer::describeGraphicsWithoutRenderer(*platform, *window));
+}
+
 TEST_CASE("The present mode changes while the renderer runs", "[render][gpu][settings]")
 {
     auto platform = devex::platform::Platform::create();
@@ -2908,12 +2931,13 @@ TEST_CASE("The present mode changes while the renderer runs", "[render][gpu][set
     frame();
     CHECK(renderer->presentMode() == devex::render::PresentMode::Fifo);
 
-    // Not every driver has it: Fifo is what it falls back on.
+    // Not every driver has it: mailbox, then Fifo, is what it falls back on.
     renderer->setPresentMode(devex::render::PresentMode::Immediate);
     frame();
     frame();
     const devex::render::PresentMode fast = renderer->presentMode();
-    CHECK((fast == devex::render::PresentMode::Immediate || fast == devex::render::PresentMode::Fifo));
+    CHECK((fast == devex::render::PresentMode::Immediate || fast == devex::render::PresentMode::Mailbox ||
+           fast == devex::render::PresentMode::Fifo));
 
     renderer->setPresentMode(devex::render::PresentMode::Fifo);
     frame();

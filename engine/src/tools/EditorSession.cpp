@@ -1492,3 +1492,29 @@ void requestCreateSprite(ToolsState& state, asset::AssetId sprite, math::Vec3 po
 }
 
 } // namespace devex::tools::detail
+
+namespace devex::tools {
+
+bool settingsShowTerminal(const std::filesystem::path& settingsFile)
+{
+    const core::Result<std::string> text = core::readTextFile(settingsFile);
+    if (!text)
+    {
+        return false;
+    }
+    const core::Result<serialization::TextDocument> document = serialization::parseText(*text);
+    if (!document)
+    {
+        return false;
+    }
+    for (const serialization::TextSection& section : document->sections)
+    {
+        if (section.type == "scripts")
+        {
+            return detail::readScriptSettings(section).showTerminal;
+        }
+    }
+    return false;
+}
+
+} // namespace devex::tools

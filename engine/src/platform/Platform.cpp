@@ -10,6 +10,13 @@
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_vulkan.h>
 
+#if !defined(_WIN32) && !defined(__ANDROID__)
+#include <sys/utsname.h>
+#include <unistd.h>
+
+#include <fstream>
+#endif
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -947,6 +954,156 @@ bool isWindowedApplication() noexcept
     const auto* const dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
     const auto* const nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
     return nt->OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI;
+#elif defined(__ANDROID__)
+    return false;
+#else
+    // Started from the desktop, nothing reads what it writes.
+    return isatty(STDERR_FILENO) == 0;
+#endif
+}
+
+#ifdef _WIN32
+namespace {
+
+// The terminal this program was started from, which it keeps.
+bool usesParentTerminal = false;
+// The terminal it opened for itself. Closing it ends the program: Windows leaves no choice.
+bool ownsTerminal = false;
+bool hasWindowlessConsole = false;
+
+[[nodiscard]] bool isRedirected(DWORD stream) noexcept
+{
+    const HANDLE handle = GetStdHandle(stream);
+    if (handle == nullptr || handle == INVALID_HANDLE_VALUE)
+    {
+        return false;
+    }
+    const DWORD type = GetFileType(handle);
+    return type == FILE_TYPE_DISK || type == FILE_TYPE_PIPE;
+}
+
+// What the program prints goes to this device, unless it goes to a file or a pipe.
+void printTo(const char* device)
+{
+    std::FILE* reopened = nullptr;
+    if (!isRedirected(STD_OUTPUT_HANDLE))
+    {
+        static_cast<void>(freopen_s(&reopened, device, "w", stdout));
+    }
+    if (!isRedirected(STD_ERROR_HANDLE))
+    {
+        static_cast<void>(freopen_s(&reopened, device, "w", stderr));
+    }
+}
+
+// Each console program a windowed one starts would open a window. They share a console without any instead: Windows
+// only makes one for a new process, which can go once this one shares it.
+void attachWindowlessConsole()
+{
+    std::array<wchar_t, MAX_PATH> system{};
+    const UINT length = GetSystemDirectoryW(system.data(), MAX_PATH);
+    if (length == 0 || length >= MAX_PATH)
+    {
+        return;
+    }
+    // By its full path: double-clicking a project starts the editor in its folder, where a cmd.exe could wait.
+    const std::wstring program = std::wstring(system.data(), length) + L"\\cmd.exe";
+    std::wstring line = L"cmd.exe /d /c pause";
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION child{};
+    if (CreateProcessW(program.c_str(), line.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, system.data(), &startup, &child) == FALSE)
+    {
+        DEVEX_LOG_WARNING("Console programs may open windows: cmd.exe does not start");
+        return;
+    }
+    // Its console exists once it has started: a moment.
+    for (int attempt = 0; attempt < 400 && !hasWindowlessConsole; ++attempt)
+    {
+        hasWindowlessConsole = AttachConsole(child.dwProcessId) != FALSE;
+        if (!hasWindowlessConsole)
+        {
+            Sleep(5);
+        }
+    }
+    TerminateProcess(child.hProcess, 0);
+    CloseHandle(child.hThread);
+    CloseHandle(child.hProcess);
+    if (!hasWindowlessConsole)
+    {
+        DEVEX_LOG_WARNING("Console programs may open windows: no console to share");
+    }
+}
+
+} // namespace
+#endif
+
+void useParentTerminal()
+{
+#ifdef _WIN32
+    if (isWindowedApplication() && !usesParentTerminal && AttachConsole(ATTACH_PARENT_PROCESS) != FALSE)
+    {
+        usesParentTerminal = true;
+        printTo("CONOUT$");
+    }
+#endif
+}
+
+void showTerminal(bool shown)
+{
+#ifdef _WIN32
+    if (!isWindowedApplication() || usesParentTerminal)
+    {
+        return;
+    }
+    if (shown && !ownsTerminal)
+    {
+        if (hasWindowlessConsole)
+        {
+            FreeConsole();
+            hasWindowlessConsole = false;
+        }
+        if (AllocConsole() == FALSE)
+        {
+            DEVEX_LOG_WARNING("Cannot open a terminal: error {}", GetLastError());
+            attachWindowlessConsole();
+            return;
+        }
+        ownsTerminal = true;
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleTitleW(L"Devex log");
+        // Ctrl+C there copies or does nothing: it does not end the editor, and work with it. The close button goes where it can.
+        SetConsoleCtrlHandler(nullptr, TRUE);
+        if (const HMENU menu = GetSystemMenu(GetConsoleWindow(), FALSE); menu != nullptr)
+        {
+            DeleteMenu(menu, SC_CLOSE, MF_BYCOMMAND);
+        }
+        printTo("CONOUT$");
+    }
+    else if (!shown && !hasWindowlessConsole)
+    {
+        if (ownsTerminal)
+        {
+            printTo("NUL");
+            FreeConsole();
+            ownsTerminal = false;
+        }
+        attachWindowlessConsole();
+    }
+#else
+    static_cast<void>(shown);
+#endif
+}
+
+bool terminalClosesWithProgram() noexcept
+{
+#ifdef _WIN32
+    if (isWindowedApplication())
+    {
+        return false;
+    }
+    std::array<DWORD, 2> processes{};
+    return GetConsoleProcessList(processes.data(), static_cast<DWORD>(processes.size())) == 1;
 #else
     return false;
 #endif
@@ -957,6 +1114,78 @@ void showErrorMessage(std::string_view title, std::string_view message)
     const std::string caption(title);
     const std::string text(message);
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, caption.c_str(), text.c_str(), nullptr);
+}
+
+namespace {
+
+// The name of the system and its version.
+[[nodiscard]] std::string operatingSystem()
+{
+#ifdef _WIN32
+    // GetVersionEx answers what the program declares it knows, not what the machine runs.
+    using GetVersionFunction = LONG(WINAPI*)(OSVERSIONINFOW*);
+    const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    const auto getVersion = ntdll != nullptr
+                                ? reinterpret_cast<GetVersionFunction>(reinterpret_cast<void*>(GetProcAddress(ntdll, "RtlGetVersion")))
+                                : nullptr;
+    OSVERSIONINFOW version{};
+    version.dwOSVersionInfoSize = sizeof(version);
+    if (getVersion != nullptr && getVersion(&version) == 0)
+    {
+        return std::format("Windows {}.{}, build {}", version.dwMajorVersion, version.dwMinorVersion, version.dwBuildNumber);
+    }
+    return "Windows";
+#elif defined(__ANDROID__)
+    return "Android";
+#else
+    std::string name = SDL_GetPlatform();
+    std::ifstream release("/etc/os-release");
+    for (std::string line; std::getline(release, line);)
+    {
+        if (line.starts_with("PRETTY_NAME="))
+        {
+            name = line.substr(12);
+            std::erase(name, '"');
+            break;
+        }
+    }
+    if (utsname kernel{}; uname(&kernel) == 0)
+    {
+        name += std::format(", kernel {}", kernel.release);
+    }
+    return name;
+#endif
+}
+
+} // namespace
+
+std::string Platform::describeMachine() const
+{
+    DEVEX_ASSERT(m_initialized);
+    const char* const video = SDL_GetCurrentVideoDriver();
+    const char* const audio = SDL_GetCurrentAudioDriver();
+    std::string report = std::format("System: {}\nProcessor: {} logical cores, {} MiB of memory\nVideo driver: {}\nAudio driver: {}\n",
+                                     operatingSystem(), SDL_GetNumLogicalCPUCores(), SDL_GetSystemRAM(),
+                                     video != nullptr ? video : "none", audio != nullptr ? audio : "not started");
+    for (const char* const name : {"XDG_SESSION_TYPE", "XDG_CURRENT_DESKTOP"})
+    {
+        if (const char* const value = SDL_getenv(name); value != nullptr)
+        {
+            report += std::format("{}: {}\n", name, value);
+        }
+    }
+    int displayCount = 0;
+    SDL_DisplayID* const displays = SDL_GetDisplays(&displayCount);
+    for (int index = 0; index < displayCount; ++index)
+    {
+        const SDL_DisplayMode* const mode = SDL_GetDesktopDisplayMode(displays[index]);
+        const char* const name = SDL_GetDisplayName(displays[index]);
+        report += std::format("Display: {}, {}x{} at {:.0f} Hz, scale {:.2f}\n", name != nullptr ? name : "unnamed",
+                              mode != nullptr ? mode->w : 0, mode != nullptr ? mode->h : 0,
+                              mode != nullptr ? mode->refresh_rate : 0.0f, SDL_GetDisplayContentScale(displays[index]));
+    }
+    SDL_free(displays);
+    return report;
 }
 
 core::Result<std::filesystem::path> Platform::userDataDirectory(std::string_view application) const

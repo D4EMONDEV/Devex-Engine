@@ -1168,6 +1168,7 @@ struct DEVEX_API ToolsState
     std::vector<EngineBuildChoice> engineBuilds;
     std::vector<std::string> androidAbis;
     std::string androidProblem;
+    std::string otherDesktopProblem;
     ExportStatus exportStatus;
     GizmoHandle hoveredHandle = GizmoHandle::None;
     // The view of the last rendered frame, which mouse interactions refer to.

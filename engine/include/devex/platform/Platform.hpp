@@ -96,6 +96,9 @@ public:
     // of the editor read, the game reading input().
     [[nodiscard]] const Input& toolsInput() const noexcept;
 
+    // The system, the processor and memory, the displays and the drivers in use, in words, for a bug report.
+    [[nodiscard]] std::string describeMachine() const;
+
     // Directory containing the executable, where engine data such as shaders is deployed.
     [[nodiscard]] std::filesystem::path baseDirectory() const;
     // A writable directory for the settings of an application of the user, created if needed:
@@ -185,6 +188,14 @@ DEVEX_API void sleepPrecise(std::chrono::nanoseconds duration);
 // Whether this process was built or made a windowed application, which has no console to print
 // to: an exported game started from the file manager.
 [[nodiscard]] DEVEX_API bool isWindowedApplication() noexcept;
+// Started from a terminal, a windowed program writes there, unless it prints to a file or a pipe. Windows only: elsewhere,
+// a program has its terminal already.
+DEVEX_API void useParentTerminal();
+// Whether a windowed program shows a terminal beside it, with what it prints. Without one, the console programs it starts
+// open no window of their own either. A program that has a terminal from the start keeps it. Windows only.
+DEVEX_API void showTerminal(bool shown);
+// Whether the terminal of this program goes away with it, and its last message too: it was opened for this program alone.
+[[nodiscard]] DEVEX_API bool terminalClosesWithProgram() noexcept;
 // Shows an error in a box of the system, for a program with nowhere else to say it. Works before
 // the platform starts, and when it failed to.
 DEVEX_API void showErrorMessage(std::string_view title, std::string_view message);

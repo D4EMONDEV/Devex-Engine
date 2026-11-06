@@ -445,4 +445,123 @@ bool Device::supportsExclusiveDisplayChoice() const noexcept
     return m_exclusiveDisplayChoice;
 }
 
+core::Result<std::string> Device::describeAll(VkInstance instance, VkSurfaceKHR surface, std::string_view inUse)
+{
+    auto physicalDevices = enumerate<VkPhysicalDevice>("vkEnumeratePhysicalDevices",
+                                                       vkEnumeratePhysicalDevices, instance);
+    if (!physicalDevices)
+    {
+        return std::unexpected(physicalDevices.error());
+    }
+    if (physicalDevices->empty())
+    {
+        return std::string("No GPU offers Vulkan.\n");
+    }
+    const auto answer = [](VkBool32 value) { return value == VK_TRUE ? "yes" : "no"; };
+    std::string report;
+    for (VkPhysicalDevice physicalDevice : *physicalDevices)
+    {
+        const core::Result<Inspection> inspection = inspect(physicalDevice, surface);
+        if (!inspection)
+        {
+            report += std::format("A GPU cannot be read: {}\n", inspection.error());
+            continue;
+        }
+        const GpuInfo& info = inspection->candidate.info;
+        const std::string& missing = inspection->candidate.missingRequirement;
+        VkPhysicalDeviceVulkan12Properties properties12{
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES,
+        };
+        VkPhysicalDeviceProperties2 properties{
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+            .pNext = &properties12,
+        };
+        vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
+        const VkPhysicalDeviceLimits& limits = properties.properties.limits;
+
+        report += std::format("{}{}\n", info.name, !inUse.empty() && info.name == inUse ? " (in use)" : "");
+        report += std::format("  Kind: {}, vendor {:#06x}, device {:#06x}\n", toString(info.type),
+                              properties.properties.vendorID, properties.properties.deviceID);
+        report += std::format("  Vulkan {}, driver: {} {}\n", info.apiVersion, info.driverName, info.driverVersion);
+        report += std::format("  Can run Devex: {}\n", missing.empty() ? std::string("yes") : "no, " + missing);
+
+        VkPhysicalDeviceMemoryProperties memory{};
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memory);
+        report += "  Memory:";
+        for (std::uint32_t heap = 0; heap < memory.memoryHeapCount; ++heap)
+        {
+            const bool onGpu = (memory.memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0;
+            report += std::format(" {:.1f} GiB{}", static_cast<double>(memory.memoryHeaps[heap].size) / (1024.0 * 1024.0 * 1024.0),
+                                  onGpu ? " for the GPU" : " shared");
+            report += heap + 1 < memory.memoryHeapCount ? "," : "\n";
+        }
+
+        VkPhysicalDeviceFeatures features{};
+        vkGetPhysicalDeviceFeatures(physicalDevice, &features);
+        report += std::format("  Optional: BC textures {}, ASTC textures {}, anisotropy {}, depth clamp {}, indirect first instance {}\n",
+                              answer(features.textureCompressionBC), answer(features.textureCompressionASTC_LDR),
+                              answer(features.samplerAnisotropy), answer(features.depthClamp),
+                              answer(features.drawIndirectFirstInstance));
+        report += std::format("  Limits: 2D images {}, push constants {}, bindless textures {}, compute invocations {}, color samples mask {:#x}\n",
+                              limits.maxImageDimension2D, limits.maxPushConstantsSize,
+                              properties12.maxPerStageDescriptorUpdateAfterBindSampledImages,
+                              limits.maxComputeWorkGroupInvocations, limits.framebufferColorSampleCounts);
+        if (const auto extensions = enumerate<VkExtensionProperties>("vkEnumerateDeviceExtensionProperties",
+                                                                     vkEnumerateDeviceExtensionProperties, physicalDevice, nullptr))
+        {
+            const auto has = [&extensions](std::string_view name) {
+                return std::ranges::any_of(*extensions, [name](const VkExtensionProperties& extension) {
+                    return std::string_view(extension.extensionName) == name;
+                });
+            };
+            report += std::format("  Extensions: mutable swapchain format {}, choice of the exclusive display {}\n",
+                                  has(VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME) ? "yes" : "no",
+                                  has("VK_EXT_full_screen_exclusive") ? "yes" : "no");
+        }
+        // Only a GPU that presents to this surface can be asked about it.
+        if (!missing.empty())
+        {
+            continue;
+        }
+        if (const auto modes = enumerate<VkPresentModeKHR>("vkGetPhysicalDeviceSurfacePresentModesKHR",
+                                                           vkGetPhysicalDeviceSurfacePresentModesKHR, physicalDevice, surface))
+        {
+            report += "  Present modes:";
+            for (const VkPresentModeKHR mode : *modes)
+            {
+                switch (mode)
+                {
+                case VK_PRESENT_MODE_FIFO_KHR:
+                    report += " FIFO";
+                    break;
+                case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+                    report += " FIFO-relaxed";
+                    break;
+                case VK_PRESENT_MODE_MAILBOX_KHR:
+                    report += " mailbox";
+                    break;
+                case VK_PRESENT_MODE_IMMEDIATE_KHR:
+                    report += " immediate";
+                    break;
+                default:
+                    report += std::format(" {}", static_cast<int>(mode));
+                    break;
+                }
+            }
+            report += "\n";
+        }
+        if (const auto formats = enumerate<VkSurfaceFormatKHR>("vkGetPhysicalDeviceSurfaceFormatsKHR",
+                                                               vkGetPhysicalDeviceSurfaceFormatsKHR, physicalDevice, surface))
+        {
+            report += "  Window formats:";
+            for (const VkSurfaceFormatKHR& format : *formats)
+            {
+                report += std::format(" {}/{}", static_cast<int>(format.format), static_cast<int>(format.colorSpace));
+            }
+            report += "\n";
+        }
+    }
+    return report;
+}
+
 } // namespace devex::render::vulkan

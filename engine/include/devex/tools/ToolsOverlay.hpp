@@ -241,6 +241,8 @@ struct DEVEX_API EditorRequests
     bool createCode = false;
     // Exports the game as the export settings of the project say.
     bool exportGame = false;
+    // Help > Copy System Report.
+    bool systemReport = false;
     // Creates a component in a new file of the code folder and opens it in the code editor.
     std::optional<NewScript> newScript;
 };
@@ -258,6 +260,10 @@ struct DEVEX_API InterfaceFrame
 // Docked panels made with the interface of the engine, in a Godot-like theme: scene tree, inspector,
 // file system, output and statistics, over the game or around the editor's viewport. Only one
 // instance may exist at a time, since its panels share one theme.
+// Whether the settings of the editor in this file ask for a terminal, read before the editor exists: the terminal
+// then shows the log from its first line.
+[[nodiscard]] DEVEX_API bool settingsShowTerminal(const std::filesystem::path& settingsFile);
+
 class DEVEX_API ToolsOverlay
 {
 public:
@@ -376,6 +382,8 @@ public:
     void setEngineBuilds(std::vector<EngineBuildChoice> builds);
     // The architectures that games can be exported for on Android, and what is missing to do it.
     void setAndroidExport(std::vector<std::string> abis, std::string problem);
+    // What stands in the way of exporting for the other desktop system; empty when nothing does.
+    void setOtherDesktopExport(std::string problem);
     void setExportStatus(ExportStatus status);
 
     // Editor only: whether the application may close now. When scenes have unsaved changes, the
