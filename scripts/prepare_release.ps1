@@ -15,6 +15,14 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 
+# The log of the CI asks to sign in: an annotation says why to anyone.
+trap {
+    if ($env:GITHUB_ACTIONS) {
+        Write-Host "::error::$_"
+    }
+    break
+}
+
 # A tag that does not say what the engine says would make a release that lies about its version.
 $project = Select-String -Path (Join-Path $root "CMakeLists.txt") -Pattern '^\s*VERSION\s+(\d+\.\d+\.\d+)' | Select-Object -First 1
 if ($project.Matches[0].Groups[1].Value -ne $Version) {
@@ -67,10 +75,11 @@ foreach ($file in $files) {
 }
 
 if ($Draft) {
-    # Before 1.0, a release says it is a preview.
-    $preview = if ([version]$Version -lt [version]"1.0.0") { @("--prerelease") } else { @() }
-    & gh release create "v$Version" --draft --verify-tag --title "Devex $Version" --notes-file $notes @preview @files
+    # Before 1.0, a release says it is a preview. An if alone gives back a string, which @preview would spell letter by letter.
+    $preview = @(if ([version]$Version -lt [version]"1.0.0") { "--prerelease" })
+    $created = & gh release create "v$Version" --draft --verify-tag --title "Devex $Version" --notes-file $notes @preview @files 2>&1
     if ($LASTEXITCODE -ne 0) {
-        throw "The release was not created"
+        throw "The release was not created: $created"
     }
+    "Draft: $created"
 }
