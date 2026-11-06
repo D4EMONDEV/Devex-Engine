@@ -28,6 +28,7 @@
 #include <devex/runtime/PlayerSettings.hpp>
 #include <devex/runtime/SaveGames.hpp>
 #include <devex/scene/Scene.hpp>
+#include <stop_token>
 
 #include <concepts>
 #include <cstdint>
@@ -60,6 +61,9 @@ struct DEVEX_API ApplicationConfig
     // updates on a copy that Stop throws away. Without a project, the editor opens on its welcome
     // screen. Requires rendering; the tools come with it.
     bool editor = false;
+    // How the editor reads a page of the internet, to look for a newer Devex. Only its program has what it takes; without
+    // it, the editor does not look.
+    std::function<core::Result<std::string>(const std::string& address, std::stop_token stop)> fetchText;
     // Loads the game module of the project (its code/ folder, built into .devex/code/<configuration>/bin),
     // runs its systems while the game plays, and loads new builds as they appear. The editor
     // always does, and also builds the module whenever its sources change.

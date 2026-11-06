@@ -139,6 +139,9 @@ struct DEVEX_API ExportPlan
 // scene or folder does not exist.
 [[nodiscard]] DEVEX_API core::Result<ExportPlan> planExport(const asset::AssetDatabase& database, const EngineBuild& engine);
 
+// Whether a library beside the programs of the engine goes with an exported game: not the tests, nor what only the editor uses.
+[[nodiscard]] DEVEX_API bool goesWithExportedGame(std::string_view fileName) noexcept;
+
 struct DEVEX_API ExportProgress
 {
     std::string step;

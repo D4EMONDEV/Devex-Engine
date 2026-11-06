@@ -6,6 +6,7 @@
 #include "ToolsState.hpp"
 #include "TwoDScreen.hpp"
 
+#include <devex/core/BuildInfo.hpp>
 #include <devex/asset/Artifact.hpp>
 #include <devex/audio/AudioEngine.hpp>
 #include <devex/core/Assert.hpp>
@@ -922,6 +923,16 @@ void ToolsOverlay::setEngineBuilds(std::vector<EngineBuildChoice> builds)
 void ToolsOverlay::setExportStatus(ExportStatus status)
 {
     m_state->exportStatus = std::move(status);
+}
+
+void ToolsOverlay::setTextFetcher(TextFetcher fetcher)
+{
+    m_state->fetchText = std::move(fetcher);
+}
+
+std::string ToolsOverlay::announcedRelease() const
+{
+    return tools::announcedRelease(m_state->updates, core::version());
 }
 
 bool ToolsOverlay::confirmClose(scene::Scene& editedScene)

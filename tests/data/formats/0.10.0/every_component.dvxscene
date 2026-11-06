@@ -1,0 +1,1104 @@
+[scene format=1 kind="3d"]
+
+[entity uuid="4ac17b72-675f-4ef8-b41f-0f611042c2ba" name="Transform"]
+
+[component type="Transform"]
+position = vec3(0.5, 0.5, 0.5)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.5, 1.5, 1.5)
+
+[entity uuid="64c3f2f8-8906-450d-9b9e-22343182dc16" name="MeshRenderer"]
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000000")
+material = asset("00000000-0000-0000-0000-000000000000")
+lod_bias = 1.5
+
+[entity uuid="dab4f300-a47f-42cd-b87e-e408a3acfe6c" name="SkinnedMeshRenderer"]
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000000")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list()
+lod_bias = 1.5
+
+[entity uuid="5ae56c75-8ae6-4627-90f7-9a822cfb317f" name="Animator"]
+
+[component type="Animator"]
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("00000000-0000-0000-0000-000000000000")
+speed = 1.5
+loop = false
+play_on_start = false
+blend_time = 0.7
+apply_root_motion = true
+lod_distance = 0.5
+lod_frame_rate = 15.5
+lod_far_distance = 60.5
+lod_far_frame_rate = 5.5
+
+[entity uuid="f19290d3-76f6-4d53-a06a-f00716faadfc" name="Tweener"]
+
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0.5, 0.5, 0.5, 0.5)
+to = vec4(0.5, 1.5, 0.5, 0.5)
+from_current = false
+relative = false
+duration = 1.5
+delay = 0.5
+ease = "in_out_bounce"
+curve = asset("00000000-0000-0000-0000-000000000000")
+loop = "ping_pong"
+repeats = 0
+play_on_start = false
+
+[entity uuid="a35834f3-dc6b-4806-82f6-d91c75e1c1d6" name="ParticleEmitter"]
+
+[component type="ParticleEmitter"]
+play_on_start = false
+looping = false
+duration = 5.5
+prewarm = true
+max_particles = 1001
+space = "local"
+seed = 1
+rate = 10.5
+rate_over_distance = 0.5
+burst = 1
+shape = "circle"
+radius = 0.7
+angle = 0.9363323
+box_size = vec3(1.5, 1.5, 1.5)
+from_shell = true
+random_direction = 0.5
+lifetime = vec2(2, 3)
+speed = vec2(1.5, 2.5)
+size = vec2(0.7, 0.9)
+rotation = vec2(0.5, 360.5)
+spin = vec2(0.5, 0.5)
+color = vec4(1.5, 1.5, 1.5, 1.5)
+end_color = vec4(1.5, 1.5, 1.5, 1.5)
+intensity = 1.5
+gravity = 0.5
+acceleration = vec3(0.5, 0.5, 0.5)
+drag = 0.5
+inherit_velocity = 0.5
+noise = 0.5
+noise_frequency = 1.5
+noise_speed = 1
+size_curve = asset("00000000-0000-0000-0000-000000000000")
+alpha_curve = asset("00000000-0000-0000-0000-000000000000")
+speed_curve = asset("00000000-0000-0000-0000-000000000000")
+collide = true
+bounce = 0.8
+friction = 0.7
+lifetime_loss = 0.5
+sub_emitter = entity()
+sub_emit_on = "collision"
+sub_emit_count = 9
+texture = asset("00000000-0000-0000-0000-000000000000")
+material = asset("00000000-0000-0000-0000-000000000000")
+blend = "additive"
+render_mode = "vertical"
+stretch = 0.55
+sheet_columns = 2
+sheet_rows = 2
+sheet_cycles = 1.5
+random_frame = true
+lit = true
+softness = 0.8
+trails = true
+trail_time = 0.8
+trail_width = 1
+
+[entity uuid="71314eb9-c940-44eb-8be9-3037d817b3b8" name="TrailRenderer"]
+
+[component type="TrailRenderer"]
+emitting = false
+time = 1
+min_distance = 0.55
+width = 0.7
+end_width = 0.5
+color = vec4(1.5, 1.5, 1.5, 1.5)
+end_color = vec4(1.5, 1.5, 1.5, 0.5)
+intensity = 1.5
+texture = asset("00000000-0000-0000-0000-000000000000")
+blend = "additive"
+lit = true
+softness = 0.5
+
+[entity uuid="97f8e251-e4ed-4be4-b92c-5a95c6951849" name="SpriteRenderer"]
+
+[component type="SpriteRenderer"]
+sprite = asset("00000000-0000-0000-0000-000000000000")
+color = vec4(1.5, 1.5, 1.5, 1.5)
+intensity = 1.5
+flip_x = true
+flip_y = true
+draw_mode = "tiled"
+size = vec2(1.5, 1.5)
+sorting_layer = "Default"
+order = 1
+blend = "additive"
+lit = true
+unshaded = true
+light_mask = 2
+material = asset("00000000-0000-0000-0000-000000000000")
+
+[entity uuid="4a97cb81-d96a-4b18-b9e1-2656d74cb38c" name="SpriteAnimator"]
+
+[component type="SpriteAnimator"]
+frames = asset("00000000-0000-0000-0000-000000000000")
+animation = ""
+speed = 1.5
+playing = false
+frame = 1
+
+[entity uuid="81b4cabd-43b4-42a5-ad7a-e86e8d7ccdbc" name="Tilemap"]
+
+[component type="Tilemap"]
+tileset = asset("00000000-0000-0000-0000-000000000000")
+cell_size = vec2(1.5, 1.5)
+color = vec4(1.5, 1.5, 1.5, 1.5)
+sorting_layer = "Default"
+order = 1
+lit = true
+unshaded = true
+light_mask = 2
+occluder_mask = 2
+material = asset("00000000-0000-0000-0000-000000000000")
+
+[entity uuid="2c54f5de-61f1-4871-9e06-f04168a3cbab" name="PointLight2D"]
+
+[component type="PointLight2D"]
+color = vec3(1.5, 1.35, 1.1)
+energy = 1.5
+radius = 4.5
+falloff = 1.5
+height = 1
+item_mask = 2
+shadows = true
+shadow_mask = 2
+shadow_softness = 0.55
+
+[entity uuid="c973a611-d43d-4e2d-8d3d-d88c95fef1ab" name="DirectionalLight2D"]
+
+[component type="DirectionalLight2D"]
+color = vec3(1.5, 1.5, 1.5)
+energy = 1.5
+height = 1
+item_mask = 2
+shadows = true
+shadow_mask = 2
+shadow_softness = 0.55
+shadow_distance = 20.5
+
+[entity uuid="cd508d04-3dcb-4a7a-9135-2a277675d151" name="LightOccluder2D"]
+
+[component type="LightOccluder2D"]
+points = list(vec2(-0.5, -0.5), vec2(0.5, -0.5), vec2(0.5, 0.5), vec2(-0.5, 0.5))
+closed = false
+mask = 2
+
+[entity uuid="11e459b1-90ca-43a7-80f7-ecb59badf523" name="CanvasModulate"]
+
+[component type="CanvasModulate"]
+color = vec3(0.8, 0.8, 0.95)
+
+[entity uuid="0ee06805-d314-46e1-85e6-cfa4ae9928bd" name="Camera"]
+
+[component type="Camera"]
+projection = "orthographic"
+vertical_fov = 1.5471976
+orthographic_size = 5.5
+near_plane = 0.6
+far_plane = 1000.5
+primary = false
+auto_exposure = false
+ev100 = 14.5
+exposure_compensation = 0.5
+min_ev100 = -1.5
+max_ev100 = 18.5
+adaptation_speed = 2
+tonemapper = "none"
+antialiasing = "temporal"
+ambient_occlusion = 1.5
+ambient_occlusion_radius = 1
+screen_reflections = 0.5
+screen_reflection_steps = 65
+screen_reflection_fade_in = 0.65
+screen_reflection_fade_out = 1
+screen_reflection_depth_tolerance = 0.7
+bloom = 0.55
+bloom_threshold = 1.5
+vignette = 0.5
+grain = 0.5
+chromatic_aberration = 0.5
+color_table = asset("00000000-0000-0000-0000-000000000000")
+depth_of_field = true
+focus_distance = 10.5
+aperture = 3.3
+auto_focus = true
+motion_blur = 0.5
+saturation = 1.5
+contrast = 1.5
+color_filter = vec3(1.5, 1.5, 1.5)
+temperature = 0.5
+tint = 0.5
+
+[entity uuid="e786a955-1ed8-4d59-bfe8-748430e48723" name="DirectionalLight"]
+
+[component type="DirectionalLight"]
+color = vec3(1.5, 1.5, 1.5)
+temperature = 6500.5
+illuminance = 100000.5
+cast_shadows = false
+shadow_distance = 80.5
+follow_atmosphere = false
+
+[entity uuid="1786ecb1-5973-45e0-b919-76c15977fad1" name="PointLight"]
+
+[component type="PointLight"]
+color = vec3(1.5, 1.5, 1.5)
+temperature = 6500.5
+intensity = 800.5
+range = 10.5
+cast_shadows = true
+
+[entity uuid="a75b4fa1-d0b4-44f2-93d3-0925bf96e062" name="SpotLight"]
+
+[component type="SpotLight"]
+color = vec3(1.5, 1.5, 1.5)
+temperature = 6500.5
+intensity = 800.5
+range = 10.5
+inner_angle = 0.84906584
+outer_angle = 1.0235988
+cast_shadows = true
+
+[entity uuid="c5f56be7-20c1-49eb-aa7c-583e54c85aa3" name="Environment"]
+
+[component type="Environment"]
+sky = asset("00000000-0000-0000-0000-000000000000")
+sky_material = asset("00000000-0000-0000-0000-000000000000")
+color = vec3(1.5, 1.5, 1.5)
+intensity = 8000.5
+rotation = 0.5
+
+[entity uuid="a6d4fe69-9095-49db-a523-1e9b78ec65ae" name="Atmosphere"]
+
+[component type="Atmosphere"]
+planet_radius = 6360.5
+height = 100.5
+rayleigh_scattering = vec3(0.505802, 0.51355803, 0.5331)
+rayleigh_height = 8.5
+mie_scattering = 0.503996
+mie_absorption = 0.500444
+mie_anisotropy = 1.3
+mie_height = 1.7
+ozone_absorption = vec3(0.50065, 0.501881, 0.500085)
+ground_albedo = vec3(0.8, 0.8, 0.8)
+sun_disk_size = 0.5095
+sun_disk_intensity = 1.5
+aerial_perspective = 1.5
+intensity = 1.5
+
+[entity uuid="9b54ada4-0e47-47d4-bce9-eeacf65856fa" name="Fog"]
+
+[component type="Fog"]
+color = vec3(1.25, 1.3, 1.4)
+density = 0.51
+height = 0.5
+falloff = 20.5
+start_distance = 0.5
+max_opacity = 1.5
+sun_scattering = 1.5
+sun_anisotropy = 1.1
+sky_blend = 1
+
+[entity uuid="92ea8d18-5644-42c7-b837-47ae6caccabc" name="Decal"]
+
+[component type="Decal"]
+size = vec3(2.5, 2.5, 2.5)
+albedo = asset("00000000-0000-0000-0000-000000000000")
+normal = asset("00000000-0000-0000-0000-000000000000")
+orm = asset("00000000-0000-0000-0000-000000000000")
+emission = asset("00000000-0000-0000-0000-000000000000")
+modulate = vec4(1.5, 1.5, 1.5, 1.5)
+albedo_mix = 1.5
+emission_energy = 1.5
+normal_fade = 0.5
+upper_fade = 0.8
+lower_fade = 0.8
+distance_fade = true
+distance_fade_begin = 40.5
+distance_fade_length = 10.5
+
+[entity uuid="38211efd-16d3-44d9-96a1-f062b66554eb" name="VolumetricFog"]
+
+[component type="VolumetricFog"]
+density = 0.55
+albedo = vec3(1.5, 1.5, 1.5)
+emission = vec3(0.5, 0.5, 0.5)
+emission_energy = 1.5
+anisotropy = 0.7
+length = 64.5
+detail_spread = 2.5
+ambient_inject = 0.5
+sky_affect = 1.5
+temporal_reprojection = false
+temporal_amount = 1.4
+
+[entity uuid="2946b1ce-e97d-464d-a424-75380056fd3e" name="FogVolume"]
+
+[component type="FogVolume"]
+shape = "world"
+size = vec3(2.5, 2.5, 2.5)
+density = 1.5
+albedo = vec3(1.5, 1.5, 1.5)
+emission = vec3(0.5, 0.5, 0.5)
+height_falloff = 0.5
+edge_fade = 0.6
+
+[entity uuid="61c1cade-4215-4fb0-8050-0ba68e1c241b" name="PostProcessVolume"]
+
+[component type="PostProcessVolume"]
+global = true
+size = vec3(10.5, 10.5, 10.5)
+blend_distance = 2.5
+weight = 1.5
+priority = 1
+override_exposure = true
+exposure_compensation = 0.5
+override_bloom = true
+bloom = 0.55
+bloom_threshold = 1.5
+override_vignette = true
+vignette = 0.5
+override_grain = true
+grain = 0.5
+override_chromatic_aberration = true
+chromatic_aberration = 0.5
+override_ambient_occlusion = true
+ambient_occlusion = 1.5
+override_screen_reflections = true
+screen_reflections = 1.5
+override_depth_of_field = true
+depth_of_field = false
+focus_distance = 10.5
+aperture = 3.3
+auto_focus = true
+override_motion_blur = true
+motion_blur = 1
+override_saturation = true
+saturation = 1.5
+override_contrast = true
+contrast = 1.5
+override_color_filter = true
+color_filter = vec3(1.5, 1.5, 1.5)
+override_white_balance = true
+temperature = 0.5
+tint = 0.5
+
+[entity uuid="85193953-45b5-453d-91df-4ce2a8647ebf" name="Terrain"]
+
+[component type="Terrain"]
+data = asset("00000000-0000-0000-0000-000000000000")
+size = 256.5
+collision = false
+cast_shadows = false
+layers = list()
+texture_size = 4.5
+blend_sharpness = 1
+triplanar = false
+auto_base_layer = 1
+auto_slope_layer = 2
+auto_slope = 1.0585053
+auto_height_layer = 0
+auto_height = 60.5
+auto_blend = 0.75
+grass_color = vec3(0.56, 0.65999997, 0.53)
+grass_tip_color = vec3(0.82, 0.98, 0.62)
+grass_height = 1
+grass_width = 0.55
+grass_density = 24.5
+grass_distance = 30.5
+wind_strength = 0.75
+wind_speed = 1.7
+
+[entity uuid="3066ae19-b743-4a16-96aa-ac51747c00ac" name="ReflectionProbe"]
+
+[component type="ReflectionProbe"]
+size = vec3(10.5, 5.5, 10.5)
+capture_offset = vec3(0.5, 0.5, 0.5)
+blend_distance = 1.5
+intensity = 1.5
+box_projection = false
+resolution = "512"
+capture = asset("00000000-0000-0000-0000-000000000000")
+
+[entity uuid="a5339335-c543-45d4-a86a-8db13ce26ef1" name="LightProbeVolume"]
+
+[component type="LightProbeVolume"]
+size = vec3(10.5, 4.5, 10.5)
+spacing = 1.5
+blend_distance = 1
+intensity = 1.5
+bounces = 3
+irradiance = asset("00000000-0000-0000-0000-000000000000")
+
+[entity uuid="69ff1153-6263-40cd-8e35-aab7bd019413" name="RigidBody"]
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 1.5
+friction = 1
+restitution = 0.5
+linear_damping = 0.55
+angular_damping = 0.55
+gravity_scale = 1.5
+layer = 1
+lock_rotation_x = true
+lock_rotation_y = true
+lock_rotation_z = true
+continuous_collision = true
+linear_velocity = vec3(0.5, 0.5, 0.5)
+angular_velocity = vec3(0.5, 0.5, 0.5)
+
+[entity uuid="78e08110-7c74-4564-9d6d-8d19de260b6f" name="BoxCollider"]
+
+[component type="BoxCollider"]
+size = vec3(1.5, 1.5, 1.5)
+center = vec3(0.5, 0.5, 0.5)
+trigger = true
+
+[entity uuid="4845d4ec-f5a6-4977-80bd-ff51473bbcfe" name="SphereCollider"]
+
+[component type="SphereCollider"]
+radius = 1
+center = vec3(0.5, 0.5, 0.5)
+trigger = true
+
+[entity uuid="6bc140d4-1e25-4a5d-ae28-ccf1777ac408" name="CapsuleCollider"]
+
+[component type="CapsuleCollider"]
+radius = 1
+height = 2.5
+center = vec3(0.5, 0.5, 0.5)
+trigger = true
+
+[entity uuid="672f871e-7e37-4e99-8aa6-fe26efa4848b" name="CylinderCollider"]
+
+[component type="CylinderCollider"]
+radius = 1
+height = 1.5
+center = vec3(0.5, 0.5, 0.5)
+trigger = true
+
+[entity uuid="6adb06e1-c4da-4d93-a849-c414314379c9" name="MeshCollider"]
+
+[component type="MeshCollider"]
+mesh = asset("00000000-0000-0000-0000-000000000000")
+convex = true
+trigger = true
+
+[entity uuid="ea6e1a66-518c-4e49-bdca-270cba208f23" name="CharacterController"]
+
+[component type="CharacterController"]
+radius = 0.85
+height = 2.3
+max_slope = 1.2853982
+step_height = 0.85
+mass = 70.5
+push_force = 300.5
+gravity_scale = 1.5
+layer = 1
+
+[entity uuid="694f9248-c02c-4866-a6f6-694186a51811" name="RigidBody2D"]
+
+[component type="RigidBody2D"]
+type = "dynamic"
+mass = 1.5
+friction = 0.9
+restitution = 0.5
+linear_damping = 0.5
+angular_damping = 0.55
+gravity_scale = 1.5
+layer = 1
+fixed_rotation = true
+continuous_collision = true
+linear_velocity = vec2(0.5, 0.5)
+angular_velocity = 0.5
+
+[entity uuid="694066d5-72dc-460f-9dbf-bc3d449513ed" name="BoxCollider2D"]
+
+[component type="BoxCollider2D"]
+size = vec2(1.5, 1.5)
+center = vec2(0.5, 0.5)
+trigger = true
+one_way = true
+
+[entity uuid="5052e58b-86ec-4f8a-b2e3-f7669f659160" name="CircleCollider2D"]
+
+[component type="CircleCollider2D"]
+radius = 1
+center = vec2(0.5, 0.5)
+trigger = true
+
+[entity uuid="cfbd38cd-9adc-495e-baca-894e498a01f0" name="CapsuleCollider2D"]
+
+[component type="CapsuleCollider2D"]
+radius = 0.75
+height = 1.5
+center = vec2(0.5, 0.5)
+trigger = true
+
+[entity uuid="87c4b356-1a65-43f4-8fba-f1e6d296fa58" name="PolygonCollider2D"]
+
+[component type="PolygonCollider2D"]
+points = list(vec2(-0.5, -0.5), vec2(0.5, -0.5), vec2(0, 0.5))
+trigger = true
+one_way = true
+
+[entity uuid="1e932ef3-9d94-4380-b5c6-30e2d05ad03a" name="TilemapCollider2D"]
+
+[component type="TilemapCollider2D"]
+trigger = true
+
+[entity uuid="f1e711a9-64bd-430c-be01-0e015ca8206c" name="CharacterController2D"]
+
+[component type="CharacterController2D"]
+radius = 0.8
+height = 1.5
+max_slope = 1.3726647
+step_height = 0.75
+gravity_scale = 1.5
+push_force = 200.5
+layer = 1
+
+[entity uuid="cb991c4b-65fb-434e-ae2a-8b998003cc62" name="HingeJoint"]
+
+[component type="HingeJoint"]
+body_a = entity()
+body_b = entity()
+collide_connected = true
+use_limits = true
+lower_angle = -1.0707964
+upper_angle = 2.0707965
+use_motor = true
+motor_speed = 0.5
+max_motor_torque = 1000.5
+break_force = 0.5
+break_torque = 0.5
+
+[entity uuid="61f2e65e-6903-4ed6-b7c4-160482236205" name="SliderJoint"]
+
+[component type="SliderJoint"]
+body_a = entity()
+body_b = entity()
+collide_connected = true
+use_limits = true
+lower_limit = -0.5
+upper_limit = 1.5
+use_motor = true
+motor_speed = 0.5
+max_motor_force = 1000.5
+break_force = 0.5
+break_torque = 0.5
+
+[entity uuid="fbbc6059-529e-4263-beef-7689807c50b9" name="DistanceJoint"]
+
+[component type="DistanceJoint"]
+body_a = entity()
+body_b = entity()
+collide_connected = true
+anchor = vec3(0.5, -0.5, 0.5)
+length = 0.5
+rope = true
+spring = 0.5
+damping = 1
+break_force = 0.5
+
+[entity uuid="0b74af93-e1e0-4dd9-a233-726994721f1b" name="FixedJoint"]
+
+[component type="FixedJoint"]
+body_a = entity()
+body_b = entity()
+collide_connected = true
+break_force = 0.5
+break_torque = 0.5
+
+[entity uuid="18dfc286-8dfc-452c-ab6e-46781a647865" name="HingeJoint2D"]
+
+[component type="HingeJoint2D"]
+body_a = entity()
+body_b = entity()
+collide_connected = true
+use_limits = true
+lower_angle = -1.0707964
+upper_angle = 2.0707965
+use_motor = true
+motor_speed = 0.5
+max_motor_torque = 1000.5
+break_force = 0.5
+break_torque = 0.5
+
+[entity uuid="ddac3e01-f841-40ae-b129-ff6235734baa" name="SliderJoint2D"]
+
+[component type="SliderJoint2D"]
+body_a = entity()
+body_b = entity()
+collide_connected = true
+use_limits = true
+lower_limit = -0.5
+upper_limit = 1.5
+use_motor = true
+motor_speed = 0.5
+max_motor_force = 1000.5
+break_force = 0.5
+break_torque = 0.5
+
+[entity uuid="5f093094-4d90-4d49-bb8c-0e8a21cabf3e" name="DistanceJoint2D"]
+
+[component type="DistanceJoint2D"]
+body_a = entity()
+body_b = entity()
+collide_connected = true
+anchor = vec2(0.5, -0.5)
+length = 0.5
+rope = true
+spring = 0.5
+damping = 1
+break_force = 0.5
+
+[entity uuid="c86ab774-99f6-47f9-86f6-d3f36a24a98b" name="FixedJoint2D"]
+
+[component type="FixedJoint2D"]
+body_a = entity()
+body_b = entity()
+collide_connected = true
+break_force = 0.5
+break_torque = 0.5
+
+[entity uuid="bd7c263e-060a-46ff-98f7-802b08c9c1c3" name="NavMeshSurface"]
+
+[component type="NavMeshSurface"]
+nav_mesh = asset("00000000-0000-0000-0000-000000000000")
+agent_radius = 0.9
+agent_height = 2.3
+agent_max_climb = 0.9
+agent_max_slope = 1.2853982
+cell_size = 0.7
+cell_height = 0.6
+tile_size = 49
+
+[entity uuid="ad00ed3f-5ffd-491c-8067-38b75c1a2ac6" name="NetworkSpawner"]
+
+[component type="NetworkSpawner"]
+
+[entity uuid="c873b5b7-af60-444c-95f5-81794934fa14" name="NetworkSync"]
+
+[component type="NetworkSync"]
+fields = list("Transform.position", "Transform.rotation")
+rate = 20.5
+smoothing = 0.6
+
+[entity uuid="8793b0fa-edee-406f-a4e3-ba577e4d1586" name="Path3D"]
+
+[component type="Path3D"]
+closed = true
+
+[entity uuid="c00bb890-2099-499d-b548-7bd9b61b377f" name="PathFollower"]
+
+[component type="PathFollower"]
+path = entity()
+speed = 2.5
+distance = 0.5
+end = "ping_pong"
+orient = false
+playing = false
+
+[entity uuid="ef1766e6-4ebc-4502-a80a-f18cac66970e" name="CsgBox"]
+
+[component type="CsgBox"]
+size = vec3(1.5, 1.5, 1.5)
+operation = "intersect"
+material = asset("00000000-0000-0000-0000-000000000000")
+collision = false
+
+[entity uuid="2b05447e-f20f-4af1-ae81-4a11273cf3ee" name="CsgSphere"]
+
+[component type="CsgSphere"]
+radius = 1
+sides = 25
+operation = "intersect"
+material = asset("00000000-0000-0000-0000-000000000000")
+collision = false
+
+[entity uuid="ec79726f-2755-43d5-8a07-8dd6e8863fdd" name="CsgCylinder"]
+
+[component type="CsgCylinder"]
+radius = 1
+height = 1.5
+sides = 25
+operation = "intersect"
+material = asset("00000000-0000-0000-0000-000000000000")
+collision = false
+
+[entity uuid="198040ec-059c-4892-9beb-bfcfbf7dbbc7" name="CsgPath"]
+
+[component type="CsgPath"]
+path = entity()
+width = 2.5
+depth = 0.7
+operation = "intersect"
+material = asset("00000000-0000-0000-0000-000000000000")
+collision = false
+
+[entity uuid="d638cfad-d946-40cb-b157-574c24d42048" name="CsgCombiner"]
+
+[component type="CsgCombiner"]
+operation = "intersect"
+collision = false
+
+[entity uuid="bf9e76e9-5389-4dd5-94a3-b443c5385b54" name="GridMap"]
+
+[component type="GridMap"]
+palette = asset("00000000-0000-0000-0000-000000000000")
+cell_size = vec3(2.5, 2.5, 2.5)
+collision = false
+
+[entity uuid="42ec609a-dadb-4519-99c3-e042f6265870" name="NavMeshAgent"]
+
+[component type="NavMeshAgent"]
+speed = 4
+acceleration = 8.5
+angular_speed = 6.7831855
+radius = 0.9
+height = 2.3
+stopping_distance = 0.6
+avoidance = "high"
+
+[entity uuid="3583af29-5de8-45db-a433-bf70cbdd0a98" name="NavMeshObstacle"]
+
+[component type="NavMeshObstacle"]
+shape = "cylinder"
+size = vec3(1.5, 1.5, 1.5)
+center = vec3(0.5, 0.5, 0.5)
+
+[entity uuid="564dee65-f9fc-4503-ad9b-ee2e14e124b0" name="AudioSource"]
+
+[component type="AudioSource"]
+clip = asset("00000000-0000-0000-0000-000000000000")
+volume = 1.5
+pitch = 1.5
+loop = true
+play_on_start = false
+spatial = false
+min_distance = 1.5
+max_distance = 30.5
+attenuation = "none"
+rolloff = 1.5
+doppler = 1.5
+group = 1
+
+[entity uuid="05e2334d-8426-4793-8195-144134f18892" name="AudioListener"]
+
+[component type="AudioListener"]
+
+[entity uuid="e7228874-2c37-4775-bd8d-3cc2c7d91c2d" name="Canvas"]
+
+[component type="Canvas"]
+scale_mode = "scale_with_screen"
+reference_resolution = vec2(1920.5, 1080.5)
+theme = asset("00000000-0000-0000-0000-000000000000")
+match_width_or_height = 1
+sort_order = 1
+visible = false
+interactive = false
+
+[entity uuid="612c44b1-ff89-473f-8421-dc8102f70bb9" name="UiRect"]
+
+[component type="UiRect"]
+anchor_min = vec2(1, 1)
+anchor_max = vec2(1, 1)
+offset_min = vec2(-99.5, -24.5)
+offset_max = vec2(100.5, 25.5)
+pivot = vec2(1, 1)
+scale = vec2(1.5, 1.5)
+rotation = 0.5
+opacity = 1.5
+visible = false
+clip_children = true
+style = ""
+
+[entity uuid="78f86880-ef2f-492d-b65f-482d46f35ef0" name="UiImage"]
+
+[component type="UiImage"]
+texture = asset("00000000-0000-0000-0000-000000000000")
+color = vec4(1.5, 1.5, 1.5, 1.5)
+border = vec4(0.5, 0.5, 0.5, 0.5)
+corner_radius = 0.5
+outline_color = vec4(0.5, 0.5, 0.5, 0.5)
+outline_width = 0.5
+shadow_color = vec4(0.5, 0.5, 0.5, 0.5)
+shadow_size = 0.5
+shadow_offset = vec2(0.5, 0.5)
+preserve_aspect = true
+raycast_target = false
+
+[entity uuid="6a6349e4-b205-4c01-8e2b-65b4824d3a47" name="UiText"]
+
+[component type="UiText"]
+text = "Text"
+translate = false
+font = asset("00000000-0000-0000-0000-000000000000")
+size = 24.5
+color = vec4(1.5, 1.5, 1.5, 1.5)
+align = "right"
+vertical_align = "bottom"
+wrap = false
+line_spacing = 1.5
+outline_color = vec4(0.5, 0.5, 0.5, 1.5)
+outline_width = 0.5
+raycast_target = true
+rich = true
+icons = list()
+
+[entity uuid="4f42c86f-0f34-454a-b749-e1563d82d670" name="UiButton"]
+
+[component type="UiButton"]
+action = ""
+interactable = false
+hover_color = vec4(1.65, 1.65, 1.65, 1.5)
+pressed_color = vec4(1.3, 1.3, 1.3, 1.5)
+disabled_color = vec4(1, 1, 1, 1.1)
+fade_time = 0.6
+
+[entity uuid="aa8e2c26-6b10-4f06-8885-4c42271bcdee" name="UiInput"]
+
+[component type="UiInput"]
+placeholder = ""
+placeholder_color = vec4(1, 1, 1, 1.5)
+selection_color = vec4(0.7, 0.9, 1.4, 1)
+caret_color = vec4(1.5, 1.5, 1.5, 1.5)
+focus_color = vec4(0.5, 0.5, 0.5, 0.5)
+focus_width = 1.5
+padding = vec2(12.5, 0.5)
+multiline = true
+password = true
+max_length = 1
+interactable = false
+action = ""
+
+[entity uuid="7f33971e-e173-4888-bc11-d10fdf179825" name="UiBinding"]
+
+[component type="UiBinding"]
+component = "Transform"
+field = ""
+format = "{}"
+decimals = 0
+source = entity()
+
+[entity uuid="24385f07-0712-46bc-b59e-1860a81afd34" name="UiSlider"]
+
+[component type="UiSlider"]
+value = 1
+min_value = 0.5
+max_value = 1.5
+step = 0.5
+fill_color = vec4(0.85, 1.1, 1.5, 1.5)
+handle_color = vec4(1.5, 1.5, 1.5, 1.5)
+handle_size = 1.5
+key_step = 0.5
+interactable = false
+action = ""
+
+[entity uuid="fe9e56c6-fbaa-4883-8541-e465d5fc0b72" name="UiToggle"]
+
+[component type="UiToggle"]
+value = true
+check_color = vec4(0.8, 1.03, 1.4100001, 1.5)
+mark_color = vec4(1.5, 1.5, 1.5, 1.5)
+check_size = 1.05
+interactable = false
+action = ""
+
+[entity uuid="8f1f7905-d78c-4402-a2fc-b4abe840738f" name="UiLayout"]
+
+[component type="UiLayout"]
+kind = "grid"
+spacing = 8.5
+padding = vec4(0.5, 0.5, 0.5, 0.5)
+columns = 4
+equal_size = true
+align = "right"
+
+[entity uuid="994d0dac-9524-44f1-9af7-6403c1555ca1" name="UiScroll"]
+
+[component type="UiScroll"]
+offset = vec2(0.5, 0.5)
+horizontal = true
+vertical = false
+speed = 60.5
+scrollbar = false
+scrollbar_size = 8.5
+scrollbar_color = vec4(1.5, 1.5, 1.5, 0.8)
+
+[entity uuid="b7ebb1e8-90f1-4246-926e-4049a67632c4" name="UiPopup"]
+
+[component type="UiPopup"]
+kind = "modal"
+veil_color = vec4(0.5, 0.5, 0.5, 0.95)
+
+[entity uuid="7193d278-a536-4c1f-9a68-33e76d8afd64" name="UiContextMenu"]
+
+[component type="UiContextMenu"]
+popup = entity()
+
+[entity uuid="f5482381-d93e-4e74-9199-dd79edf57e82" name="UiTooltip"]
+
+[component type="UiTooltip"]
+text = ""
+delay = 1
+
+[entity uuid="8d0c2f49-81cd-48f8-917a-5b43791a6518" name="UiDropdown"]
+
+[component type="UiDropdown"]
+options = list()
+selected = 1
+list_color = vec4(0.64, 0.65, 0.68, 1.5)
+highlight_color = vec4(0.85, 1.1, 1.5, 1.5)
+arrow_color = vec4(1.5, 1.5, 1.5, 1.2)
+list_shadow_color = vec4(0.5, 0.5, 0.5, 0.5)
+list_shadow_size = 0.5
+interactable = false
+action = ""
+placeholder = ""
+
+[entity uuid="bfa2e8ad-2e7b-45d8-b850-7880869e0c4f" name="UiSplitter"]
+
+[component type="UiSplitter"]
+vertical = true
+position = 200.5
+min_size = 40.5
+bar_size = 6.5
+bar_color = vec4(1.5, 1.5, 1.5, 0.56)
+hover_color = vec4(0.85, 1.1, 1.5, 1.3)
+
+[entity uuid="42afa3f9-4902-4c48-860b-690cdb237946" name="UiFoldout"]
+
+[component type="UiFoldout"]
+expanded = false
+content = entity()
+arrow_color = vec4(1.5, 1.5, 1.5, 1.2)
+interactable = false
+action = ""
+
+[entity uuid="509e8dbe-7246-4107-aa0d-73e50790b4e5" name="UiVirtualList"]
+
+[component type="UiVirtualList"]
+item_count = 1
+item_size = 32.5
+
+[entity uuid="3e19ec1b-4613-4f35-8039-204c6e2fe090" name="UiTable"]
+
+[component type="UiTable"]
+columns = list(160, 160)
+resizable = false
+sort_column = 0
+sort_ascending = false
+arrow_color = vec4(1.5, 1.5, 1.5, 1.2)
+action = ""
+
+[entity uuid="68c814aa-7f83-4b5b-b406-ed7da38b29b3" name="UiTableRow"]
+
+[component type="UiTableRow"]
+header = true
+
+[entity uuid="5b78bcfd-a580-4784-b108-8176e21b7a1d" name="UiDragSource"]
+
+[component type="UiDragSource"]
+type = ""
+data = ""
+label = ""
+interactable = false
+
+[entity uuid="d50c7c5f-5588-4bce-8e63-acf4edf4d03e" name="UiDropTarget"]
+
+[component type="UiDropTarget"]
+accepts = list()
+highlight_color = vec4(0.85, 1.1, 1.5, 0.8)
+action = ""
+
+[entity uuid="77237ffb-3628-47dc-878a-1fd83c184d22" name="UiNumberField"]
+
+[component type="UiNumberField"]
+value = 0.5
+min_value = 0.5
+max_value = 0.5
+step = 0.5
+drag_speed = 0.51
+decimals = 4
+format = "{}"
+interactable = false
+action = ""
+
+[entity uuid="59561ff3-55e6-4735-9d2d-1350aed1ffbd" name="UiColorPicker"]
+
+[component type="UiColorPicker"]
+color = vec4(1.5, 1.5, 1.5, 1.5)
+alpha = false
+bar_size = 16.5
+spacing = 8.5
+interactable = false
+action = ""
+
+[entity uuid="35158077-668e-4faf-806e-0b58e7d1a05d" name="UiPlot"]
+
+[component type="UiPlot"]
+values = list()
+min_value = 0.5
+max_value = 1.5
+kind = "marks"
+color = vec4(0.85, 1.1, 1.5, 1.5)
+colors = list()
+back_values = list()
+back_color = vec4(1.5, 1.5, 1.5, 0.8)
+guides = list()
+guide_color = vec4(1.5, 1.5, 1.5, 0.8)
+highlighted = 0
+highlight_color = vec4(1.5, 1.5, 1.5, 0.68)
+line_width = 2.5
+marker = -0.5
+marker_color = vec4(1.5, 1.5, 1.5, 1.5)
+
+[entity uuid="4e6faac8-ac7e-47e9-bd1e-9eb0cbaaeb19" name="UiLine"]
+
+[component type="UiLine"]
+points = list()
+width = 2.5
+color = vec4(1.5, 1.5, 1.5, 1.5)
+arrow = "middle"
+arrow_size = 10.5
+closed = true
+
+[entity uuid="57514f00-df0f-41f1-99ba-469262e2f81a" name="UiTextArea"]
+
+[component type="UiTextArea"]
+selection_color = vec4(0.7, 0.9, 1.4, 1)
+caret_color = vec4(1.5, 1.5, 1.5, 1.5)
+padding = vec2(8.5, 6.5)
+scroll = vec2(0.5, 0.5)
+line_numbers = true
+line_number_color = vec4(1.5, 1.5, 1.5, 0.9)
+current_line_color = vec4(1.5, 1.5, 1.5, 0.54)
+tab_size = 5
+auto_indent = false
+indent_after = ""
+read_only = true
+scrollbar_size = 8.5
+scrollbar_color = vec4(1.5, 1.5, 1.5, 0.8)
+interactable = false
+action = ""

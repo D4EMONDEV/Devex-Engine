@@ -36,11 +36,12 @@ namespace {
 
 constexpr std::array<std::string_view, 1> single = singleNumber;
 constexpr std::array interfaceScales{0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f};
-constexpr std::array<std::string_view, 5> editorPages{"Theme", "Display", "Viewport",
-                                                      "Script Editors", "Compilation"};
+constexpr std::array<std::string_view, 6> editorPages{"Theme", "Display", "Viewport",
+                                                      "Script Editors", "Compilation", "Network"};
 constexpr std::size_t viewportPage = 2;
 constexpr std::size_t scriptsPage = 3;
 constexpr std::size_t compilationPage = 4;
+constexpr std::size_t networkPage = 5;
 // The pages of the project, by the numbers their cards use; those of General are listed by projectTree.
 constexpr std::array<std::string_view, 11> projectPages{
     "Config", "Window",    "Physics",      "Collision", "Sorting",
@@ -55,7 +56,8 @@ struct PageTree
 };
 constexpr std::array<PageTree, 5> projectTree{PageTree{"Application", {0, static_cast<int>(runPage)}}, PageTree{"Display", {1, -1}},
                                               PageTree{"", {2, -1}}, PageTree{"", {5, -1}}, PageTree{"Layer Names", {3, 4}}};
-constexpr std::array<PageTree, 4> editorTree{PageTree{"Interface", {0, 1}}, PageTree{"", {2, -1}}, PageTree{"", {3, -1}}, PageTree{"", {4, -1}}};
+constexpr std::array<PageTree, 5> editorTree{PageTree{"Interface", {0, 1}}, PageTree{"", {2, -1}}, PageTree{"", {3, -1}}, PageTree{"", {4, -1}},
+                                             PageTree{"", {5, -1}}};
 
 // The pages of the first tab of the project settings, the others being tabs of their own.
 [[nodiscard]] constexpr bool isGeneralPage(std::size_t page) noexcept
@@ -553,6 +555,7 @@ struct EditorSettingsUi : SettingsUi
     Entity codeFontSize;
     Entity updateContinuously;
     Entity autosaveMinutes;
+    Entity checkForUpdates;
     Button reset;
     struct EditorFields
     {
@@ -635,6 +638,12 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     autosaveMinutes = numbers(autosaveRow.editor, single, scene::UiNumberField{.minValue = 0.0f, .maxValue = 120.0f, .step = 1.0f, .dragSpeed = 0.1f, .decimals = 0}).front();
     tooltip(autosaveRow.row, "0 keeps no copies");
     note(&autosave, "Copies go to .devex/autosave and are offered back after a crash. Your files only change when you save.", "dim");
+
+    Section& network = pageCard(kit, networkPage, "");
+    const FormRow updatesRow = formRow(network, "Check for Updates");
+    checkForUpdates = toggle(updatesRow.editor);
+    tooltip(updatesRow.row, "Tells the project list to say when a newer Devex is out");
+    note(&network, "At most once a day, the project list asks GitHub for the versions of Devex. Nothing of your projects is sent, and without a connection it says nothing.", "dim", 2.0f);
 
     Section& handles = pageCard(kit, viewportPage, "Handles and Lines");
     for (std::size_t i = 0; i < 4; ++i)
@@ -818,6 +827,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     setNumber(codeFontSize, theme.codeFontSize);
     setToggle(updateContinuously, theme.updateContinuously);
     setNumber(autosaveMinutes, static_cast<float>(theme.autosaveMinutes));
+    setToggle(checkForUpdates, state.updates.check);
     for (std::size_t i = 0; i < viewportNumbers.size(); ++i)
         setNumber(viewportNumberFields[i], viewport.*viewportNumbers[i].member);
     for (std::size_t i = 0; i < viewportColors.size(); ++i)
@@ -1056,6 +1066,11 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     {
         theme.updateContinuously = scene().get<scene::UiToggle>(updateContinuously).value;
     }
+    if (world.wasChanged(checkForUpdates))
+    {
+        state.updates.check = scene().get<scene::UiToggle>(checkForUpdates).value;
+        state.scriptSettingsUnsaved = true;
+    }
     if (world.wasChanged(autosaveMinutes))
     {
         theme.autosaveMinutes = static_cast<int>(std::round(scene().get<scene::UiNumberField>(autosaveMinutes).value));
@@ -1076,6 +1091,11 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
             scripts.automaticCompilation = true;
             scripts.separateProcess = true;
             scripts.showTerminal = false;
+        }
+        else if (selected == networkPage)
+        {
+            state.updates.check = true;
+            state.scriptSettingsUnsaved = true;
         }
         else if (selected == 0)
         {

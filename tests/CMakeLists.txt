@@ -257,6 +257,7 @@ devex_add_tests(tools
         tools/EditorDockTests.cpp
         tools/EditorMathTests.cpp
         tools/FileSearchTests.cpp
+        tools/ReleaseCheckTests.cpp
         tools/IconsTests.cpp
         tools/GraphEditorTests.cpp
         tools/LanguageServerTests.cpp

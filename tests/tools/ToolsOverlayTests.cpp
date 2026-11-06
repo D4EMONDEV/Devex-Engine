@@ -21,6 +21,9 @@
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
 
+#include <thread>
+#include <stop_token>
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -156,6 +159,77 @@ TEST_CASE("The editor lets the application rest while nothing moves, unless aske
     }
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
+}
+
+TEST_CASE("The project list says when a newer Devex is out, and asks once a day", "[tools][updates][gpu]")
+{
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / ("devex-updates-" + devex::core::Uuid::generate().toString());
+    std::filesystem::create_directories(root);
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.title = "Devex update tests", .width = 800, .height = 600, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {});
+        REQUIRE(renderer.has_value());
+        devex::scene::Scene scene;
+        const auto draw = [&](devex::tools::ToolsOverlay& tools) {
+            platform->pollEvents([](const devex::platform::Event&) {});
+            tools.update(scene, std::chrono::milliseconds(16));
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            tools.prepareRender(scene, world, devex::tools::PlayState::Editing);
+            REQUIRE(renderer->endFrame());
+        };
+        std::atomic_int asked = 0;
+        std::atomic_bool answers = true;
+        const devex::tools::TextFetcher fetcher = [&](const std::string&, std::stop_token) -> devex::core::Result<std::string> {
+            ++asked;
+            if (!answers)
+            {
+                return devex::core::makeError(devex::core::ErrorCode::Io, "no connection");
+            }
+            return std::string(R"([{"tag_name": "v99.0.0", "draft": false, "prerelease": false}])");
+        };
+        // Starts the editor on a file of settings, until the question it asked has had its answer.
+        const auto start = [&](const std::filesystem::path& settings, int expected) {
+            auto tools = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, devex::tools::ToolsMode::Editor, settings);
+            REQUIRE(tools.has_value());
+            (*tools)->setTextFetcher(fetcher);
+            for (int frame = 0; frame < 400 && asked < expected; ++frame)
+            {
+                draw(**tools);
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            for (int frame = 0; frame < 8; ++frame)
+            {
+                draw(**tools);
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            return (*tools)->announcedRelease();
+        };
+
+        // The first start asks, the list says so, and it stays known for the rest of the day without asking again.
+        CHECK(start(root / "first.dvx", 1) == "99.0.0");
+        CHECK(asked == 1);
+        CHECK(start(root / "first.dvx", 1) == "99.0.0");
+        CHECK(asked == 1);
+
+        // Without a connection, it says nothing, and the next start asks again.
+        answers = false;
+        CHECK(start(root / "offline.dvx", 2).empty());
+        CHECK(asked == 2);
+        CHECK(start(root / "offline.dvx", 3).empty());
+        CHECK(asked == 3);
+
+        // Turned off, it never asks, and does not announce what it had heard.
+        answers = true;
+        REQUIRE(devex::core::writeTextFile(root / "off.dvx", "[updates check=false newest=\"99.0.0\"]\n"));
+        CHECK(start(root / "off.dvx", 3).empty());
+        CHECK(asked == 3);
+    }
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
 }
 
 TEST_CASE("The scenes of a project wait for its game code to compile before they open", "[tools][code][gpu]")

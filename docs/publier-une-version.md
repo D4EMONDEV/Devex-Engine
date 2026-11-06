@@ -37,6 +37,14 @@ Si quelque chose ne va pas, supprimer le brouillon et le tag, corriger, et recom
 git push origin --delete v0.9.0
 ```
 
+## Chez ceux qui ont déjà Devex
+
+L'installateur remplace la version installée : il garde le même identifiant d'une version à l'autre, et vide `bin`, `lib`, `include`,
+`cmake` et `platforms` avant de copier les nouveaux fichiers. Les projets et les réglages n'y sont pas.
+
+La liste des projets annonce une version dès qu'elle est **publiée** : un brouillon n'est pas visible, et chacun l'apprend à sa
+prochaine vérification, une fois par jour au plus. Un tag sans chiffres et points seuls, comme `v1.0.0-rc1`, n'est jamais annoncé.
+
 ## Ce que contient une release
 
 | Fichier | Pour qui |

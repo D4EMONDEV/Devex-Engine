@@ -1,9 +1,13 @@
+# For the editor alone, to look for a newer Devex: the engine and the games it exports do not carry it.
+find_package(CURL CONFIG REQUIRED)
+
 add_executable(devex_editor
+    src/FetchText.cpp
     src/main.cpp
 )
 add_executable(Devex::Editor ALIAS devex_editor)
 
-target_link_libraries(devex_editor PRIVATE Devex::Engine)
+target_link_libraries(devex_editor PRIVATE Devex::Engine CURL::libcurl)
 set_target_properties(devex_editor PROPERTIES
     OUTPUT_NAME "devex-editor"
     FOLDER "Applications"
@@ -18,9 +22,10 @@ if(WIN32)
 
     # A terminal does not wait for a windowed program, nor reads its exit code: this one is for scripts.
     add_executable(devex_editor_console
+        src/FetchText.cpp
         src/main.cpp
     )
-    target_link_libraries(devex_editor_console PRIVATE Devex::Engine)
+    target_link_libraries(devex_editor_console PRIVATE Devex::Engine CURL::libcurl)
     set_target_properties(devex_editor_console PROPERTIES
         OUTPUT_NAME "devex-editor-console"
         FOLDER "Applications"

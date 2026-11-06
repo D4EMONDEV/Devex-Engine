@@ -70,6 +70,17 @@ void makeEngineBuild(const std::filesystem::path& directory, std::string_view co
 
 } // namespace
 
+TEST_CASE("A game leaves out the libraries only the editor uses", "[runtime][export]")
+{
+    CHECK(devex::runtime::goesWithExportedGame("SDL3.dll"));
+    CHECK(devex::runtime::goesWithExportedGame("z.dll"));
+    CHECK(devex::runtime::goesWithExportedGame("devex-engine.dll"));
+    CHECK_FALSE(devex::runtime::goesWithExportedGame("libcurl.dll"));
+    CHECK_FALSE(devex::runtime::goesWithExportedGame("libcurl-d.dll"));
+    CHECK_FALSE(devex::runtime::goesWithExportedGame("devex_test_game_module.dll"));
+    CHECK_FALSE(devex::runtime::goesWithExportedGame("devex_tools_tests.dll"));
+}
+
 TEST_CASE("Executables are named after the game", "[runtime][export]")
 {
     CHECK(devex::runtime::executableName("My Game") == "My Game");

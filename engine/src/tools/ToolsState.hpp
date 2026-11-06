@@ -188,6 +188,7 @@ struct DEVEX_API ProbeBake
 
 class EditorUiKit;
 struct ProjectManagerUi;
+struct ReleaseCheck;
 struct FileSystemUi;
 struct OutputUi;
 struct CreationDialogUi;
@@ -868,6 +869,11 @@ struct DEVEX_API ToolsState
     bool viewportSettingsUnsaved = false;
     ScriptSettings scripts;
     bool scriptSettingsUnsaved = false;
+    // Whether a newer Devex is out: saved with the settings, asked once a day at most, at most once a start.
+    UpdateSettings updates;
+    TextFetcher fetchText;
+    std::shared_ptr<ReleaseCheck> releaseCheck;
+    bool releaseAnswered = false;
     // The theme changed and applies before the next frame.
     bool themeChanged = true;
     // The theme changed since the user's settings were last written.
@@ -1489,6 +1495,8 @@ DEVEX_API void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::
 // file is empty.
 DEVEX_API void loadUserSettings(ToolsState& state, const std::filesystem::path& file);
 DEVEX_API void saveUserSettings(const ToolsState& state);
+// Asks when it is time, and takes the answer when it comes, while the project list shows.
+void updateReleaseCheck(ToolsState& state);
 // Remembers the open scenes of the project and the editor camera.
 DEVEX_API void saveEditorSettings(ToolsState& state);
 

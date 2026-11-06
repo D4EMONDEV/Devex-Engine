@@ -3919,3 +3919,12 @@ public:
   la fenêtre, et un dialogue ouvert sur lui le réactiverait en se fermant.
 - `Section&` : un nouveau `card` ou `pageCard` déplace les sections, ne pas garder la référence d'avant. `FormUi::makePlain` donne une section
   sans cadre ni repli ; `Section::page` dit dans quel onglet ou quelle page elle se montre (l'export s'en sert aussi).
+
+## Avis de nouvelle version (jalon 119)
+
+- `tools/ReleaseCheck.hpp` : `newestRelease` lit la réponse de GitHub, `updateReleaseCheck` pose la question sur un `std::jthread` et prend
+  la réponse pendant que la liste des projets s'affiche. `UpdateSettings` est la section `[updates]` de `editor.dvx` de l'utilisateur.
+- libcurl est lié à `devex-editor` seul (`apps/editor/src/FetchText.cpp`), passé par `ApplicationConfig::fetchText`. Sans cette fonction, comme
+  dans les tests et le lecteur, rien ne touche au réseau. Tout ce qui copie les bibliothèques du moteur vers un jeu doit écarter `libcurl*` :
+  `goesWithExportedGame` et `Copy-GameEngine` dans `scripts/prepare_release.ps1`.
+- Sous Linux, OpenSSL lié statiquement cherche ses certificats là où vcpkg l'a construit : `FetchText.cpp` lui donne ceux du système.

@@ -16,6 +16,14 @@
             "platform": "!android"
         },
         "box2d",
+        {
+            "name": "curl",
+            "default-features": false,
+            "features": [
+                "ssl"
+            ],
+            "platform": "!android"
+        },
         "efsw",
         "enet",
         "fastgltf",

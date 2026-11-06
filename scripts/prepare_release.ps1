@@ -51,7 +51,7 @@ $notes = Join-Path $Output "notes.md"
 # Each system's editor exports for the other with its engine, which comes along: only what a game takes.
 function Copy-GameEngine([string] $From, [string] $To) {
     New-Item -ItemType Directory -Force (Join-Path $To "bin") | Out-Null
-    Get-ChildItem (Join-Path $From "bin") -File | Where-Object { $_.Name -in "devex-player", "devex-player.exe" -or $_.Extension -in ".dll", ".so" } |
+    Get-ChildItem (Join-Path $From "bin") -File | Where-Object { $_.Name -notlike "libcurl*" -and ($_.Name -in "devex-player", "devex-player.exe" -or $_.Extension -in ".dll", ".so") } |
         ForEach-Object { Copy-Item $_.FullName (Join-Path $To "bin") }
     foreach ($folder in "bin/managed", "bin/shaders", "bin/redist", "cmake") {
         $source = Join-Path $From $folder

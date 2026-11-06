@@ -573,6 +573,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     if (services.tools != nullptr)
     {
         services.tools->setParticleWorld(m_particles.get());
+        services.tools->setTextFetcher(config.fetchText);
     }
     m_application.m_platform = &services.platform;
     m_application.m_window = &services.window;

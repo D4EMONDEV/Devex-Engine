@@ -18,6 +18,7 @@
 #include <devex/render/RenderWorld.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/tools/CommandHistory.hpp>
+#include <devex/tools/ReleaseCheck.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -387,6 +388,10 @@ public:
     // What stands in the way of exporting for the other desktop system; empty when nothing does.
     void setOtherDesktopExport(std::string problem);
     void setExportStatus(ExportStatus status);
+    // How to read the internet, for the project list to look for a newer Devex; without it, it does not look.
+    void setTextFetcher(TextFetcher fetcher);
+    // The newer version the project list announces; empty when there is none.
+    [[nodiscard]] std::string announcedRelease() const;
 
     // Editor only: whether the application may close now. When scenes have unsaved changes, the
     // editor asks what to do with them first, and requests to quit once they are saved or dropped.

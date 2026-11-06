@@ -5,6 +5,27 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 
 ## À venir
 
+## 0.10.0 — 2026-11-06
+
+Une version pour essayer la mise à jour de Devex par-dessus la précédente, et les fenêtres qui ressemblent à celles de Godot. C'est
+toujours un aperçu.
+
+**Télécharger**
+
+- Windows : `devex-0.10.0-windows-x64-setup.exe`, sans droits administrateur, ou le `.zip` à extraire. L'installateur n'est pas
+  signé : si Windows affiche « Windows a protégé votre ordinateur », cliquer sur *Informations complémentaires*, puis *Exécuter quand même*.
+- Linux : `devex-0.10.0-linux-x64.tar.gz`, à extraire, puis lancer `bin/devex-editor`. Ubuntu 24.04 ou plus récent.
+
+**Mettre à jour**
+
+- L'installateur remplace la version déjà installée, au même endroit. Ni les projets ni les réglages n'y sont : ils restent. Un projet
+  enregistré avec une version précédente demande confirmation à son ouverture, et ses fichiers sont copiés dans `.devex/backups/` avant
+  de changer de format.
+- Le code C++ et C# des jeux est recompilé à leur ouverture.
+
+**Nouveautés**
+
+- **Un avis de nouvelle version** sur la liste des projets : une fois par jour au plus, Devex demande à GitHub s'il existe une version plus récente, et un bouton à côté du numéro de version ouvre sa page. Rien des projets n'est envoyé, et sans connexion il ne dit rien. **Editor Settings > Network > Check for Updates** le désactive. La 0.9.0 n'a pas ce code : c'est la version suivante de celle-ci qui s'annoncera la première.
 - **De vraies fenêtres** : Project Settings, Editor Settings, l'export et le débogage C# s'ouvrent dans une fenêtre du système, avec ses boutons, qu'on déplace et redimensionne comme les autres. Les petits dialogues restent dans l'éditeur pour l'instant.
 - **Project Settings et Editor Settings comme Godot** : un arbre de catégories à gauche, les réglages sur deux colonnes à droite. **Description** et **Version** du jeu, et pour sa fenêtre **Mode** (fenêtré, plein écran sans bords, plein écran exclusif), **Resizable**, **Borderless** et **V-Sync Mode** (Disabled, Enabled, Adaptive, Mailbox).
 - **Une fenêtre d'export plus propre** : la liste des plateformes à gauche, les onglets **Options** et **Resources**, les problèmes en rouge en bas, et **Export All**, qui exporte pour chaque plateforme qui a ce qu'il lui faut.
@@ -15,6 +36,8 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 - Sans synchro verticale, un jeu n'est plus bloqué au rythme de l'écran sous Wayland, comme sur Ubuntu récent : `immediate` n'y existe pas, et le moteur retombait sur FIFO au lieu de `mailbox`.
 - Un modèle de bug sur GitHub, et [une page](docs/essayer-sur-une-machine.md) pour essayer Devex sur une machine.
 - Si l'éditeur ne peut pas démarrer, il le dit dans une fenêtre, comme les jeux, avec le conseil de mettre à jour le pilote graphique quand Vulkan manque. Sous Linux, ce message apparaît aussi quand le programme est lancé depuis le bureau.
+
+- Une mise à jour de l'installateur remplace aussi le moteur de l'autre système, dans `platforms/`.
 
 ## 0.9.0 — 2026-11-06
 

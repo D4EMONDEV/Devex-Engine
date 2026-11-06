@@ -1,3 +1,5 @@
+#include "FetchText.hpp"
+
 #include <devex/core/Log.hpp>
 #include <devex/core/LogFile.hpp>
 #include <devex/platform/CrashHandler.hpp>
@@ -52,6 +54,7 @@ int main(int argc, char** argv)
         .height = 900,
         .editor = true,
     };
+    config.fetchText = devex::editor::fetchText;
     // Arguments come in the system code page, which std::filesystem::path converts.
     std::string_view logLevels;
     for (int index = 1; index < argc; ++index)

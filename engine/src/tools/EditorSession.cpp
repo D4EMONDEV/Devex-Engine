@@ -1202,6 +1202,10 @@ void loadUserSettings(ToolsState& state, const std::filesystem::path& file)
         {
             state.viewportSettings = readViewportSettings(section);
         }
+        else if (section.type == "updates")
+        {
+            state.updates = readUpdateSettings(section);
+        }
     }
 }
 
@@ -1215,6 +1219,7 @@ void saveUserSettings(const ToolsState& state)
     document.sections.push_back(writeThemeSettings(state.theme));
     document.sections.push_back(writeViewportSettings(state.viewportSettings));
     document.sections.push_back(writeScriptSettings(state.scripts));
+    document.sections.push_back(writeUpdateSettings(state.updates));
     state.projects.write(document);
     std::error_code error;
     std::filesystem::create_directories(state.userSettingsFile.parent_path(), error);

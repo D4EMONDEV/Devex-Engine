@@ -56,6 +56,7 @@ Type: filesandordirs; Name: "{app}\bin"
 Type: filesandordirs; Name: "{app}\cmake"
 Type: filesandordirs; Name: "{app}\include"
 Type: filesandordirs; Name: "{app}\lib"
+Type: filesandordirs; Name: "{app}\platforms"
 
 [Files]
 Source: "{#Source}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion

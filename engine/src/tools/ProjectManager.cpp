@@ -236,6 +236,7 @@ struct ProjectManagerUi : PanelBuilder
     Entity updateMessage;
     Entity updateHint;
     Entity version;
+    PanelButton updateNotice;
 
     Entity rowMenu;
     Button menuEdit;
@@ -392,7 +393,18 @@ void ProjectManagerUi::build(ToolsState& state, EditorUiKit& kit)
     }
 
     const std::string versionText = std::format("v{} {}", core::version(), core::buildType());
-    version = text(window, wide(font * 1.3f), versionText, "dim", false, scene::TextAlign::Right);
+    const Entity footer = add(window, "Footer", wide(line));
+    version = text(footer, whole(), versionText, "dim", false, scene::TextAlign::Right);
+    // A newer version, beside this one, as Godot says so.
+    const float noticeRight = kit.textWidth(EditorUiKit::regularFont(), versionText, font) + font;
+    updateNotice = button(kit, footer, Icon::ArrowDownToLine, "Devex is available", "primary", font, line);
+    UiRect& noticeRect = scene().get<UiRect>(updateNotice.entity);
+    noticeRect.anchorMin = {1.0f, 0.0f};
+    noticeRect.anchorMax = {1.0f, 1.0f};
+    noticeRect.offsetMin = {-noticeRight - font, 0.0f};
+    noticeRect.offsetMax = {-noticeRight, 0.0f};
+    noticeRect.visible = false;
+    tooltip(updateNotice.entity, "Opens its page, to read what changed and download it");
 
     // The menu of a row, opened with the second button.
     rowMenu = add({}, "Row menu", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {font * 15.0f, font * 11.4f}, .visible = false}, "popup");
@@ -715,6 +727,25 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         world.openPopup(scene(), createDialog);
         world.startEditing(scene(), createName);
     }
+    const std::string announced = announcedRelease(state.updates, core::version());
+    UiRect& notice = scene().get<UiRect>(updateNotice.entity);
+    notice.visible = !announced.empty();
+    if (!announced.empty())
+    {
+        std::string& shown = scene().get<scene::UiText>(updateNotice.label).text;
+        if (std::string said = std::format("Devex {} is available", announced); said != shown)
+        {
+            notice.offsetMin.x = notice.offsetMax.x - kit.textWidth(EditorUiKit::regularFont(), said, font) - font * 3.0f;
+            shown = std::move(said);
+        }
+        if (world.wasClicked(updateNotice.entity))
+        {
+            if (const core::Result<void> page = state.platform.openUrl(releasePage(announced)); !page)
+            {
+                DEVEX_LOG_WARNING("{}", page.error());
+            }
+        }
+    }
     if (world.wasClicked(import.entity))
     {
         showImportDialog(state);
@@ -953,6 +984,7 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
 void drawProjectManager(ToolsState& state)
 {
     DEVEX_PROFILE_SCOPE("Project manager");
+    updateReleaseCheck(state);
     if (!state.uiKit)
     {
         state.uiKit = std::make_shared<EditorUiKit>(state.renderer, state.icons,

@@ -358,9 +358,7 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     const auto copyLibraries = [&](const std::filesystem::path& folder) -> core::Result<void> {
         for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(folder, error))
         {
-            const std::string fileName = core::toUtf8(entry.path().filename());
-            const bool test = fileName.starts_with("devex_test") || fileName.find("_tests") != std::string::npos;
-            if (entry.is_regular_file(error) && !test &&
+            if (entry.is_regular_file(error) && goesWithExportedGame(core::toUtf8(entry.path().filename())) &&
                 equalsIgnoringCase(core::toUtf8(entry.path().extension()), target.libraryExtension))
             {
                 if (core::Result<void> copied = copyFile(entry.path(), plan.output / entry.path().filename()); !copied)
@@ -763,6 +761,12 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
     const auto [first, last] = std::ranges::unique(ids);
     ids.erase(first, last);
     return ids;
+}
+
+bool goesWithExportedGame(std::string_view fileName) noexcept
+{
+    const bool test = fileName.starts_with("devex_test") || fileName.find("_tests") != std::string_view::npos;
+    return !test && !fileName.starts_with("libcurl");
 }
 
 core::Result<ExportPlan> planExport(const asset::AssetDatabase& database, const EngineBuild& engine)

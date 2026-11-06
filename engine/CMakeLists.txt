@@ -920,6 +920,7 @@ target_sources(devex_tools
         src/tools/CodeOutline.cpp
         src/tools/CodeOutline.hpp
         src/tools/CodePanel.cpp
+        src/tools/ReleaseCheck.cpp
         src/tools/ScriptSettings.cpp
         src/tools/ScriptEditors.cpp
         src/tools/CreationCatalog.cpp
@@ -1019,6 +1020,7 @@ target_sources(devex_tools
             include/devex/tools/CommandHistory.hpp
             include/devex/tools/LogBuffer.hpp
             include/devex/tools/SceneCommands.hpp
+            include/devex/tools/ReleaseCheck.hpp
             include/devex/tools/ToolsOverlay.hpp
 )
 

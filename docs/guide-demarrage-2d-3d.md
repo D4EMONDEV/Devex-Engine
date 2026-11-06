@@ -1005,6 +1005,12 @@ fenêtres du système, et l'éditeur attend qu'elles se ferment.
 **Editor Settings** reprend le même arbre, la recherche et le bouton **Close** en bas.
 Les champs et les commandes de suppression ont des zones de clic plus grandes.
 
+**Nouvelle version.** Une fois par jour au plus, la liste des projets demande à GitHub si une version plus
+récente de Devex existe. Si oui, un bouton le dit à côté du numéro de version, en bas à droite, et ouvre sa page :
+on y lit ce qui change et on télécharge le fichier. L'installateur remplace alors la version installée, sans toucher
+aux projets ni aux réglages. Rien des projets n'est envoyé, et sans connexion Devex ne dit rien.
+**Editor Settings > Network > Check for Updates** désactive cette vérification.
+
 **Filter Settings** cherche par mots dans toutes les catégories et révèle temporairement les
 groupes repliés. Le bouton de suppression du filtre rétablit la catégorie et ses replis. Les
 résultats sont recalculés lorsqu'une recherche ou la page change, et non à chaque image.
