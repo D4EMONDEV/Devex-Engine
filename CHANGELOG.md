@@ -3,7 +3,7 @@
 Ce qui change d'une version publiée à l'autre. Ce que promet chaque version aux projets existants est dans
 [docs/compatibilite.md](docs/compatibilite.md). Les décisions et leurs raisons sont dans [docs/decisions.md](docs/decisions.md).
 
-## 0.9.0 — à publier
+## 0.9.0 — 2026-11-06
 
 La première version publiée de Devex : un moteur de jeu 2D et 3D en C++23 sur Vulkan, avec son éditeur. C'est un aperçu : il
 sert à faire de vrais petits jeux et à trouver ce qui manque avant la 1.0.
