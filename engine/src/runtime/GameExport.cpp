@@ -373,6 +373,10 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     {
         return std::unexpected(copied.error());
     }
+    if (core::Result<void> copied = copyGameLicenses(bin, plan.output / "licenses"); !copied)
+    {
+        return std::unexpected(copied.error());
+    }
     if (!target.windows)
     {
         // The game finds it beside itself ($ORIGIN in the search path of the player).
@@ -766,7 +770,35 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
 bool goesWithExportedGame(std::string_view fileName) noexcept
 {
     const bool test = fileName.starts_with("devex_test") || fileName.find("_tests") != std::string_view::npos;
-    return !test && !fileName.starts_with("libcurl");
+    const bool editorOnly = fileName.starts_with("libcurl") || fileName == "curl.txt" || fileName == "openssl.txt";
+    return !test && !editorOnly;
+}
+
+core::Result<void> copyGameLicenses(const std::filesystem::path& bin, const std::filesystem::path& folder)
+{
+    std::error_code error;
+    const std::filesystem::path licenses = bin / "licenses";
+    if (!std::filesystem::is_directory(licenses, error))
+    {
+        DEVEX_LOG_WARNING("The engine has no licenses to go with the game in {}", core::toUtf8(licenses));
+        return {};
+    }
+    std::filesystem::create_directories(folder, error);
+    if (error)
+    {
+        return core::makeError(core::ErrorCode::Io, "Cannot create {}: {}", core::toUtf8(folder), error.message());
+    }
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(licenses, error))
+    {
+        if (entry.is_regular_file(error) && goesWithExportedGame(core::toUtf8(entry.path().filename())))
+        {
+            if (core::Result<void> copied = copyFile(entry.path(), folder / entry.path().filename()); !copied)
+            {
+                return copied;
+            }
+        }
+    }
+    return {};
 }
 
 core::Result<ExportPlan> planExport(const asset::AssetDatabase& database, const EngineBuild& engine)

@@ -60,6 +60,7 @@ include(DevexShowIncludes)
 include(DevexShaders)
 include(DevexWarnings)
 include(DevexBranding)
+include(DevexLicenses)
 
 add_subdirectory(shaders)
 add_subdirectory(engine)

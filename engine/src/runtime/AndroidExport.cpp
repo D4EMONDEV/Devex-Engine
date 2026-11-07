@@ -342,6 +342,10 @@ core::Result<ExportResult> exportAndroid(const ExportPlan& plan, const std::func
 
     report("Putting the game in the Android project", 0.7f);
     fs::create_directories(main / "assets", error);
+    if (core::Result<void> copied = copyGameLicenses(plan.androidBuilds.front().engine.directory / "bin", main / "assets" / "licenses"); !copied)
+    {
+        return std::unexpected(copied.error());
+    }
     fs::copy_file(packagePlan.output / (name + ".dvxpak"), main / "assets" / "game.dvxpak", fs::copy_options::overwrite_existing, error);
     if (error)
     {

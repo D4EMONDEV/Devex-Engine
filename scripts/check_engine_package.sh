@@ -46,6 +46,10 @@ need_any bin/shaders "*.spv"
 need_any bin/shaders/modules "*.slang"
 need_any bin/resources/fonts "*.ttf"
 need bin/resources/icons/devex.png
+# Most licenses ask to go with every copy. OpenSSL is linked in, here.
+for license in README devex sdl3 joltphysics curl openssl slang dotnet; do
+    need "bin/licenses/$license.txt"
+done
 need bin/managed/Devex.Managed.dll
 need cmake/DevexConfig.cmake
 need cmake/DevexGameModule.cmake

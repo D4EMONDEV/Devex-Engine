@@ -3928,3 +3928,9 @@ public:
   dans les tests et le lecteur, rien ne touche au réseau. Tout ce qui copie les bibliothèques du moteur vers un jeu doit écarter `libcurl*` :
   `goesWithExportedGame` et `Copy-GameEngine` dans `scripts/prepare_release.ps1`.
 - Sous Linux, OpenSSL lié statiquement cherche ses certificats là où vcpkg l'a construit : `FetchText.cpp` lui donne ceux du système.
+
+## Licences livrées (jalon 120)
+
+- `cmake/DevexLicenses.cmake` copie à la configuration les licences dans `bin/licenses`. Ce qui ne vient pas de vcpkg s'y ajoute à la main :
+  une police, un outil ou une bibliothèque de `third_party` de plus demande une ligne de plus.
+- `copyGameLicenses` les copie vers le jeu, sauf celles que `goesWithExportedGame` écarte. Tout nouveau code qui ne sert qu'à l'éditeur y ajoute les siennes.

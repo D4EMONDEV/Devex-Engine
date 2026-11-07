@@ -36,6 +36,13 @@ if (-not (Test-Path (Join-Path $root "tests/data/formats/$Version"))) {
     throw "tests/data/formats/$Version is missing: see docs/compatibilite.md"
 }
 
+# Most licenses ask to go with every copy.
+foreach ($license in "devex", "sdl3", "curl", "slang", "dotnet") {
+    if (-not (Test-Path (Join-Path $Windows "bin/licenses/$license.txt"))) {
+        throw "$Windows has no bin/licenses/$license.txt"
+    }
+}
+
 # The notes are what the changelog says of this version.
 $changelog = Get-Content -Raw (Join-Path $root "CHANGELOG.md")
 $section = [regex]::Match(($changelog -replace "`r`n", "`n"), "(?ms)^## $([regex]::Escape($Version))\b[^`n]*`n(.*?)(?=^## |\z)")
@@ -53,7 +60,7 @@ function Copy-GameEngine([string] $From, [string] $To) {
     New-Item -ItemType Directory -Force (Join-Path $To "bin") | Out-Null
     Get-ChildItem (Join-Path $From "bin") -File | Where-Object { $_.Name -notlike "libcurl*" -and ($_.Name -in "devex-player", "devex-player.exe" -or $_.Extension -in ".dll", ".so") } |
         ForEach-Object { Copy-Item $_.FullName (Join-Path $To "bin") }
-    foreach ($folder in "bin/managed", "bin/shaders", "bin/redist", "cmake") {
+    foreach ($folder in "bin/licenses", "bin/managed", "bin/shaders", "bin/redist", "cmake") {
         $source = Join-Path $From $folder
         if (Test-Path $source) {
             Copy-Item -Recurse -Force $source (Join-Path $To $folder)

@@ -37,6 +37,9 @@ Si quelque chose ne va pas, supprimer le brouillon et le tag, corriger, et recom
 git push origin --delete v0.9.0
 ```
 
+Chaque paquet contient `bin/licenses`, et le script refuse un moteur qui ne l'a pas. Une bibliothèque ajoutée à `vcpkg.json` y arrive seule ;
+ce qui vient d'ailleurs s'ajoute à la main dans `cmake/DevexLicenses.cmake`.
+
 ## Chez ceux qui ont déjà Devex
 
 L'installateur remplace la version installée : il garde le même identifiant d'une version à l'autre, et vide `bin`, `lib`, `include`,

@@ -133,6 +133,7 @@ struct EditorDialogsUi : FormUi
     Entity file;
     Entity status;
     Button confirm;
+    Button showLicenses;
     Button discard;
     Button cancel;
     bool focusName = false;
@@ -224,7 +225,7 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
     focusName = false;
     language = shaderKind = scriptName = file = status = folder = buildBar = buildText = buildLine = Entity{};
     folderRows.clear();
-    confirm = discard = cancel = back = Button{};
+    confirm = discard = cancel = back = showLicenses = Button{};
     types = {};
     root = add({}, "Dialog", whole(), "dialog");
     scene().add<scene::UiImage>(root);
@@ -419,7 +420,7 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
             {"plutosvg", "MIT"},
             {"Inter, Noto Sans, JetBrains Mono", "SIL Open Font License 1.1"},
             {"Lucide icons", "ISC"},
-            {"Slang", "Apache 2.0"},
+            {"Slang", "Apache 2.0, LLVM exception"},
         }};
         // The names in a column, their licenses in another, each as wide as its longest line.
         float names = 0.0f;
@@ -457,6 +458,8 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
                  license, "dim");
         }
         const Entity buttons = buttonLine();
+        showLicenses = button(kit, buttons, std::nullopt, "Licenses", "button", buttonWidth, buttonHeight);
+        tooltip(showLicenses.entity, "Opens the folder with the license of everything that comes with Devex");
         confirm = button(kit, buttons, std::nullopt, "Close", "primary", buttonWidth, buttonHeight);
         break;
     }
@@ -775,6 +778,13 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
         open = unsaved == UnsavedChoice::None;
         break;
     case DialogKind::About:
+        if (world.wasClicked(showLicenses.entity))
+        {
+            if (const core::Result<void> shown = state.platform.openPath(state.platform.baseDirectory() / "licenses"); !shown)
+            {
+                DEVEX_LOG_WARNING("{}", shown.error());
+            }
+        }
         if (world.wasClicked(confirm.entity) || escape ||
             (panel.focused() && (state.input.pressed(platform::Key::Enter, false) || state.input.pressed(platform::Key::KeypadEnter, false))))
         {

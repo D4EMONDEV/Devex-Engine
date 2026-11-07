@@ -54,6 +54,7 @@ if(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
 endif()
 
 install(DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders" DESTINATION bin)
+install(DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/licenses" DESTINATION bin)
 # slangc and its libraries, which the editor runs to compile the shaders of projects.
 install(DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slang" DESTINATION bin USE_SOURCE_PERMISSIONS)
 if(TARGET devex_managed)

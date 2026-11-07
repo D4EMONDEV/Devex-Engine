@@ -5,6 +5,8 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 
 ## À venir
 
+- **Les licences voyagent avec Devex** : un dossier `bin/licenses` contient celle de chaque bibliothèque, police et outil livrés, et le bouton **Licenses** de la fenêtre **About** l'ouvre. Chaque jeu exporté emporte les siennes, dans un dossier `licenses` à côté de lui, ou dans `assets/licenses` sur Android : à garder avec le jeu quand on le partage.
+
 ## 0.10.0 — 2026-11-06
 
 Une version pour essayer la mise à jour de Devex par-dessus la précédente, et les fenêtres qui ressemblent à celles de Godot. C'est

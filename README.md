@@ -535,7 +535,9 @@ temps moyen d'une frame, zone par zone, sur le CPU et le GPU.
 
 Les polices (Inter, Noto Sans, JetBrains Mono : SIL OFL 1.1) et les icônes (Lucide : ISC) de l'éditeur sont
 dans `third_party` avec leurs licences, comme ufbx (MIT ou domaine public), qui lit les fichiers FBX
-et OBJ. Les lettres sont dessinées par FreeType (FreeType License), que vcpkg fournit.
+et OBJ. Les lettres sont dessinées par FreeType (FreeType License), que vcpkg fournit. La compilation
+rassemble dans `bin/licenses` la licence de tout ce qui est livré, ces bibliothèques de vcpkg comprises, et
+chaque jeu exporté emporte celles de ce qu'il contient.
 
 Avec Visual Studio en français sans le pack de langue anglais, la configuration fait passer le
 compilateur par un petit lanceur qui traduit ses notes `/showIncludes` pour Ninja (voir

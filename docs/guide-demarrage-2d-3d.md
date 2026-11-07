@@ -751,7 +751,7 @@ coupe en plus les actions du joueur.
 8. Lancer l'export avec **Export Project** et consulter son résultat dans la fenêtre et Output.
 9. Tester l'exécutable produit, nommé d'après le projet, **depuis le dossier exporté**.
 
-Partager tout le dossier exporté : l'exécutable dépend du paquet d'assets et des bibliothèques livrées à côté. Un jeu C# exporté emporte son runtime .NET ; le joueur n'a pas besoin du SDK utilisé pour développer. Un export Debug est réservé au développement et demande les dépendances de debug appropriées.
+Partager tout le dossier exporté : l'exécutable dépend du paquet d'assets et des bibliothèques livrées à côté. Le dossier `licenses` en fait partie : il contient les licences de Devex et de ce que le jeu emporte, et la plupart demandent à accompagner chaque copie. Un jeu C# exporté emporte son runtime .NET ; le joueur n'a pas besoin du SDK utilisé pour développer. Un export Debug est réservé au développement et demande les dépendances de debug appropriées.
 
 L'export peut remplacer les fichiers de sa destination. Choisir un dossier consacré uniquement aux résultats d'export.
 

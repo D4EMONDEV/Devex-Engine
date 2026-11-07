@@ -5,6 +5,7 @@
 #include <devex/core/File.hpp>
 #include <devex/core/JobSystem.hpp>
 #include <devex/core/Uuid.hpp>
+#include <devex/platform/Platform.hpp>
 #include <devex/runtime/GameExport.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -69,6 +70,42 @@ void makeEngineBuild(const std::filesystem::path& directory, std::string_view co
 }
 
 } // namespace
+
+TEST_CASE("The licenses of what ships stand beside the programs", "[runtime][export]")
+{
+    const std::filesystem::path licenses = devex::platform::executableDirectory() / "licenses";
+    for (const char* const name : {"README.txt", "devex.txt", "sdl3.txt", "joltphysics.txt", "freetype.txt", "curl.txt", "inter.txt", "lucide.txt", "ufbx.txt",
+                                   "slang.txt", "dotnet.txt", "dotnet-third-party-notices.txt"})
+    {
+        CAPTURE(name);
+        std::error_code error;
+        CHECK(std::filesystem::file_size(licenses / name, error) > 0);
+        CHECK_FALSE(error);
+    }
+    // What does not ship has no license there.
+    CHECK_FALSE(std::filesystem::exists(licenses / "catch2.txt"));
+    CHECK_FALSE(std::filesystem::exists(licenses / "vcpkg-cmake.txt"));
+}
+
+TEST_CASE("A game takes the licenses of what it carries", "[runtime][export]")
+{
+    TemporaryDirectory directory;
+    const std::filesystem::path bin = directory.path / "bin";
+    for (const char* const name : {"devex.txt", "sdl3.txt", "curl.txt", "openssl.txt"})
+    {
+        REQUIRE(devex::core::writeTextFile(bin / "licenses" / name, "text"));
+    }
+    const std::filesystem::path game = directory.path / "game" / "licenses";
+    REQUIRE(devex::runtime::copyGameLicenses(bin, game));
+    CHECK(std::filesystem::exists(game / "devex.txt"));
+    CHECK(std::filesystem::exists(game / "sdl3.txt"));
+    // The editor alone asks the internet for new versions.
+    CHECK_FALSE(std::filesystem::exists(game / "curl.txt"));
+    CHECK_FALSE(std::filesystem::exists(game / "openssl.txt"));
+
+    // An engine built before they came with it still exports.
+    CHECK(devex::runtime::copyGameLicenses(directory.path / "older" / "bin", directory.path / "older" / "game"));
+}
 
 TEST_CASE("A game leaves out the libraries only the editor uses", "[runtime][export]")
 {

@@ -27,6 +27,11 @@ if [ ! -x "$game" ]; then
     exit 2
 fi
 
+if [ ! -f "$folder/licenses/devex.txt" ] || [ -e "$folder/licenses/curl.txt" ]; then
+    echo "The licenses of what the game carries are not beside it" >&2
+    exit 1
+fi
+
 echo "== Libraries the game takes from the system"
 ldd "$game" "$folder"/*.so 2>&1 | grep "=>" | grep -v "$folder" | sed 's/ (0x[0-9a-f]*)//' | sort -u
 unresolved=$(ldd "$game" "$folder"/*.so 2>&1 | grep "not found" || true)
