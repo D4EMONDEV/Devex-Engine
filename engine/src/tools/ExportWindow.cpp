@@ -288,6 +288,8 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
     // The engine of the other system comes in one configuration.
     configuration = android || other ? Entity{} : choice(formRow(game, "Configuration").editor, {"Release", "Debug"});
     terminal = Entity{};
+    // The rows of the release key are only there with it on: what they were goes with the cards.
+    androidKeystore = androidAlias = androidStorePassword = androidKeyPassword = Entity{};
     if (!android && (desktopIsWindows != other))
     {
         const FormRow terminalRow = formRow(game, "Terminal");

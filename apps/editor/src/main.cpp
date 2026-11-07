@@ -6,6 +6,7 @@
 #include <devex/platform/DesktopEntry.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/runtime/Application.hpp>
+#include <devex/runtime/CrashMessage.hpp>
 #include <devex/runtime/GameExport.hpp>
 #include <devex/runtime/SystemReport.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
@@ -13,6 +14,7 @@
 #include <filesystem>
 #include <memory>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -33,11 +35,18 @@ class EditorApplication final : public devex::runtime::Application
 // devex-editor --export <project.dvxproj> [--output <folder>] [--configuration <Release|Debug>]:
 // exports the game without opening a window.
 // devex-editor --report [file]: says what this machine offers, for a bug report, without opening a window.
+// devex-editor --crash-message: what the crash handler starts, to say that the editor stopped.
 int main(int argc, char** argv)
 {
     // No terminal opens by itself, for the editor or for what it starts, unless it was started from one.
     devex::platform::useParentTerminal();
     devex::platform::showTerminal(false);
+    if (argc > 1 && std::string_view(argv[1]) == "--crash-message")
+    {
+        const devex::core::Result<std::filesystem::path> user = devex::platform::userDataLocation("Devex", "Editor");
+        devex::runtime::showCrashMessage(user ? *user / "logs" / "editor.log" : std::filesystem::path{});
+        return 0;
+    }
     if (argc > 1 && std::string_view(argv[1]) == "--report")
     {
         const std::vector<std::string_view> arguments(argv + 1, argv + argc);
@@ -100,7 +109,18 @@ int main(int argc, char** argv)
             DEVEX_LOG_WARNING("The log is not kept in a file: {}", opened.error());
         }
     }
-    devex::platform::installCrashHandler({.directory = logs, .log = log.get()});
+    devex::platform::CrashReporting reporting{.directory = logs, .log = log.get()};
+    // Someone in front of the editor is told. A script reads the report, where it went.
+    if ((devex::platform::isWindowedApplication() || devex::platform::terminalClosesWithProgram()) && config.screenshot.empty() && config.profileReport.empty())
+    {
+#ifdef _WIN32
+        reporting.notifier = devex::platform::executableDirectory() / "devex-editor.exe";
+#else
+        reporting.notifier = devex::platform::executableDirectory() / "devex-editor";
+#endif
+        reporting.notifierArguments = {"--crash-message"};
+    }
+    devex::platform::installCrashHandler(std::move(reporting));
 
     // The dock of a Linux desktop shows the name and the icon of the editor's entry among the
     // applications, not those of its window.

@@ -3934,3 +3934,13 @@ public:
 - `cmake/DevexLicenses.cmake` copie à la configuration les licences dans `bin/licenses`. Ce qui ne vient pas de vcpkg s'y ajoute à la main :
   une police, un outil ou une bibliothèque de `third_party` de plus demande une ligne de plus.
 - `copyGameLicenses` les copie vers le jeu, sauf celles que `goesWithExportedGame` écarte. Tout nouveau code qui ne sert qu'à l'éditeur y ajoute les siennes.
+
+## Rangées faites sous condition
+
+- Une `Entity` membre d'un formulaire reste « valide » (`isValid()`) après la destruction de sa carte : `isValid()` dit qu'elle n'est pas nulle, pas qu'elle existe encore.
+  Une rangée faite seulement sous condition se remet à `Entity{}` au début de la reconstruction, sinon `get<>` finit en erreur fatale (bug de Release Key, export Android).
+
+## Message de plantage (jalon 121)
+
+- `installCrashHandler` prend `notifier` et ses arguments, préparés à l'installation : rien n'alloue au moment du plantage. L'éditeur s'y passe lui-même avec `--crash-message`.
+- `runtime/CrashMessage.cpp` lit le journal : la dernière ligne `*** The process crashed`, et la ligne `fatal` qui la précède. Ces deux formats sont donc lus : les changer demande de changer ce code.

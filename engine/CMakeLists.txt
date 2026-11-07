@@ -1084,6 +1084,7 @@ target_sources(devex_runtime
         src/runtime/ManagedGame.cpp
         src/runtime/ManagedGame.hpp
         src/runtime/SceneExtraction.cpp
+        src/runtime/CrashMessage.cpp
         src/runtime/SystemReport.cpp
         src/runtime/TerrainQueries.cpp
     PUBLIC

@@ -925,6 +925,11 @@ void ToolsOverlay::setExportStatus(ExportStatus status)
     m_state->exportStatus = std::move(status);
 }
 
+void ToolsOverlay::showExportWindow() noexcept
+{
+    m_state->showExport = true;
+}
+
 void ToolsOverlay::setTextFetcher(TextFetcher fetcher)
 {
     m_state->fetchText = std::move(fetcher);

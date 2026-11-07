@@ -278,6 +278,7 @@ devex_add_tests(tools
         tools/ScriptSettingsTests.cpp
         tools/ToolsOverlayTests.cpp
         tools/AutosaveTests.cpp
+        tools/ExportWindowTests.cpp
         tools/EditorBenchmark.cpp
         tools/TwoDScreenTests.cpp
     LIBRARIES

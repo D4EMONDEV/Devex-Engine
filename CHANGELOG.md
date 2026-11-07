@@ -5,6 +5,28 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 
 ## À venir
 
+## 0.10.1 — 2026-11-07
+
+Des corrections, les licences, et la première version qu'une version précédente annonce d'elle-même : installée, la 0.10.0 la
+signale sur sa liste des projets. C'est toujours un aperçu.
+
+**Télécharger**
+
+- Windows : `devex-0.10.1-windows-x64-setup.exe`, sans droits administrateur, ou le `.zip` à extraire. L'installateur n'est pas
+  signé : si Windows affiche « Windows a protégé votre ordinateur », cliquer sur *Informations complémentaires*, puis *Exécuter quand même*.
+- Linux : `devex-0.10.1-linux-x64.tar.gz`, à extraire, puis lancer `bin/devex-editor`. Ubuntu 24.04 ou plus récent.
+
+**Mettre à jour**
+
+- L'installateur remplace la version déjà installée, au même endroit. Ni les projets ni les réglages n'y sont : ils restent. Un projet
+  enregistré avec une version précédente demande confirmation à son ouverture, et ses fichiers sont copiés dans `.devex/backups/` avant
+  de changer de format.
+- Le code C++ et C# des jeux est recompilé à leur ouverture.
+
+**Nouveautés**
+
+- **Quand Devex plante, il le dit** : une fenêtre explique ce qui s'est passé et où est le rapport, et son bouton **Open Log Folder** ouvre le dossier. Une copie du travail non enregistré, s'il y en a une, est proposée à la prochaine ouverture du projet.
+- Décocher **Release Key** dans l'export Android ne ferme plus l'éditeur.
 - **Les licences voyagent avec Devex** : un dossier `bin/licenses` contient celle de chaque bibliothèque, police et outil livrés, et le bouton **Licenses** de la fenêtre **About** l'ouvre. Chaque jeu exporté emporte les siennes, dans un dossier `licenses` à côté de lui, ou dans `assets/licenses` sur Android : à garder avec le jeu quand on le partage.
 
 ## 0.10.0 — 2026-11-06

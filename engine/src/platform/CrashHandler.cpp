@@ -1,5 +1,7 @@
 #include <devex/platform/CrashHandler.hpp>
 
+#include <devex/core/Path.hpp>
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -21,6 +23,7 @@
 #include <malloc.h>
 #include <string>
 #include <string_view>
+#include <vector>
 #elif defined(__linux__)
 #include <dlfcn.h>
 #include <elf.h>
@@ -29,6 +32,9 @@
 #include <unwind.h>
 #endif
 #include <fcntl.h>
+#if !defined(__ANDROID__)
+#include <spawn.h>
+#endif
 #include <link.h>
 #include <poll.h>
 #include <setjmp.h>
@@ -52,6 +58,8 @@
 #include <exception>
 #include <format>
 #include <string>
+#include <utility>
+#include <vector>
 #include <string_view>
 #else
 #include <exception>
@@ -77,6 +85,9 @@ struct CrashState
     std::array<char, 2048> dumpPathUtf8{};
     bool symbols = false;
     bool installed = false;
+    // Who tells the user, whose command line CreateProcessW may write to.
+    std::wstring notifierProgram;
+    std::wstring notifierCommand;
 };
 
 // Inside runGuarded on this thread, and under CrashGuardBarrier.
@@ -322,6 +333,58 @@ void describe(bool fatal, const char* what, const CONTEXT& context, EXCEPTION_PO
     walkStack(process, context);
 }
 
+DWORD WINAPI startNotifier(void*)
+{
+    CrashState& state = crash();
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (CreateProcessW(state.notifierProgram.c_str(), state.notifierCommand.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS, nullptr, nullptr, &startup, &process) != FALSE)
+    {
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+    }
+    return 0;
+}
+
+void tellTheUser()
+{
+    if (crash().notifierProgram.empty())
+    {
+        return;
+    }
+    // On a thread of its own: a lock the crash left held must not keep the process from ending.
+    if (const HANDLE thread = CreateThread(nullptr, 0, &startNotifier, nullptr, 0, nullptr))
+    {
+        WaitForSingleObject(thread, 5000);
+        CloseHandle(thread);
+    }
+}
+
+// As the C runtime reads a command line back.
+void appendArgument(std::wstring& command, const std::wstring& argument)
+{
+    if (!command.empty())
+    {
+        command += L' ';
+    }
+    command += L'"';
+    std::size_t slashes = 0;
+    for (const wchar_t each : argument)
+    {
+        if (each == L'\\')
+        {
+            ++slashes;
+            continue;
+        }
+        command.append(each == L'"' ? slashes * 2 + 1 : slashes, L'\\');
+        slashes = 0;
+        command += each;
+    }
+    command.append(slashes * 2, L'\\');
+    command += L'"';
+}
+
 void report(const char* what, const CONTEXT& context, EXCEPTION_POINTERS* exception)
 {
     CrashState& state = crash();
@@ -340,6 +403,7 @@ void report(const char* what, const CONTEXT& context, EXCEPTION_POINTERS* except
     {
         state.log->writeRaw(text);
     }
+    tellTheUser();
 }
 
 // Reports what the C runtime or the C++ library calls a fatal error, then ends the process with
@@ -430,6 +494,16 @@ void installCrashHandler(CrashReporting reporting)
     CrashState& state = crash();
     state.log = reporting.log;
     state.installed = true;
+    state.notifierProgram = reporting.notifier.native();
+    state.notifierCommand.clear();
+    if (!reporting.notifier.empty())
+    {
+        appendArgument(state.notifierCommand, state.notifierProgram);
+        for (const std::string& argument : reporting.notifierArguments)
+        {
+            appendArgument(state.notifierCommand, core::pathFromUtf8(argument).native());
+        }
+    }
     state.directory.fill(L'\0');
     if (!reporting.directory.empty())
     {
@@ -577,6 +651,10 @@ struct CrashState
     alignas(16) std::array<std::byte, 256 * 1024> signalStack{};
     // How the signals are handled, put back after a guard caught one: SA_RESETHAND took it away.
     struct sigaction action{};
+    // Who tells the user, made beforehand: the heap may be what broke.
+    std::string notifierProgram;
+    std::vector<std::string> notifierStorage;
+    std::vector<char*> notifierArguments;
 };
 
 CrashState& crash()
@@ -924,6 +1002,28 @@ void describe(bool fatal, const char* what, const siginfo_t* info, const ucontex
     writeFrames();
 }
 
+void tellTheUser()
+{
+#if !defined(__ANDROID__)
+    CrashState& state = crash();
+    if (state.notifierProgram.empty())
+    {
+        return;
+    }
+    // Without fork, whose handlers want the locks that the crash may have left held. The signals this handler
+    // holds back stay blocked through exec, unless they are let go.
+    posix_spawnattr_t attributes;
+    posix_spawnattr_init(&attributes);
+    sigset_t none;
+    sigemptyset(&none);
+    posix_spawnattr_setsigmask(&attributes, &none);
+    posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSIGMASK);
+    pid_t child = 0;
+    static_cast<void>(posix_spawn(&child, state.notifierProgram.c_str(), nullptr, &attributes, state.notifierArguments.data(), environ));
+    posix_spawnattr_destroy(&attributes);
+#endif
+}
+
 void report(const char* what, const siginfo_t* info, const ucontext_t* context)
 {
     CrashState& state = crash();
@@ -948,6 +1048,7 @@ void report(const char* what, const siginfo_t* info, const ucontext_t* context)
     {
         state.log->writeRaw(text);
     }
+    tellTheUser();
 }
 
 // The guard a crash on this thread goes back to, taken from the guards: none under a barrier, or
@@ -1044,6 +1145,15 @@ void installCrashHandler(CrashReporting reporting)
 {
     CrashState& state = crash();
     state.log = reporting.log;
+    state.notifierProgram = reporting.notifier.native();
+    state.notifierStorage = std::move(reporting.notifierArguments);
+    state.notifierStorage.insert(state.notifierStorage.begin(), state.notifierProgram);
+    state.notifierArguments.clear();
+    for (std::string& argument : state.notifierStorage)
+    {
+        state.notifierArguments.push_back(argument.data());
+    }
+    state.notifierArguments.push_back(nullptr);
     const ssize_t length = readlink("/proc/self/exe", state.program.data(), state.program.size() - 1);
     state.program[length > 0 ? static_cast<std::size_t>(length) : 0] = '\0';
     Dl_info program{};

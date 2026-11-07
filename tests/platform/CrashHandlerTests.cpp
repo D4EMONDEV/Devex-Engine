@@ -3,6 +3,7 @@
 #include <devex/core/Uuid.hpp>
 #include <devex/platform/Executable.hpp>
 #include <devex/platform/Process.hpp>
+#include <devex/runtime/CrashMessage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -46,6 +47,23 @@ namespace {
     return 0;
 }
 
+// Started by the crash and running on its own: it writes its file when it gets there.
+[[nodiscard]] bool toldTheUser(const std::filesystem::path& folder)
+{
+    const std::filesystem::path told = folder / "told by the crash.txt";
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        const devex::core::Result<std::string> text = devex::core::readTextFile(told);
+        if (text && *text == "told")
+        {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    return false;
+}
+
 #ifdef _WIN32
 [[nodiscard]] bool hasMinidump(const std::filesystem::path& folder)
 {
@@ -64,6 +82,31 @@ namespace {
 } // namespace
 
 // Linux writes no minidump: the system keeps a core dump if it is set to.
+TEST_CASE("What an editor that crashed says comes from its log", "[platform][crash]")
+{
+    const std::filesystem::path file = std::filesystem::path("logs") / "editor.log";
+    using devex::runtime::crashMessageText;
+
+    // A fatal error says more than the abort that follows it.
+    const std::string fatal = crashMessageText("[    1.0] info    tools     Fine\n"
+                                               "[    1.4] fatal   scene     Assertion failed: component (no such component) (Scene.hpp:141)\n"
+                                               "\n*** The process crashed: abort\nCalls, the last one first:\n",
+                                               file);
+    CHECK(fatal.find("Assertion failed: component (no such component) (Scene.hpp:141)") != std::string::npos);
+    CHECK(fatal.find("abort") == std::string::npos);
+    CHECK(fatal.find("[    1.4]") == std::string::npos);
+    CHECK(fatal.find("editor.previous.log") != std::string::npos);
+    CHECK(fatal.find("editor.log") != std::string::npos);
+
+    // Without one, what the handler caught.
+    CHECK(crashMessageText("*** The process crashed: access violation\r\nWhile reading\r\n", file).find("access violation\n") != std::string::npos);
+
+    // Without a log, the message still stands, and names no file when there is none.
+    const std::string alone = crashMessageText("", {});
+    CHECK(alone.starts_with("Devex stopped"));
+    CHECK(alone.find("report") == std::string::npos);
+}
+
 TEST_CASE("A crash leaves its report in the log and a minidump beside it", "[platform][crash]")
 {
     for (const std::string how : {"access", "abort"})
@@ -87,6 +130,8 @@ TEST_CASE("A crash leaves its report in the log and a minidump beside it", "[pla
         CHECK(log->find("Minidump: ") != std::string::npos);
         CHECK(hasMinidump(folder));
 #endif
+        // Another process tells the user, even from a path with spaces.
+        CHECK(toldTheUser(folder));
 
         std::filesystem::remove_all(folder, error);
     }
@@ -102,6 +147,8 @@ TEST_CASE("A guard turns a crash into its report, and the process lives on", "[p
         std::filesystem::remove_all(folder, error);
 
         CHECK(runProbe(folder, "guarded-" + how) == 0);
+        // It lived on: there is nothing to tell.
+        CHECK_FALSE(std::filesystem::exists(folder / "told by the crash.txt"));
 
         const devex::core::Result<std::string> log = devex::core::readTextFile(folder / "probe.log");
         REQUIRE(log.has_value());
@@ -125,6 +172,7 @@ TEST_CASE("A guard turns a crash into its report, and the process lives on", "[p
     std::error_code error;
     std::filesystem::remove_all(folder, error);
     CHECK(runProbe(folder, "barrier") != 0);
+    CHECK(toldTheUser(folder));
     const devex::core::Result<std::string> log = devex::core::readTextFile(folder / "probe.log");
     REQUIRE(log.has_value());
     CHECK(log->find("The process crashed") != std::string::npos);

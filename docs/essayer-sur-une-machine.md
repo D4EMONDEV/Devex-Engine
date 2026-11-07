@@ -33,6 +33,7 @@ Il dit le système, les GPU et ce qu'ils offrent, les outils trouvés, et les de
 journal peuvent contenir des chemins de fichiers.
 
 - Dans l'éditeur : **Help > Copy System Report** le copie, et l'écrit dans le dossier `logs` de l'éditeur.
+- **Si l'éditeur plante**, une fenêtre le dit, et **Open Log Folder** ouvre ce même dossier. Joindre `editor.log` au rapport, et sous Windows le fichier `.dmp` s'il y en a un. Au démarrage suivant, `editor.log` devient `editor.previous.log`.
 - Si l'éditeur ne démarre pas, depuis un terminal, dans le dossier extrait (`bin\devex-editor-console --report rapport.txt` sous Windows) :
 
 ```bash

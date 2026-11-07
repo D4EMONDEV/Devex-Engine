@@ -388,6 +388,8 @@ public:
     // What stands in the way of exporting for the other desktop system; empty when nothing does.
     void setOtherDesktopExport(std::string problem);
     void setExportStatus(ExportStatus status);
+    // Opens the window of the export, as Project > Export Game does.
+    void showExportWindow() noexcept;
     // How to read the internet, for the project list to look for a newer Devex; without it, it does not look.
     void setTextFetcher(TextFetcher fetcher);
     // The newer version the project list announces; empty when there is none.

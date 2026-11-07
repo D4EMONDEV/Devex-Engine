@@ -32,8 +32,14 @@ TEST_CASE("Waiting for events ends at the time given, or as soon as something wa
     CHECK(Clock::now() - start < std::chrono::seconds(5));
     waker.join();
 
-    // The wake waited in the queue: the next poll takes it, and forwards nothing to the application.
+    // The wake waited in the queue: a poll takes it, and forwards nothing to the application. Not always the first: SDL ends
+    // a poll at the mark of the end of a cycle that it may have left ahead of the wake.
     int forwarded = 0;
-    CHECK(platform->pollEvents([&](const devex::platform::Event&) { ++forwarded; }));
+    bool taken = false;
+    for (int poll = 0; poll < 3 && !taken; ++poll)
+    {
+        taken = platform->pollEvents([&](const devex::platform::Event&) { ++forwarded; });
+    }
+    CHECK(taken);
     CHECK(forwarded == 0);
 }

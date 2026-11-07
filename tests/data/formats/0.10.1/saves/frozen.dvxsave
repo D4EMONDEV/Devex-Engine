@@ -1,0 +1,9 @@
+[save format=1 type="Progress" version=0 time=1794017537 play_time=0]
+
+[data]
+level = 7
+health = 100
+name = "Frozen"
+tutorial_done = false
+checkpoint = vec3(0, 0, 0)
+items = list("key", "map")

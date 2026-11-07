@@ -1189,6 +1189,29 @@ void showErrorMessage(std::string_view title, std::string_view message)
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, caption.c_str(), text.c_str(), nullptr);
 }
 
+bool askAboutError(std::string_view title, std::string_view message, std::string_view action)
+{
+    const std::string caption(title);
+    const std::string text(message);
+    const std::string actionText(action);
+    constexpr int chosen = 1;
+    const std::array<SDL_MessageBoxButtonData, 2> buttons{
+        SDL_MessageBoxButtonData{.flags = SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, .buttonID = 0, .text = "Close"},
+        SDL_MessageBoxButtonData{.flags = 0, .buttonID = chosen, .text = actionText.c_str()},
+    };
+    const SDL_MessageBoxData box{
+        .flags = SDL_MESSAGEBOX_ERROR | SDL_MESSAGEBOX_BUTTONS_RIGHT_TO_LEFT,
+        .window = nullptr,
+        .title = caption.c_str(),
+        .message = text.c_str(),
+        .numbuttons = action.empty() ? 1 : 2,
+        .buttons = buttons.data(),
+        .colorScheme = nullptr,
+    };
+    int answer = 0;
+    return SDL_ShowMessageBox(&box, &answer) && answer == chosen;
+}
+
 namespace {
 
 // The name of the system and its version.
@@ -1266,14 +1289,14 @@ core::Result<std::filesystem::path> Platform::userDataDirectory(std::string_view
     return platform::userDataDirectory("Devex", application);
 }
 
-core::Result<void> Platform::openPath(const std::filesystem::path& path) const
+core::Result<void> Platform::openPath(const std::filesystem::path& path)
 {
     std::string url = "file:///" + core::toUtf8(path.lexically_normal());
     std::ranges::replace(url, '\\', '/');
     return openUrl(url);
 }
 
-core::Result<void> Platform::openUrl(const std::string& url) const
+core::Result<void> Platform::openUrl(const std::string& url)
 {
     if (!SDL_OpenURL(url.c_str()))
     {

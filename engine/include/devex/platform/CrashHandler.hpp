@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 namespace devex::platform {
 
@@ -22,6 +23,10 @@ struct DEVEX_API CrashReporting
     std::filesystem::path directory;
     // Receives the report as it is, without the logger, which the crash may have left busy.
     core::LogFile* log = nullptr;
+    // Started once the report is written, to tell the user: the process that crashed is in no state to open a window.
+    // Empty, nothing starts, and a crash that a guard catches never starts it. Windows and Linux.
+    std::filesystem::path notifier;
+    std::vector<std::string> notifierArguments;
 };
 
 // Catches, for the whole process, what would end it without a word: access violations and the

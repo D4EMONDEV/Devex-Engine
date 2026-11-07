@@ -118,9 +118,9 @@ public:
     void showFileDialog(const Window& parent, const FileDialog& dialog, FileDialogCallback callback);
 
     // Opens a folder in the system's file manager, or a file with its default application.
-    [[nodiscard]] core::Result<void> openPath(const std::filesystem::path& path) const;
+    [[nodiscard]] static core::Result<void> openPath(const std::filesystem::path& path);
     // Opens a web page in the browser of the user.
-    [[nodiscard]] core::Result<void> openUrl(const std::string& url) const;
+    [[nodiscard]] static core::Result<void> openUrl(const std::string& url);
 
     // Turns typing on for a window: until it is turned off, what the user types arrives in
     // Input::typedText, and the system may show its input method over the window.
@@ -215,5 +215,7 @@ DEVEX_API void showTerminal(bool shown);
 // Shows an error in a box of the system, for a program with nowhere else to say it. Works before
 // the platform starts, and when it failed to.
 DEVEX_API void showErrorMessage(std::string_view title, std::string_view message);
+// The same, with a button that does something about it, next to Close: whether it was chosen. No action, no such button.
+[[nodiscard]] DEVEX_API bool askAboutError(std::string_view title, std::string_view message, std::string_view action);
 
 } // namespace devex::platform

@@ -1,5 +1,7 @@
+#include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/LogFile.hpp>
+#include <devex/core/Path.hpp>
 #include <devex/platform/CrashHandler.hpp>
 
 #include <cstdlib>
@@ -13,7 +15,8 @@
 // Crashes on purpose once its handler is installed, so that the platform tests read what a crash
 // leaves behind: devex-crash-probe <folder> <access|abort>. With guarded-access, guarded-abort or
 // guarded-exception, it crashes inside runGuarded and lives on; with barrier, it crashes inside
-// runGuarded under a CrashGuardBarrier.
+// runGuarded under a CrashGuardBarrier. A crash that ends it starts it again as devex-crash-probe --told <file>, which writes
+// that file, for the tests to read that the user would have been told.
 namespace {
 
 #ifdef _MSC_VER
@@ -44,10 +47,18 @@ int main(int argc, char** argv)
     {
         return 2;
     }
+    if (std::string_view(argv[1]) == "--told")
+    {
+        return devex::core::writeTextFile(std::filesystem::path(argv[2]), "told") ? 0 : 1;
+    }
     const std::filesystem::path folder = argv[1];
     devex::core::Result<std::unique_ptr<devex::core::LogFile>> log =
         devex::core::LogFile::open(folder / "probe.log");
-    devex::platform::installCrashHandler({.directory = folder, .log = log ? log->get() : nullptr});
+    // A path with spaces, as a user's often has, which the command line has to keep whole.
+    devex::platform::installCrashHandler({.directory = folder,
+                                          .log = log ? log->get() : nullptr,
+                                          .notifier = std::filesystem::absolute(argv[0]),
+                                          .notifierArguments = {"--told", devex::core::toUtf8(folder / "told by the crash.txt")}});
     const std::string_view how = argv[2];
     // Twice: the handlers are armed again after a crash a guard caught.
     if (how.starts_with("guarded-"))
