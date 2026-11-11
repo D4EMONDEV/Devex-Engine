@@ -2073,6 +2073,12 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     }
     styleTooltips(colors);
 
+    if (state.inspectingRemoteScene())
+    {
+        updatePage(state, kit, edited, "remote entity", delta);
+        return;
+    }
+
     // What the inspector shows: a state, a transition or a layer of the Animator panel until
     // another entity or asset is chosen, the entities selected, a code file, an asset, or a word to
     // choose something.
@@ -2218,26 +2224,31 @@ void InspectorUi::updatePage(ToolsState& state, EditorUiKit& kit, const scene::S
 {
     if (!page || pageKind != kind)
     {
-        page = kind == "animator element" ? makeAnimatorElementPage()
-               : kind == "shader node"    ? makeShaderNodePage()
-               : kind == "code"           ? makeCodePage()
-               : kind == "texture"        ? makeTexturePage()
-               : kind == "model"          ? makeModelPage()
-               : kind == "audio"          ? makeAudioPage()
-               : kind == "curve"          ? makeCurvePage()
-               : kind == "sprite frames"  ? makeSpriteFramesPage()
-               : kind == "tileset"        ? makeTilesetPage()
-               : kind == "animator"       ? makeAnimatorPage()
-               : kind == "translation"    ? makeTranslationPage()
-               : kind == "shader"         ? makeShaderPage()
-               : kind == "material"       ? makeMaterialPage()
-               : kind == "asset"          ? makeAssetPage()
-                                          : makeEmptyPage();
+        page = kind == "remote entity"      ? makeRemoteEntityPage()
+               : kind == "animator element" ? makeAnimatorElementPage()
+               : kind == "shader node"      ? makeShaderNodePage()
+               : kind == "code"             ? makeCodePage()
+               : kind == "texture"          ? makeTexturePage()
+               : kind == "model"            ? makeModelPage()
+               : kind == "audio"            ? makeAudioPage()
+               : kind == "curve"            ? makeCurvePage()
+               : kind == "sprite frames"    ? makeSpriteFramesPage()
+               : kind == "tileset"          ? makeTilesetPage()
+               : kind == "animator"         ? makeAnimatorPage()
+               : kind == "translation"      ? makeTranslationPage()
+               : kind == "shader"           ? makeShaderPage()
+               : kind == "material"         ? makeMaterialPage()
+               : kind == "asset"            ? makeAssetPage()
+                                            : makeEmptyPage();
         pageKind = kind;
         signature.clear();
     }
     shownEntities.clear();
-    std::string target = std::format("{}|{}|{}", kind, state.selectedAsset.uuid.toString(), core::toUtf8(state.selectedCode));
+    std::string target = kind == "remote entity"
+                             ? std::format("{}|{}|{}", kind, state.remoteScene.player,
+                                           state.remoteScene.entity.toString())
+                             : std::format("{}|{}|{}", kind, state.selectedAsset.uuid.toString(),
+                                           core::toUtf8(state.selectedCode));
     if (std::string wanted = std::format("page|{}|{}|{}", font, target, page->signature(state)); wanted != signature)
     {
         // Another asset starts at the top; the same one keeps its place when what it holds changes.

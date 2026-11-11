@@ -137,6 +137,7 @@ public:
 };
 
 [[nodiscard]] std::unique_ptr<InspectorPage> makeEmptyPage();
+[[nodiscard]] std::unique_ptr<InspectorPage> makeRemoteEntityPage();
 // Any asset without a page of its own: its name, its file, and a way to import it again.
 [[nodiscard]] std::unique_ptr<InspectorPage> makeAssetPage();
 [[nodiscard]] std::unique_ptr<InspectorPage> makeCodePage();

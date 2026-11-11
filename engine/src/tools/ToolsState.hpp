@@ -5,6 +5,7 @@
 
 #include <devex/core/Export.hpp>
 
+#include "../runtime/RemoteInspection.hpp"
 #include "CodeArea.hpp"
 #include "EditorCamera.hpp"
 #include "EditorDock.hpp"
@@ -48,6 +49,7 @@
 #include <devex/tools/LogBuffer.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -193,6 +195,7 @@ struct FileSystemUi;
 struct OutputUi;
 struct CreationDialogUi;
 struct SceneTreeUi;
+struct RemoteSceneUi;
 struct InspectorUi;
 struct EditorSettingsUi;
 struct ProjectSettingsUi;
@@ -1087,6 +1090,32 @@ struct DEVEX_API ToolsState
     // Editor.
     PlayState playState = PlayState::Editing;
     ExternalPlayStatus externalPlay;
+    struct
+    {
+        RemoteInspectionView view;
+        std::shared_ptr<RemoteSceneUi> ui;
+        core::Uuid entity;
+        std::uint32_t player = 0;
+        bool open = false;
+        bool switchRequested = false;
+
+        [[nodiscard]] const RemoteSceneSnapshot* snapshot() const noexcept
+        {
+            return view.player == player ? view.snapshot.get() : nullptr;
+        }
+
+        [[nodiscard]] const RemoteSceneSnapshot* inspected() const noexcept
+        {
+            const auto* current = snapshot();
+            return current && current->selection == entity && current->selectedName ? current
+                                                                                    : nullptr;
+        }
+    } remoteScene;
+    [[nodiscard]] bool inspectingRemoteScene() const noexcept
+    {
+        return visible && showHierarchy && externalPlay.running && remoteScene.open &&
+               std::ranges::find(dockPlaces.front, hierarchyWindow) != dockPlaces.front.end();
+    }
     std::vector<asset::AddonCommand> addonCommands;
     ToolsOverlay::AddonCommandExecutor addonCommandExecutor;
     [[nodiscard]] bool gameRunning() const noexcept

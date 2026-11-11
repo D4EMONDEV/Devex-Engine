@@ -7,6 +7,7 @@
 #include <devex/serialization/Text.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cstdio>
 #include <format>
 #include <mutex>
@@ -18,6 +19,8 @@ namespace
 {
 constexpr std::string_view prefix = "@devex-play ";
 using Clock = std::chrono::steady_clock;
+constexpr auto inspectionInterval = std::chrono::milliseconds(250);
+constexpr auto inspectionTimeout = std::chrono::seconds(2);
 
 void packet(std::string_view value)
 {
@@ -139,6 +142,11 @@ core::Result<void> PlayProcess::launch(const asset::Project& project, const std:
     m_status = {.running = true, .starting = true, .processId = m_process->id()};
     m_stopTime.reset();
     m_requestedPause.reset();
+    m_inspection.reset();
+    m_inspectionAt = {};
+    m_inspectionSerial = 0;
+    m_inspectionPending = false;
+    m_inspectionUnavailable = false;
     DEVEX_LOG_INFO("Playing in a separate process ({})", m_status.processId);
     return {};
 }
@@ -185,6 +193,30 @@ void PlayProcess::readLine(const std::string& line)
                     return;
                 }
             }
+            if (section.type == "inspection")
+            {
+                const auto* serial = section.findAttribute("serial");
+                if (m_inspectionPending && serial != nullptr &&
+                    serialization::asInteger(*serial) == m_inspectionSerial)
+                {
+                    m_inspectionPending = false;
+                    m_inspectionUnavailable = true;
+                    const auto file = m_directory / remoteInspectionFile;
+                    if (flag(section, "ready"))
+                    {
+                        if (auto snapshot =
+                                readRemoteInspection(file, m_inspectionSerial, m_inspectionEntity))
+                        {
+                            m_inspection = std::make_shared<tools::detail::RemoteSceneSnapshot>(
+                                std::move(*snapshot));
+                            m_inspectionUnavailable = false;
+                        }
+                    }
+                    std::error_code ignored;
+                    std::filesystem::remove(file, ignored);
+                }
+                return;
+            }
         }
     }
     if (!line.empty())
@@ -213,6 +245,7 @@ void PlayProcess::update()
         m_status = {};
         m_stopTime.reset();
         m_requestedPause.reset();
+        m_inspection.reset();
         if (clean)
             cleanSnapshot();
         return;
@@ -231,6 +264,30 @@ void PlayProcess::command(std::string_view command)
         if (auto sent = m_process->sendLine(command); !sent)
             DEVEX_LOG_WARNING("Cannot control the game process: {}", sent.error());
 }
+
+void PlayProcess::requestInspection(core::Uuid entity)
+{
+    if (!m_process || m_status.starting || m_status.stopping)
+        return;
+    const auto now = Clock::now();
+    if (m_inspectionPending)
+    {
+        if (now - m_inspectionAt >= inspectionTimeout)
+            m_inspectionUnavailable = true;
+        return;
+    }
+    if (m_inspectionSerial != 0 && m_inspectionEntity == entity &&
+        now - m_inspectionAt < inspectionInterval)
+        return;
+    m_inspectionAt = now;
+    m_inspectionEntity = entity;
+    ++m_inspectionSerial;
+    if (m_process->sendLine(std::format("inspect {} {}", m_inspectionSerial, entity.toString())))
+        m_inspectionPending = true;
+    else
+        m_inspectionUnavailable = true;
+}
+
 void PlayProcess::pause(bool paused)
 {
     command(paused ? "pause" : "resume");
@@ -369,6 +426,26 @@ void PlayGroup::pause(bool paused)
     m_paused = paused;
     for (std::size_t index = 0; index < m_launched; ++index)
         m_processes[index]->pause(paused);
+}
+
+tools::detail::RemoteInspectionView PlayGroup::inspect(tools::detail::RemoteInspectionTarget target)
+{
+    tools::detail::RemoteInspectionView view;
+    for (std::size_t index = 0; index < std::min(m_launched, view.processes.size()); ++index)
+    {
+        const auto& status = m_processes[index]->status();
+        if (status.running && !status.starting && !status.stopping)
+            view.processes[index] = status.processId;
+    }
+    if (target.player == 0 || target.player > view.processes.size() ||
+        view.processes[target.player - 1] == 0)
+        return view;
+    auto& player = *m_processes[target.player - 1];
+    player.requestInspection(target.entity);
+    view.player = target.player;
+    view.snapshot = player.inspection();
+    view.unavailable = player.inspectionUnavailable();
+    return view;
 }
 
 bool PlayGroup::pauseRequested() const
@@ -529,9 +606,34 @@ void EditorPlayClient::update()
         }
         else if (line == "step" && m_paused)
             m_step = true;
+        else if (line.starts_with("inspect "))
+        {
+            const auto arguments = std::string_view(line).substr(8);
+            const auto separator = arguments.find(' ');
+            if (separator == std::string_view::npos)
+                continue;
+            std::int64_t serial = 0;
+            const auto* end = arguments.data() + separator;
+            const auto parsed = std::from_chars(arguments.data(), end, serial);
+            const auto entity = core::Uuid::parse(arguments.substr(separator + 1));
+            if (parsed.ec == std::errc{} && parsed.ptr == end && serial > 0 && entity)
+                m_inspection = std::pair{serial, *entity};
+        }
     }
     m_stopped = m_stopped || m_input.closed();
 }
+
+void EditorPlayClient::reportInspection(const scene::Scene& scene)
+{
+    if (const auto request = std::exchange(m_inspection, std::nullopt))
+    {
+        const auto [serial, entity] = *request;
+        const auto written =
+            writeRemoteInspection(m_directory / remoteInspectionFile, scene, serial, entity);
+        packet(std::format("[inspection serial={} ready={}]", serial, written.has_value()));
+    }
+}
+
 void EditorPlayClient::report(bool debuggerAvailable, bool debuggerAttached, bool waiting)
 {
     std::string state = std::format("[state paused={} debugger={} attached={} waiting={}]",

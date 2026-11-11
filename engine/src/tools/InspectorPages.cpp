@@ -189,6 +189,110 @@ void answerImportFooter(InspectorUi& ui, ToolsState& state, const ImportFooter& 
 
 namespace {
 
+class RemoteEntityPage final : public InspectorPage
+{
+  public:
+    std::string signature(ToolsState& state) override
+    {
+        const auto* snapshot = state.remoteScene.inspected();
+        if (snapshot == nullptr)
+            return state.remoteScene.entity.isNil() ? "empty" : "pending";
+        // A new snapshot of the same components only updates their values in place.
+        if (m_snapshot != state.remoteScene.view.snapshot)
+        {
+            m_snapshot = state.remoteScene.view.snapshot;
+            m_shape = snapshot->propertiesLimited ? "limited" : "components";
+            for (const auto& component : snapshot->components)
+            {
+                m_shape += std::format("|{}:{}:{}", component.name.size(), component.name,
+                                       component.properties.size());
+                for (const auto& property : component.properties)
+                    m_shape += std::format("|{}:{}", property.name.size(), property.name);
+            }
+        }
+        return m_shape;
+    }
+
+    void build(InspectorUi& ui, ToolsState& state, EditorUiKit& kit) override
+    {
+        m_title = {};
+        m_pending = {};
+        m_values.clear();
+        const auto* snapshot = state.remoteScene.inspected();
+        if (snapshot == nullptr)
+        {
+            if (state.remoteScene.entity.isNil())
+                ui.note(nullptr, "Select an entity in the remote scene.", "dim", 2.0f);
+            else
+                m_pending = ui.note(nullptr, "Reading components…");
+            return;
+        }
+        const auto heading =
+            ui.heading(kit, icons::Box, themeColors().entity, *snapshot->selectedName,
+                       std::format("Player {} · Read only", state.remoteScene.player));
+        m_title = heading.title;
+        ui.scene().get<scene::UiText>(m_title).translate = false;
+        for (const auto& component : snapshot->components)
+        {
+            Section& card = ui.card(kit, component.name);
+            for (const auto& property : component.properties)
+            {
+                const auto row = ui.formRow(card, displayName(property.name));
+                ui.scene().get<UiRect>(row.editor).clipChildren = true;
+                const Entity value = ui.text(row.editor, whole(), "", "text");
+                auto& text = ui.scene().get<scene::UiText>(value);
+                text.translate = false;
+                text.raycastTarget = true;
+                m_values.push_back(value);
+            }
+        }
+        if (snapshot->components.empty())
+            ui.note(nullptr, "No reflected components");
+        if (snapshot->propertiesLimited)
+            ui.note(nullptr, "Additional properties omitted");
+    }
+
+    void sync(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
+    {
+        const auto* snapshot = state.remoteScene.inspected();
+        if (snapshot == nullptr)
+        {
+            if (m_pending.isValid())
+                ui.scene().get<scene::UiText>(m_pending).text = state.remoteScene.view.unavailable
+                                                                    ? "Properties unavailable"
+                                                                    : "Reading components…";
+            return;
+        }
+        auto& title = ui.scene().get<scene::UiText>(m_title).text;
+        const std::string_view name = snapshot->selectedName->empty()
+                                          ? "(unnamed)"
+                                          : std::string_view(*snapshot->selectedName);
+        if (title != name)
+            title = name;
+        std::size_t index = 0;
+        for (const auto& component : snapshot->components)
+            for (const auto& property : component.properties)
+            {
+                const Entity value = m_values[index++];
+                auto& text = ui.scene().get<scene::UiText>(value).text;
+                if (text != property.value)
+                {
+                    text = property.value;
+                    ui.tooltip(value, text);
+                }
+            }
+    }
+
+    void answer(InspectorUi&, ToolsState&, EditorUiKit&) override {}
+
+  private:
+    Entity m_title;
+    Entity m_pending;
+    std::vector<Entity> m_values;
+    std::shared_ptr<const RemoteSceneSnapshot> m_snapshot;
+    std::string m_shape;
+};
+
 // ---- Nothing chosen ----
 
 class EmptyPage final : public InspectorPage
@@ -356,6 +460,11 @@ private:
 std::unique_ptr<InspectorPage> makeEmptyPage()
 {
     return std::make_unique<EmptyPage>();
+}
+
+std::unique_ptr<InspectorPage> makeRemoteEntityPage()
+{
+    return std::make_unique<RemoteEntityPage>();
 }
 
 std::unique_ptr<InspectorPage> makeCodePage()

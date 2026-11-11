@@ -56,6 +56,8 @@ namespace devex::tools {
 
 namespace detail {
 struct ToolsState;
+struct RemoteInspectionTarget;
+struct RemoteInspectionView;
 } // namespace detail
 
 enum class ToolsMode : std::uint8_t
@@ -370,6 +372,8 @@ public:
     [[nodiscard]] std::uint32_t playInstances() const;
     [[nodiscard]] bool connectPlayInstances() const;
     void setExternalPlayStatus(ExternalPlayStatus status);
+    [[nodiscard]] detail::RemoteInspectionTarget remoteInspectionTarget() const;
+    void setRemoteInspection(detail::RemoteInspectionView view);
     void setAddonCommands(std::vector<asset::AddonCommand> commands);
     using AddonCommandExecutor = std::function<core::Result<void>(scene::Scene&, std::string_view,
                                                                   std::span<const scene::Entity>)>;

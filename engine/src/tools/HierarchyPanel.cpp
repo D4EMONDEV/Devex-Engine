@@ -3,6 +3,7 @@
 // to their parent. An entity dropped on a row goes before it, inside it or after it, as the part
 // of the row it is let go on says.
 #include "EditorUi.hpp"
+#include "RemoteScenePanel.hpp"
 #include "Selection.hpp"
 #include "ToolsState.hpp"
 
@@ -23,6 +24,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace devex::tools::detail {
 
@@ -238,6 +240,7 @@ struct SceneTreeUi : PanelBuilder
     float indent = 18.0f;
     float arrow = 20.0f;
 
+    SceneSourceTabs sources;
     Button create;
     Entity filter;
     Entity list;
@@ -311,6 +314,8 @@ void SceneTreeUi::build(ToolsState& state, EditorUiKit& kit)
     scene().add<scene::UiLayout>(root, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
                                                        .spacing = font * 0.4f,
                                                        .align = scene::TextAlign::Left});
+    if (state.mode == ToolsMode::Editor)
+        sources = addSceneSourceTabs(*this, kit, root, false);
     const Entity toolbar = add(root, "Toolbar", wide(line));
     scene().add<scene::UiLayout>(toolbar, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
                                                           .spacing = font * 0.3f,
@@ -859,6 +864,8 @@ void SceneTreeUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     {
         build(state, kit);
     }
+    if (sources.row.isValid())
+        scene().get<UiRect>(sources.row).visible = state.externalPlay.running;
     styleTooltips(colors);
     ui::UiWorld& world = panel.world();
     state.hierarchyFilter = scene().get<scene::UiText>(filter).text;
@@ -927,6 +934,8 @@ void SceneTreeUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
 
     panel.update(kit, delta, UiPanel::zoomFor(font));
     state.hierarchyFocused = panel.focused() && !world.isEditing();
+    if (sources.other.entity.isValid() && world.wasClicked(sources.other.entity))
+        state.remoteScene.switchRequested = true;
 
     // The rename ends with Enter or when the field loses the keyboard, and is dropped on Escape.
     if (renameRow && world.editedField() != rows[*renameRow].field)
@@ -1101,17 +1110,29 @@ void drawHierarchyPanel(ToolsState& state, scene::Scene& scene)
         state.uiKit = std::make_shared<EditorUiKit>(state.renderer, state.icons,
                                                     state.platform.baseDirectory() / "resources" / "fonts");
     }
-    if (!state.sceneTreeUi)
+    if (std::exchange(state.remoteScene.switchRequested, false))
+        state.remoteScene.open = !state.remoteScene.open;
+    const auto delta = core::Duration(state.input.delta());
+    if (state.inspectingRemoteScene())
     {
-        state.sceneTreeUi = std::make_shared<SceneTreeUi>();
+        updateRemoteScenePanel(state, *state.uiKit, delta, sceneTreeSurface);
     }
-    state.sceneTreeUi->update(state, *state.uiKit, scene, core::Duration(state.input.delta()));
+    else
+    {
+        if (!state.sceneTreeUi)
+            state.sceneTreeUi = std::make_shared<SceneTreeUi>();
+        state.sceneTreeUi->update(state, *state.uiKit, scene, delta);
+    }
     endDockedPanel(state);
 }
 
 void renderSceneTree(ToolsState& state, render::RenderWorld& world)
 {
-    if (state.sceneTreeUi && state.uiKit)
+    if (state.inspectingRemoteScene())
+    {
+        renderRemoteScenePanel(state, world);
+    }
+    else if (state.sceneTreeUi && state.uiKit)
     {
         state.sceneTreeUi->panel.render(*state.uiKit, world, linearColor(themeColors().panel));
     }

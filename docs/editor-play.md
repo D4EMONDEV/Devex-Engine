@@ -50,9 +50,10 @@ Dans **Editor > Editor Settings > Compilation > Play**, régler **Run Game** sur
 - **Separate Process** : fenêtre et processus propres au jeu, mode par défaut.
 - **Inside Editor** : copie jouée dans l'éditeur, avec ses vues Scene/Game et son inspection en direct.
 
-En mode séparé, l'inspecteur, les outils de scène et le profiler de l'éditeur suivent son document
-et son propre rendu. L'option Inside Editor permet de continuer à inspecter directement la copie
-en cours de jeu. Ce choix est un réglage personnel de l'éditeur, enregistré pour les projets suivants.
+**Inside Editor** permet d'inspecter directement la copie en cours de jeu. En mode séparé,
+**Scene > Remote** affiche la scène du processus de jeu. Le profiler de l'éditeur suit son
+propre rendu. Le mode de lancement est un réglage personnel de l'éditeur, enregistré pour les
+projets suivants.
 Les applications C++ qui placent leur logique dans une sous-classe de `Application` de l'éditeur
 utilisent aussi Inside Editor pour ces callbacks. Le processus séparé exécute les composants et
 systèmes du module de jeu du projet.
@@ -79,3 +80,17 @@ fenêtre, et leur titre dit quel joueur ils sont. Le choix est personnel et se g
 
 Chacun démarre quand le précédent est prêt. Tous partagent les sauvegardes et les réglages du joueur, et tous
 jouent le son.
+
+## Inspecter la scène d'un joueur
+
+Pendant **Play** en processus séparé, ouvrir **Remote** en haut du panneau **Scene**. Choisir
+le joueur, puis cliquer sur une entité pour lire ses composants dans **Inspector**. La
+hiérarchie suit les entités créées ou supprimées en jeu et les changements de scène. Les
+valeurs des champs exposés en C++ et en C# se rafraîchissent environ quatre fois par seconde.
+Les listes indiquent leur nombre d'éléments. Pour une grande scène, l'arborescence affiche
+jusqu'à 4 096 entités.
+
+**Pause** et **Step** permettent de suivre une valeur pas à pas. L'inspection est en lecture
+seule. **Local** ramène à la scène éditée et **Stop** ferme l'inspection du jeu. Par exemple,
+avec deux joueurs dans `arena_online`, lancer une balle depuis la première fenêtre, puis
+choisir **Player 2** dans **Remote** et inspecter la transformation de la balle répliquée.

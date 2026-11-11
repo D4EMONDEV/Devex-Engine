@@ -55,13 +55,14 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
         return;
     }
     // The inspector shows one thing at a time: an entity chosen leaves the asset and the code file.
-    if (scene.findEntity(state.selection.active()).isValid())
+    if (!state.inspectingRemoteScene() && scene.findEntity(state.selection.active()).isValid())
     {
         state.selectedCode.clear();
         state.selectedAsset = {};
     }
     // A clip plays while its inspector shows.
-    if (state.previewedClip.isValid() && state.previewedClip != state.selectedAsset)
+    if (state.previewedClip.isValid() &&
+        (state.inspectingRemoteScene() || state.previewedClip != state.selectedAsset))
     {
         stopAudioPreview(state);
     }

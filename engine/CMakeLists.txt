@@ -971,6 +971,7 @@ target_sources(devex_tools
         src/tools/Gizmo.cpp
         src/tools/Gizmo.hpp
         src/tools/HierarchyPanel.cpp
+        src/tools/RemoteScenePanel.cpp
         src/tools/Icons.cpp
         src/tools/Icons.hpp
         src/tools/InputSettings.cpp
@@ -1058,6 +1059,7 @@ target_sources(devex_runtime
     PRIVATE
         src/runtime/Application.cpp
         src/runtime/EditorPlay.cpp
+        src/runtime/RemoteInspection.cpp
         src/runtime/GameArchive.cpp
         src/runtime/EditorPlay.hpp
         src/runtime/GlobalScenes.cpp

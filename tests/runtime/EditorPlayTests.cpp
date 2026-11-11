@@ -4,6 +4,7 @@
 #include <devex/core/Path.hpp>
 #include <devex/core/Uuid.hpp>
 #include <devex/scene/SceneSerializer.hpp>
+#include <devex/serialization/Text.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -235,6 +236,105 @@ TEST_CASE("Games that come after a failed one in Play do not start", "[runtime][
     REQUIRE(until(group, [&] { return !group.status().running; }, 30s));
     const auto snapshots = std::ranges::distance(std::filesystem::directory_iterator(fixture.project.cacheDirectory() / "play"), std::default_sentinel);
     CHECK(snapshots == 1);
+}
+
+TEST_CASE("Remote inspection reads the running scene of the selected player",
+          "[runtime][playprocess]")
+{
+    using tools::detail::RemoteInspectionView;
+    using tools::detail::RemoteSceneSnapshot;
+    Fixture fixture;
+    scene::Scene scene;
+    const auto root = scene.uuid(scene.createEntity("Inspect Me"));
+    const auto before = scene::saveScene(scene);
+    PlayGroup group;
+    REQUIRE(group.start(fixture.project, scene, {}, DEVEX_TEST_PLAY_PROCESS, false, 2, false, {}));
+
+    const auto capture = [&](std::uint32_t player, core::Uuid entity,
+                             const std::shared_ptr<const RemoteSceneSnapshot>& previous = {})
+    {
+        RemoteInspectionView view;
+        REQUIRE(until(
+            group,
+            [&]
+            {
+                view = group.inspect({player, entity});
+                return view.snapshot && view.snapshot != previous &&
+                       view.snapshot->selection == entity;
+            },
+            15s));
+        CHECK(view.player == player);
+        CHECK_FALSE(view.unavailable);
+        return view;
+    };
+    const auto runtimeEntity = [&](const RemoteSceneSnapshot& snapshot, std::string_view name)
+    {
+        REQUIRE_FALSE(snapshot.entities.empty());
+        CHECK(snapshot.entities.front().id == root);
+        CHECK(snapshot.entities.front().depth == 0);
+        const auto child =
+            std::ranges::find(snapshot.entities, name, &tools::detail::RemoteEntity::name);
+        REQUIRE(child != snapshot.entities.end());
+        CHECK(child->depth == 1);
+        return child->id;
+    };
+    const auto position = [](const RemoteSceneSnapshot& snapshot)
+    {
+        REQUIRE(snapshot.selectedName.has_value());
+        const auto transform = std::ranges::find(snapshot.components, "Transform",
+                                                 &tools::detail::RemoteComponent::name);
+        REQUIRE(transform != snapshot.components.end());
+        const auto property = std::ranges::find(transform->properties, "position",
+                                                &tools::detail::RemoteProperty::name);
+        REQUIRE(property != transform->properties.end());
+        const auto value = serialization::parseValue(property->value);
+        REQUIRE(value);
+        const auto* vector = serialization::asCall(*value, "vec3");
+        REQUIRE(vector != nullptr);
+        REQUIRE(vector->arguments.size() == 3);
+        const auto x = serialization::asNumber(vector->arguments[0]);
+        const auto y = serialization::asNumber(vector->arguments[1]);
+        REQUIRE(x);
+        REQUIRE(y);
+        return math::Vec2{static_cast<float>(*x), static_cast<float>(*y)};
+    };
+
+    REQUIRE(until(group, [&] { return logged(fixture, "[Player 2] Tick "); }, 15s));
+    const auto first = capture(1, {});
+    const auto second = capture(2, {});
+    REQUIRE(second.processes[0] != 0);
+    REQUIRE(second.processes[1] != 0);
+    CHECK(second.processes[0] != second.processes[1]);
+    const auto firstChild = runtimeEntity(*first.snapshot, "Runtime Player 1");
+    const auto secondChild = runtimeEntity(*second.snapshot, "Runtime Player 2");
+    CHECK(firstChild != secondChild);
+    CHECK(position(*capture(1, firstChild).snapshot).x == 1.0f);
+    const auto initial = capture(2, secondChild);
+    CHECK(position(*initial.snapshot).x == 2.0f);
+    const auto refreshed = capture(2, secondChild, initial.snapshot);
+    CHECK(position(*refreshed.snapshot).y > position(*initial.snapshot).y);
+
+    group.pause(true);
+    REQUIRE(until(group, [&] { return group.status().paused; }));
+    CHECK_FALSE(capture(2, firstChild).snapshot->selectedName.has_value());
+    const auto paused = capture(2, secondChild);
+    const float pausedY = position(*paused.snapshot).y;
+    group.step();
+    float steppedY = pausedY;
+    REQUIRE(until(group,
+                  [&]
+                  {
+                      const auto view = group.inspect({2, secondChild});
+                      if (view.snapshot && view.snapshot->selection == secondChild)
+                          steppedY = position(*view.snapshot).y;
+                      return steppedY != pausedY;
+                  }));
+    CHECK(steppedY == pausedY + 1.0f);
+
+    group.stop();
+    REQUIRE(until(group, [&] { return !group.status().running; }));
+    CHECK_FALSE(group.inspect({2, secondChild}).snapshot);
+    CHECK(scene::saveScene(scene) == before);
 }
 
 TEST_CASE("A game Play started reads which one it is and where its window goes", "[runtime][playprocess][net]")

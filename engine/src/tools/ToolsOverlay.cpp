@@ -864,6 +864,36 @@ bool ToolsOverlay::connectPlayInstances() const { return m_state->scripts.connec
 void ToolsOverlay::setExternalPlayStatus(ExternalPlayStatus status)
 {
     m_state->externalPlay = status;
+    if (!status.running)
+        m_state->remoteScene = {};
+}
+
+detail::RemoteInspectionTarget ToolsOverlay::remoteInspectionTarget() const
+{
+    if (!m_state->inspectingRemoteScene())
+        return {};
+    return {m_state->remoteScene.player, m_state->remoteScene.entity};
+}
+
+void ToolsOverlay::setRemoteInspection(detail::RemoteInspectionView view)
+{
+    if (!m_state->externalPlay.running)
+        return;
+    auto& remote = m_state->remoteScene;
+    if (remote.player == 0 || remote.player > view.processes.size() ||
+        view.processes[remote.player - 1] == 0)
+    {
+        const auto available =
+            std::ranges::find_if(view.processes, [](std::uint32_t pid) { return pid != 0; });
+        remote.player = available == view.processes.end()
+                            ? 0u
+                            : static_cast<std::uint32_t>(available - view.processes.begin() + 1);
+        remote.entity = {};
+    }
+    remote.view = std::move(view);
+    const auto* snapshot = remote.snapshot();
+    if (snapshot && snapshot->selection == remote.entity && !snapshot->selectedName)
+        remote.entity = {};
 }
 
 void ToolsOverlay::setAddonCommands(std::vector<asset::AddonCommand> commands)

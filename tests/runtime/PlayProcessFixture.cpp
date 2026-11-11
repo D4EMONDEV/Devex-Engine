@@ -1,6 +1,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/LogFile.hpp>
 #include <devex/runtime/Application.hpp>
+#include <devex/scene/Components.hpp>
 
 #include <cstdlib>
 #include <format>
@@ -21,6 +22,8 @@ class PlayerFixture final : public devex::runtime::Application
             m_hang = m_hang || name == "Hang";
             m_crash = m_crash || name == "Crash";
             m_ask = m_ask || name == "Ask";
+            if (name == "Inspect Me")
+                m_inspectionRoot = entity;
             DEVEX_LOG_INFO_IN("test-player", "Snapshot: {}", name);
         }
         DEVEX_LOG_WARNING_IN("test-player", "A quoted \"message\"\nwith another line");
@@ -29,6 +32,20 @@ class PlayerFixture final : public devex::runtime::Application
     void onFixedUpdate(devex::core::Duration) override
     {
         DEVEX_LOG_INFO_IN("test-player", "Tick {}", ++m_ticks);
+        if (m_inspectionRoot.isValid())
+        {
+            if (!m_inspected.isValid())
+            {
+                const auto player = multiplayer()->testInstance();
+                m_inspected = scene().createEntity(std::format("Runtime Player {}", player));
+                static_cast<void>(scene().setParent(m_inspected, m_inspectionRoot));
+                scene().add<devex::scene::Transform>(
+                    m_inspected,
+                    devex::scene::Transform{.position = {static_cast<float>(player), 0.0f, 0.0f}});
+            }
+            scene().get<devex::scene::Transform>(m_inspected).position.y =
+                static_cast<float>(m_ticks);
+        }
     }
     void onUpdate(devex::core::Duration) override
     {
@@ -56,6 +73,8 @@ class PlayerFixture final : public devex::runtime::Application
   private:
     int m_ticks = 0;
     std::string m_network;
+    devex::scene::Entity m_inspectionRoot;
+    devex::scene::Entity m_inspected;
     bool m_hang = false;
     bool m_crash = false;
     bool m_ask = false;

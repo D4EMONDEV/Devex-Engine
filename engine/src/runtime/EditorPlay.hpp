@@ -1,5 +1,7 @@
 #pragma once
 
+#include "RemoteInspection.hpp"
+
 #include <devex/asset/Project.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/net/Multiplayer.hpp>
@@ -68,6 +70,13 @@ class DEVEX_API PlayProcess
     void shutdown();
     [[nodiscard]] const tools::ExternalPlayStatus& status() const { return m_status; }
     [[nodiscard]] const std::filesystem::path& directory() const { return m_directory; }
+    void requestInspection(core::Uuid entity);
+    [[nodiscard]] const std::shared_ptr<const tools::detail::RemoteSceneSnapshot>&
+    inspection() const
+    {
+        return m_inspection;
+    }
+    [[nodiscard]] bool inspectionUnavailable() const { return m_inspectionUnavailable; }
 
   private:
     void command(std::string_view command);
@@ -79,6 +88,12 @@ class DEVEX_API PlayProcess
     std::filesystem::path m_directory;
     std::optional<std::chrono::steady_clock::time_point> m_stopTime;
     std::optional<bool> m_requestedPause;
+    std::shared_ptr<const tools::detail::RemoteSceneSnapshot> m_inspection;
+    std::chrono::steady_clock::time_point m_inspectionAt;
+    core::Uuid m_inspectionEntity;
+    std::int64_t m_inspectionSerial = 0;
+    bool m_inspectionPending = false;
+    bool m_inspectionUnavailable = false;
     // What its logs start with, among several games.
     std::string m_label;
     // Its snapshot is waiting for a game that may never start.
@@ -108,6 +123,8 @@ class DEVEX_API PlayGroup
     void stop();
     void shutdown();
     [[nodiscard]] const tools::ExternalPlayStatus& status() const { return m_status; }
+    [[nodiscard]] tools::detail::RemoteInspectionView
+    inspect(tools::detail::RemoteInspectionTarget target);
 
   private:
     [[nodiscard]] PlayProcess* primary() const;
@@ -129,6 +146,7 @@ class DEVEX_API EditorPlayClient
     [[nodiscard]] core::Result<scene::Scene> readSnapshot();
     void update();
     void report(bool debuggerAvailable, bool debuggerAttached, bool waiting);
+    void reportInspection(const scene::Scene& scene);
     [[nodiscard]] bool paused() const { return m_paused; }
     [[nodiscard]] bool stopped() const { return m_stopped; }
     [[nodiscard]] bool takeStep() { return std::exchange(m_step, false); }
@@ -146,6 +164,7 @@ class DEVEX_API EditorPlayClient
     asset::AssetId m_source;
     std::string m_language;
     std::string m_report;
+    std::optional<std::pair<std::int64_t, core::Uuid>> m_inspection;
     bool m_paused = false;
     bool m_stopped = false;
     bool m_step = false;

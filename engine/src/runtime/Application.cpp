@@ -1729,6 +1729,8 @@ void ApplicationRunner::updatePlayerControl()
     {
         m_externalPlay.update();
         m_services.tools->setExternalPlayStatus(m_externalPlay.status());
+        m_services.tools->setRemoteInspection(
+            m_externalPlay.inspect(m_services.tools->remoteInspectionTarget()));
     }
     if (!m_editorClient)
         return;
@@ -1751,6 +1753,7 @@ void ApplicationRunner::updatePlayerControl()
                                                              : tools::PlayState::Playing;
     m_stepRequested = m_editorClient->takeStep();
     m_editorClient->report(available, attached, !m_gameStarted);
+    m_editorClient->reportInspection(*m_application.m_scene);
 }
 
 void ApplicationRunner::stopPlaying()
