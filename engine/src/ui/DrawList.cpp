@@ -234,6 +234,23 @@ void drawImage(Builder& builder, const DrawContext& context, const LaidOutRect& 
     {
         return;
     }
+    // Drawn at its size, the image sits on whole pixels and is read pixel for pixel.
+    const bool sliced = image.border.x > 0.0f || image.border.y > 0.0f || image.border.z > 0.0f || image.border.w > 0.0f;
+    if (context.sharp && image.texture.isValid() && !sliced && isPlain(rect) && builder.scale > 0.0f)
+    {
+        const math::Vec2 first{std::round(rect.min.x * builder.scale), std::round(rect.min.y * builder.scale)};
+        const math::Vec2 last{std::round(rect.max.x * builder.scale), std::round(rect.max.y * builder.scale)};
+        const math::Extent2D size{static_cast<std::uint32_t>(std::max(last.x - first.x, 1.0f)),
+                                  static_cast<std::uint32_t>(std::max(last.y - first.y, 1.0f))};
+        if (const std::optional<render::TextureHandle> drawn = context.sharp(image.texture, size); drawn && drawn->isValid())
+        {
+            texture = *drawn;
+            uv = math::Vec4{0.0f, 0.0f, 1.0f, 1.0f};
+            pixels = math::Vec2{static_cast<float>(size.width), static_cast<float>(size.height)};
+            rect.min = first / builder.scale;
+            rect.max = (first + pixels) / builder.scale;
+        }
+    }
 
     // The shadow first, under the image, as far around it as it fades.
     if (image.shadowColor.w > 0.0f && image.shadowSize > 0.0f && isPlain(rect))

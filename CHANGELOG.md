@@ -5,6 +5,7 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 
 ## À venir
 
+- **Des icônes nettes** : chaque icône de l'éditeur est dessinée à la taille exacte où elle s'affiche, sur des pixels entiers, comme Godot dessine ses SVG. Elles étaient dessinées une fois en 64 pixels puis réduites, ce qui les rendait floues.
 - **Create New Project comme Godot**, dans une vraie fenêtre : nom, chemin avec **Create Folder** et **Browse**, un message en vert ou en rouge, le **renderer**, **Version Control Metadata** (Git écrit un `.gitignore` et un `.gitattributes`) et **Edit Now**. Le dossier proposé est celui du dernier projet, ou Documents.
 - **Forward+ ou Compatibility**, dans **Project Settings > Rendering** : Compatibility laisse de côté l'occlusion ambiante, les reflets de l'écran et le brouillard volumétrique, dans l'éditeur comme dans le jeu. C'est ce que demandera l'export web.
 

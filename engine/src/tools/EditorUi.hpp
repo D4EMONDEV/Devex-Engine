@@ -147,6 +147,10 @@ private:
     BakedFont m_bold;
     BakedFont m_mono;
     std::unordered_map<asset::AssetId, render::TextureHandle> m_iconTextures;
+    // Each icon drawn at the sizes it is shown at, by the icon and the size.
+    std::unordered_map<asset::AssetId, Icon> m_iconOf;
+    std::unordered_map<std::uint64_t, render::TextureHandle> m_sharpIcons;
+    [[nodiscard]] std::optional<render::TextureHandle> sharpIcon(asset::AssetId id, math::Extent2D size);
     render::TextureHandle m_checker;
     std::function<render::TextureHandle(asset::AssetId)> m_assetTextures;
     std::function<math::Vec2(asset::AssetId)> m_assetSizes;

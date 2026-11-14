@@ -70,6 +70,9 @@ struct DEVEX_API DrawContext
     std::function<std::optional<SpriteImage>(asset::AssetId)> sprites;
     // The size of a texture in pixels, for the images whose borders stay unstretched.
     std::function<math::Vec2(asset::AssetId)> textureSize;
+    // The image drawn at the very size it is shown, in pixels, for one that can be, as the icons of the tools, which are
+    // drawings: shrinking a larger one blurs it. Nothing for any other.
+    std::function<std::optional<render::TextureHandle>(asset::AssetId, math::Extent2D)> sharp;
     std::function<math::Vec4(scene::Entity)> tint;
     // Nothing for a field that is not being edited: it then shows its placeholder rather than a
     // cursor.

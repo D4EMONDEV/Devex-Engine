@@ -89,6 +89,13 @@ EditorUiKit::~EditorUiKit()
             m_renderer.destroyTexture(texture);
         }
     }
+    for (const auto& [key, texture] : m_sharpIcons)
+    {
+        if (texture.isValid())
+        {
+            m_renderer.destroyTexture(texture);
+        }
+    }
     if (m_checker.isValid())
     {
         m_renderer.destroyTexture(m_checker);
@@ -263,7 +270,39 @@ asset::AssetId EditorUiKit::icon(Icon icon)
         }
     }
     m_iconTextures.emplace(id, texture);
+    m_iconOf.emplace(id, icon);
     return id;
+}
+
+std::optional<render::TextureHandle> EditorUiKit::sharpIcon(asset::AssetId id, math::Extent2D size)
+{
+    const auto icon = m_iconOf.find(id);
+    // Large, the mip levels of the drawing are as good, and nothing is kept for a size seen once.
+    if (icon == m_iconOf.end() || size.width < 2 || size.height < 2 || size.width > 128 || size.height > 128)
+    {
+        return std::nullopt;
+    }
+    const std::uint64_t key = (static_cast<std::uint64_t>(icon->second) << 32) | (std::uint64_t{size.width} << 16) | size.height;
+    if (const auto found = m_sharpIcons.find(key); found != m_sharpIcons.end())
+    {
+        return found->second;
+    }
+    render::TextureHandle texture;
+    if (const core::Result<SvgImage> drawn = m_icons.render(icon->second, size.width, size.height))
+    {
+        const asset::Image image{.width = drawn->width, .height = drawn->height, .rgba = drawn->rgba};
+        if (const core::Result<asset::TextureData> built =
+                asset::buildTexture(image, asset::TextureBuildOptions{.srgb = true, .mipmaps = false, .compress = false}))
+        {
+            if (const core::Result<render::TextureHandle> created = m_renderer.createTexture(*built))
+            {
+                texture = *created;
+            }
+        }
+    }
+    // A drawing that failed is not drawn again at every frame: the larger one shows instead.
+    m_sharpIcons.emplace(key, texture);
+    return texture;
 }
 
 void EditorUiKit::bakeFonts()
@@ -344,6 +383,7 @@ ui::DrawContext EditorUiKit::drawContext()
                 }
                 return m_assetSizes ? m_assetSizes(id) : math::Vec2{0.0f};
             },
+        .sharp = [this](asset::AssetId id, math::Extent2D size) { return sharpIcon(id, size); },
         .defaultFont = regularFont(),
         .glyphs = m_glyphs.get(),
     };

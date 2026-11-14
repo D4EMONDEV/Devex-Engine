@@ -3949,3 +3949,9 @@ public:
 
 - `tools/CreateProjectWindow.cpp` : la fenêtre (`state.showCreateProject`), `createProblem` et `createProject`. La liste des projets ne fait que l'ouvrir.
 - `Project::renderingMethod` : `Application` appelle `RenderWorld::limitToCompatibility` après `prepareRender`, une fois tout le monde extrait. Un effet de plus que le web ne saura pas faire s'y ajoute.
+
+## Icônes nettes
+
+- `DrawContext::sharp` donne une texture dessinée à la taille affichée, en pixels ; `drawImage` pose alors l'image sur des pixels entiers.
+  `EditorUiKit::sharpIcon` dessine chaque icône à chaque taille vue (jusqu'à 128 pixels) et la garde. Les jeux n'ont pas `sharp` : leurs images ne changent pas.
+- Le texte était déjà dessiné par FreeType à sa taille (`GlyphAtlas`) et mélangé en espace d'affichage (`displaySpace`) : comparé pixel à pixel, il est celui de Godot.
