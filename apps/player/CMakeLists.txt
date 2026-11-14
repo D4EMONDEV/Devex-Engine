@@ -48,6 +48,21 @@ if(ANDROID)
         VERBATIM
     )
 endif()
+if(EMSCRIPTEN)
+    # The game of a browser: devex-player.js and .wasm, and the page that loads the package beside them into the files
+    # of the program before it starts. The memory grows with what the game loads.
+    target_link_options(devex_player PRIVATE
+        -sALLOW_MEMORY_GROWTH=1
+        -sSTACK_SIZE=8MB
+        -sFORCE_FILESYSTEM=1
+        "-sEXPORTED_RUNTIME_METHODS=['FS','addRunDependency','removeRunDependency']"
+    )
+    add_custom_command(TARGET devex_player POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html"
+                "$<TARGET_FILE_DIR:devex_player>/index.html"
+        VERBATIM
+    )
+endif()
 devex_set_warnings(devex_player)
 devex_set_application_icon(devex_player)
 # An exported game is this program renamed, with the engine library beside it: the game looks for

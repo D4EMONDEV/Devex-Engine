@@ -3,6 +3,9 @@
 if(DEVEX_BUILD_TESTS)
     list(APPEND VCPKG_MANIFEST_FEATURES "tests")
 endif()
+if(DEVEX_WEBGPU)
+    list(APPEND VCPKG_MANIFEST_FEATURES "webgpu")
+endif()
 
 if(DEFINED CMAKE_TOOLCHAIN_FILE)
     return()

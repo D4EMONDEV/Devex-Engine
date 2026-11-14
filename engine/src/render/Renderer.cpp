@@ -2,6 +2,9 @@
 #if DEVEX_RENDERER_VULKAN
 #include "vulkan/VulkanRenderer.hpp"
 #endif
+#if DEVEX_RENDERER_WEBGPU
+#include "webgpu/WebGpuRenderer.hpp"
+#endif
 
 #include <devex/core/Assert.hpp>
 #include <devex/render/Renderer.hpp>
@@ -10,24 +13,50 @@
 
 namespace devex::render {
 
+#if DEVEX_RENDERER_WEBGPU
+namespace {
+
+#if DEVEX_RENDERER_VULKAN
+constexpr bool hasVulkan = true;
+#else
+constexpr bool hasVulkan = false;
+#endif
+
+} // namespace
+#endif
+
 core::Result<Renderer> Renderer::create(const platform::Platform& platform,
                                         platform::Window& window, const RendererConfig& config)
 {
-#if DEVEX_RENDERER_VULKAN
-    core::Result<std::unique_ptr<vulkan::VulkanRenderer>> implementation =
-        vulkan::VulkanRenderer::create(platform, window, config);
-    if (!implementation)
+#if DEVEX_RENDERER_WEBGPU
+    // WebGPU when asked, or when there is no Vulkan: in a browser.
+    if (config.api == RenderApi::WebGpu || (config.api == RenderApi::Automatic && !hasVulkan))
     {
-        return std::unexpected(implementation.error());
+        core::Result<std::unique_ptr<webgpu::WebGpuRenderer>> implementation =
+            webgpu::WebGpuRenderer::create(platform, window, config);
+        if (!implementation)
+        {
+            return std::unexpected(implementation.error());
+        }
+        return Renderer(std::unique_ptr<RenderBackend>(std::move(*implementation)));
     }
-    return Renderer(std::unique_ptr<RenderBackend>(std::move(*implementation)));
-#else
-    // WebGPU comes in the next step of the web: until then, there is nothing to draw with.
+#endif
+#if DEVEX_RENDERER_VULKAN
+    if (config.api != RenderApi::WebGpu)
+    {
+        core::Result<std::unique_ptr<vulkan::VulkanRenderer>> implementation =
+            vulkan::VulkanRenderer::create(platform, window, config);
+        if (!implementation)
+        {
+            return std::unexpected(implementation.error());
+        }
+        return Renderer(std::unique_ptr<RenderBackend>(std::move(*implementation)));
+    }
+#endif
     static_cast<void>(platform);
     static_cast<void>(window);
-    static_cast<void>(config);
-    return core::makeError(core::ErrorCode::Unsupported, "this platform has no renderer yet");
-#endif
+    return core::makeError(core::ErrorCode::Unsupported, "this build of Devex has no renderer for {}",
+                           config.api == RenderApi::WebGpu ? "WebGPU" : "this platform");
 }
 
 Renderer::Renderer(std::unique_ptr<RenderBackend> implementation) noexcept

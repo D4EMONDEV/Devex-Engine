@@ -3970,3 +3970,18 @@ public:
   passent par Node (`-sNODERAWFS=1`, les fichiers de la machine) ; `DEVEX_WEB_SKIPPED_MODULES` et `DEVEX_WEB_SKIPPED_SOURCES` dans `tests/CMakeLists.txt`
   écartent ce qui n'a pas de sens dans un navigateur, et `ctest -LE "gpu|noweb"` le reste.
 - Un `uintptr_t` fait 32 bits en WebAssembly : n'y ranger ni une entité (`entityKey`, 64 bits) ni un autre identifiant de 64 bits.
+
+## Renderer WebGPU (étape 2 du web)
+
+- `DEVEX_WEBGPU` (activé par le préréglage `web`, et sur le bureau pour les tests) ajoute la fonctionnalité `webgpu` du manifeste vcpkg :
+  Dawn, `emdawnwebgpu` dans le navigateur, et sur un ordinateur le même `webgpu.h` sur Vulkan. `RendererConfig::api = RenderApi::WebGpu`
+  choisit WebGPU sur le bureau. Les shaders `shaders/webgpu_*.slang` passent en WGSL (`slangc -target wgsl`) puis dans
+  `WebGpuShaders.cpp`, généré par `cmake/EmbedWgsl.cmake`.
+- WebGPU n'a ni pointeurs ni tableaux de textures sans limite : les sprites sont dans un tampon de stockage, chaque série d'une même
+  texture lit son début à un décalage dynamique d'un tampon uniforme (256 octets), et sa texture dans le groupe 1. L'espace de clip
+  de WebGPU a Y vers le haut : `prepareView` sans correction, et l'interface retourne Y de ses pixels.
+- Dans le navigateur, le GPU arrive de façon asynchrone : `render::requestBrowserDevice` d'abord, puis `run()` crée une session sur le
+  tas et `emscripten_set_main_loop_arg` appelle `ApplicationRunner::frame()` à chaque rafraîchissement. Le bureau enchaîne
+  `start()`, `frame()` et `finish()` dans `execute()`. Rien ne doit dormir dans une image (la limite d'images est sautée sur le web).
+- Essai : exporter un projet pour Windows (`devex-editor-console --export ... --platform windows`), copier son `.dvxpak` en
+  `game.dvxpak` à côté de `devex-player.js`, `.wasm` et `index.html` du build web, et servir le dossier en local.

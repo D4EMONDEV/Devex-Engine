@@ -121,3 +121,39 @@ function(devex_ship_shader_modules target)
     add_custom_target(${target} ALL DEPENDS ${outputs})
     set_target_properties(${target} PROPERTIES FOLDER "Shaders")
 endfunction()
+
+# devex_embed_wgsl(OUTPUT <file.cpp> SOURCES <shader.slang>...)
+# Compiles shaders to WGSL for the WebGPU renderer, then writes them into a C++ file that keeps them in the program
+# (render/webgpu/WebGpuShaders.hpp): a browser has no folder of shaders to load.
+function(devex_embed_wgsl)
+    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "OUTPUT" "SOURCES")
+    set(wgsl_directory "${CMAKE_CURRENT_BINARY_DIR}/wgsl")
+    set(outputs)
+    foreach(source IN LISTS ARG_SOURCES)
+        cmake_path(ABSOLUTE_PATH source BASE_DIRECTORY "${PROJECT_SOURCE_DIR}/shaders" OUTPUT_VARIABLE source_path)
+        cmake_path(GET source STEM name)
+        set(output "${wgsl_directory}/${name}.wgsl")
+        add_custom_command(
+            OUTPUT "${output}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${wgsl_directory}"
+            COMMAND "${DEVEX_SLANGC}" "${source_path}"
+                -target wgsl
+                -matrix-layout-column-major
+                -depfile "${output}.d"
+                -o "${output}"
+            DEPENDS "${source_path}"
+            DEPFILE "${output}.d"
+            COMMENT "Compiling shader ${name}.slang to WGSL"
+            VERBATIM
+        )
+        list(APPEND outputs "${output}")
+    endforeach()
+    add_custom_command(
+        OUTPUT "${ARG_OUTPUT}"
+        COMMAND "${CMAKE_COMMAND}" "-DOUTPUT=${ARG_OUTPUT}" "-DINPUTS=${outputs}"
+            -P "${PROJECT_SOURCE_DIR}/cmake/EmbedWgsl.cmake"
+        DEPENDS ${outputs} "${PROJECT_SOURCE_DIR}/cmake/EmbedWgsl.cmake"
+        COMMENT "Keeping the WGSL shaders in the program"
+        VERBATIM
+    )
+endfunction()

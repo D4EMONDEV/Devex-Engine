@@ -68,6 +68,7 @@ class Player final : public devex::runtime::Application
     }
 };
 
+#if !defined(__EMSCRIPTEN__)
 // Where the log and the reports of a crash go: the cache of a project being played, or a folder of
 // the user named after an exported game, which can be written to wherever the game is installed.
 [[nodiscard]] std::filesystem::path logDirectory(const devex::runtime::ApplicationConfig& config,
@@ -86,11 +87,12 @@ class Player final : public devex::runtime::Application
     const devex::core::Result<std::filesystem::path> user = devex::platform::userDataDirectory("", game);
     return user ? *user / "logs" : devex::platform::executableDirectory() / "logs";
 }
+#endif
 
 } // namespace
 
 // devex-player <project.dvxproj>: plays a project.
-// devex-player --package <game.dvxpak>: plays an exported game.
+// devex-player --package <game.dvxpak>: plays an exported game. In a browser, the page puts the package among the files.
 // Without arguments, plays the package named like the executable, next to it: Game.exe plays Game.dvxpak.
 // --log-level <levels> anywhere sets what the log keeps, as the DEVEX_LOG variable does.
 int main(int argc, char** argv)
@@ -151,6 +153,12 @@ int main(int argc, char** argv)
         return 2;
     }
 
+#if defined(__EMSCRIPTEN__)
+    // In a browser the game goes on after main returns, one frame at each refresh of the page, and the console of the
+    // browser keeps the log: the player lives as long as the page.
+    static Player player;
+    return devex::runtime::run(player, config);
+#else
     // The log is kept from the first line, and a crash adds its report and a minidump beside it.
     const std::filesystem::path logs =
         logDirectory(config, devex::core::toUtf8(std::filesystem::path(argv[0]).stem()));
@@ -170,4 +178,5 @@ int main(int argc, char** argv)
     }
     return devex::runtime::runShowingFatalError("The game cannot start", log ? (*log)->path() : std::filesystem::path{},
                                                 [&player, &config] { return devex::runtime::run(player, config); });
+#endif
 }

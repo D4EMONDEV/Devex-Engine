@@ -17,6 +17,27 @@ enum class WindowId : std::uint32_t
 {
 };
 
+// What a WebGPU surface is made from: the window of the system, or in a browser its canvas.
+struct DEVEX_API NativeWindow
+{
+    enum class Kind : std::uint8_t
+    {
+        None,
+        Win32,
+        X11,
+        Wayland,
+        // The canvas SDL draws into, "#canvas".
+        Canvas,
+    };
+    Kind kind = Kind::None;
+    // Win32: the HINSTANCE; X11: the Display; Wayland: the wl_display.
+    void* display = nullptr;
+    // Win32: the HWND; Wayland: the wl_surface.
+    void* window = nullptr;
+    // X11: the Window.
+    std::uint64_t x11Window = 0;
+};
+
 struct DEVEX_API WindowConfig
 {
     std::string title = "Devex";
@@ -123,6 +144,9 @@ public:
     // Creates a VkSurfaceKHR for this window on the given VkInstance and returns its handle. The
     // window must have been created with WindowConfig::vulkan, and the caller owns the surface.
     [[nodiscard]] core::Result<std::uint64_t> createVulkanSurface(void* vulkanInstance) const;
+
+    // The window as the system knows it, for a WebGPU surface; Kind::None where it cannot tell.
+    [[nodiscard]] NativeWindow native() const noexcept;
 
 private:
     friend class Platform;

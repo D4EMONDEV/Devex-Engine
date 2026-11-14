@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -38,6 +39,16 @@ enum class PresentMode : std::uint8_t
 };
 
 [[nodiscard]] DEVEX_API std::string_view toString(PresentMode mode) noexcept;
+
+// The API a renderer draws with.
+enum class RenderApi : std::uint8_t
+{
+    // Vulkan where there is Vulkan, WebGPU in a browser.
+    Automatic,
+    Vulkan,
+    // Dawn's WebGPU: in a browser, and on a computer built with DEVEX_WEBGPU, for its tests.
+    WebGpu,
+};
 
 struct DEVEX_API RendererConfig
 {
@@ -66,6 +77,7 @@ struct DEVEX_API RendererConfig
     bool gpuSkinning = true;
     // Maximum projected simplification error in pixels. Zero keeps original geometry.
     float meshLodError = 1.0f;
+    RenderApi api = RenderApi::Automatic;
 };
 
 // What a sampler2D uniform samples while its texture is missing or still loading.
@@ -160,6 +172,12 @@ struct DEVEX_API RendererStats
 
 // The renderer of an API, behind the facade.
 class RenderBackend;
+
+#if defined(__EMSCRIPTEN__)
+// Asks the browser for its GPU, which answers once the page goes back to it: Renderer::create needs the answer, which
+// `ready` receives. In a browser only.
+DEVEX_API void requestBrowserDevice(std::function<void(core::Result<void>)> ready);
+#endif
 
 // Draws RenderWorld snapshots into a window. Only one renderer may exist at a time, and the
 // window must outlive it.

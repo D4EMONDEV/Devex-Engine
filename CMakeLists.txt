@@ -5,6 +5,9 @@ option(DEVEX_BUILD_PLAYER "Build the Devex player, which runs projects outside t
 option(DEVEX_BUILD_TESTS "Build Devex unit tests" ON)
 option(DEVEX_BUILD_FUZZERS "Build the Clang libFuzzer targets for file readers" OFF)
 option(DEVEX_WARNINGS_AS_ERRORS "Treat compiler warnings as errors for Devex targets" OFF)
+# The renderer of the browser. On a computer it serves the tests and development, beside Vulkan, and stays out of
+# what ships: the web preset turns it on, a build of the tests may.
+option(DEVEX_WEBGPU "Build the WebGPU renderer, with Dawn" OFF)
 
 # Dependencies come from vcpkg in manifest mode: the toolchain must be known before project().
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")

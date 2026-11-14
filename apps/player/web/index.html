@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Devex game</title>
+<style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #status { position: absolute; left: 0; right: 0; top: 45%; text-align: center; color: #ccc; font: 16px sans-serif; }
+</style>
+</head>
+<body>
+<!-- The page of a Devex game: it loads game.dvxpak, beside it, into the files of the program, then plays it in the
+     canvas with WebGPU. -->
+<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+<div id="status">Loading…</div>
+<script>
+    const status = document.getElementById('status');
+    var Module = {
+        canvas: document.getElementById('canvas'),
+        arguments: ['--package', '/game.dvxpak'],
+        preRun: [() => {
+            if (!navigator.gpu) {
+                status.textContent = 'This browser has no WebGPU: the game cannot be drawn.';
+            }
+            Module.addRunDependency('game');
+            fetch('game.dvxpak')
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error(response.status + ' ' + response.statusText);
+                    }
+                    return response.arrayBuffer();
+                })
+                .then((bytes) => {
+                    Module.FS.writeFile('/game.dvxpak', new Uint8Array(bytes));
+                    status.remove();
+                    Module.removeRunDependency('game');
+                })
+                .catch((error) => { status.textContent = 'The game cannot be loaded: ' + error.message; });
+        }],
+        print: (text) => console.log(text),
+        printErr: (text) => console.error(text),
+    };
+</script>
+<script src="devex-player.js"></script>
+</body>
+</html>

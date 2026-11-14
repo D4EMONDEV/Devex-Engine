@@ -99,7 +99,8 @@ jobs:
       # steps print is also kept in a file (cmd merges the errors in), for the failure to be shown.
       - name: Configure
         id: configure
-        run: cmd /c "cmake --preset ${{ matrix.preset }} -DDEVEX_WARNINGS_AS_ERRORS=ON 2>&1" | Tee-Object -FilePath "$env:RUNNER_TEMP/configure.log"
+        # The Debug build has the WebGPU renderer too, with Dawn, so that it compiles and its tests without a GPU run.
+        run: cmd /c "cmake --preset ${{ matrix.preset }} -DDEVEX_WARNINGS_AS_ERRORS=ON ${{ matrix.preset == 'x64-debug' && '-DDEVEX_WEBGPU=ON' || '' }} 2>&1" | Tee-Object -FilePath "$env:RUNNER_TEMP/configure.log"
 
       # Saved as soon as the dependencies are built, so that a failing build or test does not
       # lose them.

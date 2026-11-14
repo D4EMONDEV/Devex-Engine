@@ -69,6 +69,21 @@
             "dependencies": [
                 "catch2"
             ]
+        },
+        "webgpu": {
+            "description": "Build the WebGPU renderer, with Dawn: the browser's, and on a computer the one the tests compare with Vulkan",
+            "dependencies": [
+                {
+                    "name": "dawn",
+                    "default-features": false,
+                    "features": [
+                        {
+                            "name": "vulkan",
+                            "platform": "windows | linux"
+                        }
+                    ]
+                }
+            ]
         }
     }
 }

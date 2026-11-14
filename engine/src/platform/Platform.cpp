@@ -654,10 +654,13 @@ core::Result<Window> Platform::createWindow(const WindowConfig& config)
     {
         flags |= SDL_WINDOW_RESIZABLE;
     }
+#if !defined(__EMSCRIPTEN__)
+    // A browser has no Vulkan: WebGPU draws into the canvas without SDL knowing.
     if (config.vulkan)
     {
         flags |= SDL_WINDOW_VULKAN;
     }
+#endif
     if (config.hidden)
     {
         flags |= SDL_WINDOW_HIDDEN;

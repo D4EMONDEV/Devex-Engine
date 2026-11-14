@@ -49,8 +49,13 @@
 #include <devex/ui/GlyphAtlas.hpp>
 #include <devex/ui/Layout.hpp>
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
+#include <optional>
 #include <format>
 #include <functional>
 #include <map>
@@ -258,7 +263,14 @@ public:
     ApplicationRunner(const ApplicationRunner&) = delete;
     ApplicationRunner& operator=(const ApplicationRunner&) = delete;
 
+    // The whole run: start, then frames until the application quits, then finish.
     [[nodiscard]] int execute();
+    // What comes before the first frame: the exit code when the application cannot start.
+    [[nodiscard]] std::optional<int> start();
+    // One turn of the loop; false once the application asked to quit.
+    [[nodiscard]] bool frame();
+    // What comes after the last frame: the exit code.
+    [[nodiscard]] int finish();
 
     [[nodiscard]] asset::AssetDatabase* database() const noexcept;
     [[nodiscard]] asset::AssetSource* assetSource() const noexcept;
@@ -918,6 +930,18 @@ bool ApplicationRunner::isAnimating() const
 
 int ApplicationRunner::execute()
 {
+    if (const std::optional<int> failed = start())
+    {
+        return *failed;
+    }
+    while (frame())
+    {
+    }
+    return finish();
+}
+
+std::optional<int> ApplicationRunner::start()
+{
     if (core::Result<void> built = buildOutdatedGameCode(); !built)
     {
         DEVEX_LOG_FATAL("Cannot build the game code: {}", built.error());
@@ -979,7 +1003,15 @@ int ApplicationRunner::execute()
 
     m_previousFrame = Clock::now();
     m_lastActivity = m_previousFrame;
-    while (!m_application.m_quitRequested)
+    return std::nullopt;
+}
+
+bool ApplicationRunner::frame()
+{
+    if (m_application.m_quitRequested)
+    {
+        return false;
+    }
     {
         // At rest, the editor waits for an event, or for the next beat.
         if (isEditor())
@@ -1008,7 +1040,7 @@ int ApplicationRunner::execute()
         if (m_application.m_quitRequested)
         {
             core::profiler::endFrame();
-            break;
+            return false;
         }
         runFrame();
         if (isEditor() && isAnimating())
@@ -1017,7 +1049,11 @@ int ApplicationRunner::execute()
         }
         core::profiler::endFrame();
     }
+    return !m_application.m_quitRequested;
+}
 
+int ApplicationRunner::finish()
+{
     m_externalPlay.shutdown();
     if (m_playScene)
     {
@@ -1221,11 +1257,16 @@ void ApplicationRunner::runFrame()
     const std::chrono::nanoseconds frameLimit =
         minimized ? std::max(m_frameBudget, std::chrono::nanoseconds(minimizedFrameTime))
                   : m_frameBudget;
+#if !defined(__EMSCRIPTEN__)
     if (frameLimit > std::chrono::nanoseconds::zero())
     {
         DEVEX_PROFILE_SCOPE("Frame limit");
         platform::sleepPrecise(frameLimit - (Clock::now() - frameStart));
     }
+#else
+    static_cast<void>(frameLimit);
+    static_cast<void>(frameStart);
+#endif
 
     m_inFrame = false;
 }
@@ -3764,7 +3805,31 @@ void configureLogging(std::string_view commandLine)
     }
 }
 
-int run(Application& application, const ApplicationConfig& config)
+namespace {
+
+// What a run creates and keeps until it ends, in the order it creates it, which is the reverse of the order it goes in:
+// on the heap, since in a browser it outlives the call that starts it.
+struct Session
+{
+    std::optional<platform::Platform> platform;
+    std::unique_ptr<asset::PackageReader> package;
+    ApplicationConfig effective;
+    std::optional<platform::Window> window;
+    // Destroyed late: running imports finish before the process exits.
+    std::optional<core::JobSystem> jobs;
+    std::unique_ptr<asset::AssetDatabase> database;
+    std::optional<render::Renderer> renderer;
+    // Sounds that play stop before the mixer goes: the runner, which owns them, goes first.
+    std::unique_ptr<audio::AudioEngine> audioEngine;
+    std::optional<AssetManager> assets;
+    // Goes before the renderer and the platform it is connected to.
+    std::unique_ptr<tools::ToolsOverlay> tools;
+    scene::Scene scene;
+    std::optional<detail::ApplicationRunner> runner;
+};
+
+// Creates what the application runs with, up to its runner: the exit code when something cannot be created.
+[[nodiscard]] std::optional<int> prepare(Session& session, Application& application, const ApplicationConfig& config)
 {
     DEVEX_LOG_INFO("Devex Engine {}", core::version());
     if (config.editor && !config.enableRendering)
@@ -3773,15 +3838,17 @@ int run(Application& application, const ApplicationConfig& config)
         return EXIT_FAILURE;
     }
 
-    core::Result<platform::Platform> platform = platform::Platform::create();
-    if (!platform)
+    core::Result<platform::Platform> createdPlatform = platform::Platform::create();
+    if (!createdPlatform)
     {
-        DEVEX_LOG_FATAL("Cannot initialize the platform: {}", platform.error());
+        DEVEX_LOG_FATAL("Cannot initialize the platform: {}", createdPlatform.error());
         return EXIT_FAILURE;
     }
+    session.platform.emplace(std::move(*createdPlatform));
+    platform::Platform* const platform = &*session.platform;
 
     // An exported game comes with its package, whose settings open the window.
-    std::unique_ptr<asset::PackageReader> package;
+    std::unique_ptr<asset::PackageReader>& package = session.package;
     std::optional<asset::Project> launchSettings;
     if (!config.package.empty())
     {
@@ -3833,7 +3900,8 @@ int run(Application& application, const ApplicationConfig& config)
             launchSettings = std::move(*project);
         }
     }
-    ApplicationConfig effective = config;
+    ApplicationConfig& effective = session.effective;
+    effective = config;
     bool fullscreen = false;
     bool exclusiveFullscreen = false;
     bool borderless = false;
@@ -3893,16 +3961,16 @@ int run(Application& application, const ApplicationConfig& config)
     std::optional<detail::PlayInstance> instance;
     if (!config.editorSession.empty())
     {
-        if (const core::Result<detail::PlaySession> session = detail::readPlaySession(config.editorSession); session && session->instance.count > 1)
+        if (const core::Result<detail::PlaySession> play = detail::readPlaySession(config.editorSession); play && play->instance.count > 1)
         {
-            instance = session->instance;
+            instance = play->instance;
             effective.title = std::format("{} (player {})", effective.title, instance->index);
             fullscreen = false;
         }
     }
     // What someone can do about a machine that cannot draw: most often, its driver is older than the engine.
     constexpr std::string_view graphicsAdvice = ". Devex needs a graphics driver with Vulkan 1.3: updating it may solve this";
-    core::Result<platform::Window> window = platform->createWindow({
+    core::Result<platform::Window> createdWindow = platform->createWindow({
         .title = effective.title,
         .width = effective.width,
         .height = effective.height,
@@ -3911,14 +3979,17 @@ int run(Application& application, const ApplicationConfig& config)
         .fullscreen = fullscreen,
         .borderless = borderless,
     });
-    if (window && exclusiveFullscreen)
+    if (!createdWindow)
+    {
+        DEVEX_LOG_FATAL("Cannot create the main window: {}{}", createdWindow.error(),
+                        effective.enableRendering ? graphicsAdvice : std::string_view{});
+        return EXIT_FAILURE;
+    }
+    session.window.emplace(std::move(*createdWindow));
+    platform::Window* const window = &*session.window;
+    if (exclusiveFullscreen)
     {
         window->setMode(platform::WindowMode::Fullscreen);
-    }
-    if (!window)
-    {
-        DEVEX_LOG_FATAL("Cannot create the main window: {}{}", window.error(), effective.enableRendering ? graphicsAdvice : std::string_view{});
-        return EXIT_FAILURE;
     }
     if (instance && instance->area)
     {
@@ -3929,10 +4000,10 @@ int run(Application& application, const ApplicationConfig& config)
     DEVEX_LOG_DEBUG("Main window {}x{} ({}x{} pixels), fixed update at {} Hz", effective.width,
                     effective.height, pixelSize.width, pixelSize.height, config.fixedUpdateRate);
 
-    // Destroyed last: running imports finish before the process exits.
-    core::JobSystem jobs(config.workerThreads);
+    session.jobs.emplace(config.workerThreads);
+    core::JobSystem& jobs = *session.jobs;
 
-    std::unique_ptr<asset::AssetDatabase> database;
+    std::unique_ptr<asset::AssetDatabase>& database = session.database;
     if (!config.project.empty())
     {
         if (config.editor)
@@ -3953,7 +4024,7 @@ int run(Application& application, const ApplicationConfig& config)
         detail::applyWindowIcon(*window, database.get(), package.get());
     }
 
-    std::optional<render::Renderer> renderer;
+    std::optional<render::Renderer>& renderer = session.renderer;
     if (config.enableRendering)
     {
         core::Result<render::Renderer> created = render::Renderer::create(*platform, *window, {
@@ -3969,8 +4040,7 @@ int run(Application& application, const ApplicationConfig& config)
         renderer.emplace(std::move(*created));
     }
 
-    // Sounds that play stop before the mixer goes: the runner, which owns them, is destroyed first.
-    std::unique_ptr<audio::AudioEngine> audioEngine;
+    std::unique_ptr<audio::AudioEngine>& audioEngine = session.audioEngine;
     if (config.enableAudio)
     {
         core::Result<std::unique_ptr<audio::AudioEngine>> created =
@@ -3986,8 +4056,9 @@ int run(Application& application, const ApplicationConfig& config)
     }
 
     // Meshes and textures load on the workers of the job system.
-    AssetManager assets(renderer ? &*renderer : nullptr,
-                        database != nullptr ? static_cast<asset::AssetSource*>(database.get()) : package.get(), &jobs);
+    session.assets.emplace(renderer ? &*renderer : nullptr,
+                           database != nullptr ? static_cast<asset::AssetSource*>(database.get()) : package.get(), &jobs);
+    AssetManager& assets = *session.assets;
     if (renderer)
     {
         if (core::Result<void> builtins = detail::registerBuiltinMeshes(*renderer, assets);
@@ -3998,8 +4069,7 @@ int run(Application& application, const ApplicationConfig& config)
         }
     }
 
-    // Destroyed before the renderer and the platform it is connected to.
-    std::unique_ptr<tools::ToolsOverlay> tools;
+    std::unique_ptr<tools::ToolsOverlay>& tools = session.tools;
     if ((config.enableTools || config.editor) && renderer)
     {
         const tools::ToolsMode mode = config.editor ? tools::ToolsMode::Editor : tools::ToolsMode::Overlay;
@@ -4056,21 +4126,75 @@ int run(Application& application, const ApplicationConfig& config)
         }
     }
 
-    scene::Scene scene;
-    detail::ApplicationRunner runner(application, effective,
-                                     {
-                                         .platform = *platform,
-                                         .window = *window,
-                                         .renderer = renderer ? &*renderer : nullptr,
-                                         .scene = scene,
-                                         .assets = assets,
-                                         .jobs = jobs,
-                                         .tools = tools.get(),
-                                         .audio = audioEngine.get(),
-                                         .database = database,
-                                         .package = package,
-                                     });
-    return runner.execute();
+    session.runner.emplace(application, effective,
+                           detail::EngineServices{
+                               .platform = *platform,
+                               .window = *window,
+                               .renderer = renderer ? &*renderer : nullptr,
+                               .scene = session.scene,
+                               .assets = assets,
+                               .jobs = jobs,
+                               .tools = tools.get(),
+                               .audio = audioEngine.get(),
+                               .database = database,
+                               .package = package,
+                           });
+    return std::nullopt;
+}
+
+#if defined(__EMSCRIPTEN__)
+// One frame of the game, called by the browser at each refresh of the page; the last ends the session.
+void browserFrame(void* argument)
+{
+    auto* const session = static_cast<Session*>(argument);
+    if (!session->runner->frame())
+    {
+        emscripten_cancel_main_loop();
+        const int code = session->runner->finish();
+        delete session;
+        DEVEX_LOG_INFO("The game ended with code {}", code);
+    }
+}
+#endif
+
+} // namespace
+
+int run(Application& application, const ApplicationConfig& config)
+{
+#if defined(__EMSCRIPTEN__)
+    // The browser gives its GPU only once the page has its hand back: the game starts then, and plays one frame at each
+    // refresh of the page. The application must live as long as the page. Without rendering, it runs at once.
+    if (!config.enableRendering)
+    {
+        const auto session = std::make_unique<Session>();
+        if (const std::optional<int> failed = prepare(*session, application, config))
+        {
+            return *failed;
+        }
+        return session->runner->execute();
+    }
+    render::requestBrowserDevice([&application, config](core::Result<void> ready) {
+        if (!ready)
+        {
+            DEVEX_LOG_FATAL("Cannot initialize rendering: {}", ready.error());
+            return;
+        }
+        auto session = std::make_unique<Session>();
+        if (prepare(*session, application, config) || session->runner->start())
+        {
+            return;
+        }
+        emscripten_set_main_loop_arg(&browserFrame, session.release(), 0, false);
+    });
+    return EXIT_SUCCESS;
+#else
+    const auto session = std::make_unique<Session>();
+    if (const std::optional<int> failed = prepare(*session, application, config))
+    {
+        return *failed;
+    }
+    return session->runner->execute();
+#endif
 }
 
 int runShowingFatalError(std::string_view title, const std::filesystem::path& logFile, const std::function<int()>& runApplication)

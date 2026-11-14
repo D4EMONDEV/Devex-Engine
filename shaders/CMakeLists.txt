@@ -33,6 +33,13 @@ devex_add_shaders(devex_shaders
         geometry.slang
         particles.slang
         pbr.slang
+        sprite_shape.slang
+        tonemapping.slang
+        ui_shape.slang
+        webgpu_luminance.slang
+        webgpu_sprite.slang
+        webgpu_tonemap.slang
+        webgpu_ui.slang
 )
 
 # The editor compiles the shaders of projects at their import, with slangc and these modules beside it.
@@ -44,5 +51,6 @@ devex_ship_shader_modules(devex_shader_modules
         custom.slang
         particles.slang
         pbr.slang
+        sprite_shape.slang
 )
 devex_ship_slangc(devex_slangc OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slang")

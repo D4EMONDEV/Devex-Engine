@@ -5781,7 +5781,27 @@ Les étapes, chacune livrable et testée :
    plus en passant. Les tests de ce qu'un ordinateur seul fournit (threads, processus, `slangc`, surveillance des dossiers, outils de
    l'éditeur) sont marqués `[noweb]`. Ce que cette étape a trouvé : en WebAssembly, un pointeur fait 32 bits, et la physique 2D y
    rangeait l'entité de 64 bits d'un corps, dont elle perdait la génération ; un corps pointe maintenant vers l'entité de sa fiche.
-2. Le renderer WebGPU rend les sprites, les tilemaps et l'interface : un jeu 2D tourne dans un navigateur.
+2. ✅ Le renderer WebGPU rend les sprites, les tilemaps et l'interface : un jeu 2D tourne dans un navigateur.
+   `WebGpuRenderer` (`engine/src/render/webgpu`) implémente `RenderBackend` : le fond de l'environnement exposé, les sprites et
+   les tuiles par séries d'une même texture, l'exposition automatique mesurée comme Vulkan, le tonemapping, l'interface et les
+   captures. Ses shaders importent les calculs que ceux de Vulkan partagent maintenant (`sprite_shape`, `ui_shape`,
+   `tonemapping`), et sont gardés dans le programme. Un test dessine la même scène 2D avec les deux renderers et compare les
+   images ; un autre décode des blocs BC7 et BC5 au hasard et compare avec basisu. Le lecteur se construit pour le web
+   (`devex-player.js`, `.wasm` et `index.html`, qui charge `game.dvxpak` à côté) : le menu du projet 2D s'y joue, avec WebGPU.
+   Décidé le 2026-11-14, avant le code :
+   - **Dawn**, l'implémentation WebGPU de Chrome, par le port `dawn` de vcpkg : dans le navigateur, son `emdawnwebgpu` ; sur le
+     bureau, le même `webgpu.h` au-dessus de Vulkan ou de D3D12. Le backend WebGPU tourne donc aussi dans les tests GPU de Windows,
+     avec des images comparées à celles de Vulkan. Dawn sert aux tests et au développement, pas à l'éditeur livré.
+   - **Des shaders 2D à part, en Slang compilé en WGSL** par `slangc` au build : WebGPU n'a ni les pointeurs ni les tableaux de
+     textures sans limite des shaders Vulkan. Ils lisent leurs données par groupes de liaison, une texture par lot de sprites, et
+     partagent avec Vulkan les fonctions de calcul.
+   - **Les textures BC**, celles du bureau, que Chrome, Edge, Firefox et Safari lisent sur ordinateur, comme le *For Desktop* de
+     Godot. Un navigateur sans BC (un téléphone) les reçoit décodées en RGBA8.
+   - **Les sprites, les tilemaps, le texte et l'interface seulement** : les lumières et ombres 2D, les shaders canvas du projet et les
+     particules 2D viennent avec l'étape 3.
+   - **Une image à la fois** dans le navigateur, comme Godot : la boucle du runtime est découpée en démarrage, une image et fin. Le
+     bureau les enchaîne comme avant ; le navigateur appelle une image à chaque rafraîchissement, après avoir donné son GPU, qu'il
+     ne donne qu'en rendant la main. JSPI aurait gardé la boucle telle quelle, mais seuls Chrome et Edge l'ont.
 3. La 3D de Compatibility : PBR, ombres, particules, skinning.
 4. **Web** dans la liste de l'export, avec **Run in Browser** sur un petit serveur local, et les problèmes en rouge.
 5. Le C++ des jeux compilé avec Emscripten.

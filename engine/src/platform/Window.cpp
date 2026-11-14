@@ -357,4 +357,36 @@ core::Result<std::uint64_t> Window::createVulkanSurface(void* vulkanInstance) co
     return std::bit_cast<std::uint64_t>(surface);
 }
 
+NativeWindow Window::native() const noexcept
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    NativeWindow native;
+#if defined(__EMSCRIPTEN__)
+    native.kind = NativeWindow::Kind::Canvas;
+#else
+    const SDL_PropertiesID properties = SDL_GetWindowProperties(detail::toSdlWindow(m_native));
+#if defined(_WIN32)
+    native.window = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+    native.display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, nullptr);
+    native.kind = native.window != nullptr ? NativeWindow::Kind::Win32 : NativeWindow::Kind::None;
+#elif defined(__linux__) && !defined(__ANDROID__)
+    if (void* const display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nullptr))
+    {
+        native.kind = NativeWindow::Kind::Wayland;
+        native.display = display;
+        native.window = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, nullptr);
+    }
+    else if (void* const x11 = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr))
+    {
+        native.kind = NativeWindow::Kind::X11;
+        native.display = x11;
+        native.x11Window = static_cast<std::uint64_t>(SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+    }
+#else
+    static_cast<void>(properties);
+#endif
+#endif
+    return native;
+}
+
 } // namespace devex::platform

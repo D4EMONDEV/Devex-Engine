@@ -282,6 +282,10 @@ devex_add_tests(render
 )
 # Selection logic is internal to the module but free of Vulkan types.
 target_include_directories(devex_render_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
+# The WebGPU renderer, compared with Vulkan, where the build has it.
+if(DEVEX_WEBGPU AND TARGET devex_render_tests)
+    target_sources(devex_render_tests PRIVATE render/WebGpuTests.cpp)
+endif()
 
 # Command and log tests run anywhere; the overlay test is tagged [gpu].
 devex_add_tests(tools

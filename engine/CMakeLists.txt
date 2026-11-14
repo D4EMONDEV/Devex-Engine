@@ -468,6 +468,31 @@ if(NOT EMSCRIPTEN)
             VMA_DYNAMIC_VULKAN_FUNCTIONS=0
     )
 endif()
+# The WebGPU backend, with Dawn: the renderer of a browser, and on a computer the one its tests compare with Vulkan. Its
+# shaders are compiled to WGSL and kept in the program.
+if(DEVEX_WEBGPU)
+    find_package(Dawn CONFIG REQUIRED)
+    set(devex_wgsl_source "${CMAKE_CURRENT_BINARY_DIR}/generated/WebGpuShaders.cpp")
+    devex_embed_wgsl(OUTPUT "${devex_wgsl_source}"
+        SOURCES
+            webgpu_luminance.slang
+            webgpu_sprite.slang
+            webgpu_tonemap.slang
+            webgpu_ui.slang
+    )
+    target_sources(devex_render
+        PRIVATE
+            src/render/webgpu/BlockDecoding.cpp
+            src/render/webgpu/BlockDecoding.hpp
+            src/render/webgpu/WebGpuRenderer.cpp
+            src/render/webgpu/WebGpuRenderer.hpp
+            src/render/webgpu/WebGpuShaders.hpp
+            "${devex_wgsl_source}"
+    )
+    target_include_directories(devex_render PRIVATE src/render/webgpu)
+    target_link_libraries(devex_render PRIVATE dawn::webgpu_dawn)
+    target_compile_definitions(devex_render PRIVATE DEVEX_RENDERER_WEBGPU=1)
+endif()
 set_target_properties(devex_render PROPERTIES
     EXPORT_NAME Render
     FOLDER "Engine"
