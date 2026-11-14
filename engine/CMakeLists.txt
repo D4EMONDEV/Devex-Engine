@@ -1,5 +1,5 @@
 # The texture encoders run where projects are imported; vcpkg does not build them for Android.
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT EMSCRIPTEN)
     find_package(basisu CONFIG REQUIRED)
 endif()
 find_package(box2d CONFIG REQUIRED)
@@ -16,10 +16,14 @@ find_package(mikktspace CONFIG REQUIRED)
 find_package(meshoptimizer CONFIG REQUIRED)
 find_package(plutosvg CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
-find_package(volk CONFIG REQUIRED)
+if(NOT EMSCRIPTEN)
+    find_package(volk CONFIG REQUIRED)
+endif()
 find_package(Stb REQUIRED)
 find_path(DEVEX_MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
-find_package(VulkanMemoryAllocator CONFIG REQUIRED)
+if(NOT EMSCRIPTEN)
+    find_package(VulkanMemoryAllocator CONFIG REQUIRED)
+endif()
 find_package(zstd CONFIG REQUIRED)
 
 # Every module is an object library, compiled into the single devex-engine shared library at the
@@ -382,44 +386,11 @@ target_sources(devex_render
         src/render/Photometry.cpp
         src/render/PostProcess.cpp
         src/render/Renderer.cpp
+        src/render/RenderBackend.hpp
         src/render/FramePreparation.cpp
         src/render/Selection.cpp
         src/render/ShadowAtlas.cpp
         src/render/Selection.hpp
-        src/render/vulkan/Atmosphere.cpp
-        src/render/vulkan/Atmosphere.hpp
-        src/render/vulkan/ScreenReflections.cpp
-        src/render/vulkan/VolumetricFog.cpp
-        src/render/vulkan/VolumetricFog.hpp
-        src/render/vulkan/Commands.cpp
-        src/render/vulkan/Commands.hpp
-        src/render/vulkan/DescriptorSets.cpp
-        src/render/vulkan/DescriptorSets.hpp
-        src/render/vulkan/Device.cpp
-        src/render/vulkan/Device.hpp
-        src/render/vulkan/EnvironmentBaker.cpp
-        src/render/vulkan/EnvironmentBaker.hpp
-        src/render/vulkan/GpuData.hpp
-        src/render/vulkan/Instance.cpp
-        src/render/vulkan/Instance.hpp
-        src/render/vulkan/Memory.cpp
-        src/render/vulkan/Memory.hpp
-        src/render/vulkan/Pipeline.cpp
-        src/render/vulkan/Pipeline.hpp
-        src/render/vulkan/RenderGraph.cpp
-        src/render/vulkan/RenderGraph.hpp
-        src/render/vulkan/Swapchain.cpp
-        src/render/vulkan/Swapchain.hpp
-        src/render/vulkan/Upload.cpp
-        src/render/vulkan/Upload.hpp
-        src/render/vulkan/Vulkan.cpp
-        src/render/vulkan/Vulkan.hpp
-        src/render/vulkan/FrameGraph.cpp
-        src/render/vulkan/VulkanRenderer.cpp
-        src/render/vulkan/Occlusion.cpp
-        src/render/vulkan/Skinning.cpp
-        src/render/vulkan/MeshLods.cpp
-        src/render/vulkan/VulkanRenderer.hpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
@@ -443,17 +414,60 @@ target_link_libraries(devex_render
         Devex::Core
         Devex::Math
         Devex::Platform
-    PRIVATE
-        volk::volk
-        volk::volk_headers
-        GPUOpen::VulkanMemoryAllocator
 )
-# VMA receives every Vulkan function from volk instead of linking or loading them itself.
-target_compile_definitions(devex_render
-    PRIVATE
-        VMA_STATIC_VULKAN_FUNCTIONS=0
-        VMA_DYNAMIC_VULKAN_FUNCTIONS=0
-)
+# The Vulkan backend, wherever there is Vulkan: not in a browser, which will have WebGPU.
+if(NOT EMSCRIPTEN)
+    target_sources(devex_render
+        PRIVATE
+            src/render/vulkan/Atmosphere.cpp
+            src/render/vulkan/Atmosphere.hpp
+            src/render/vulkan/ScreenReflections.cpp
+            src/render/vulkan/VolumetricFog.cpp
+            src/render/vulkan/VolumetricFog.hpp
+            src/render/vulkan/Commands.cpp
+            src/render/vulkan/Commands.hpp
+            src/render/vulkan/DescriptorSets.cpp
+            src/render/vulkan/DescriptorSets.hpp
+            src/render/vulkan/Device.cpp
+            src/render/vulkan/Device.hpp
+            src/render/vulkan/EnvironmentBaker.cpp
+            src/render/vulkan/EnvironmentBaker.hpp
+            src/render/vulkan/GpuData.hpp
+            src/render/vulkan/Instance.cpp
+            src/render/vulkan/Instance.hpp
+            src/render/vulkan/Memory.cpp
+            src/render/vulkan/Memory.hpp
+            src/render/vulkan/Pipeline.cpp
+            src/render/vulkan/Pipeline.hpp
+            src/render/vulkan/RenderGraph.cpp
+            src/render/vulkan/RenderGraph.hpp
+            src/render/vulkan/Swapchain.cpp
+            src/render/vulkan/Swapchain.hpp
+            src/render/vulkan/Upload.cpp
+            src/render/vulkan/Upload.hpp
+            src/render/vulkan/Vulkan.cpp
+            src/render/vulkan/Vulkan.hpp
+            src/render/vulkan/FrameGraph.cpp
+            src/render/vulkan/VulkanRenderer.cpp
+            src/render/vulkan/Occlusion.cpp
+            src/render/vulkan/Skinning.cpp
+            src/render/vulkan/MeshLods.cpp
+            src/render/vulkan/VulkanRenderer.hpp
+    )
+    target_link_libraries(devex_render
+        PRIVATE
+            volk::volk
+            volk::volk_headers
+            GPUOpen::VulkanMemoryAllocator
+    )
+    # VMA receives every Vulkan function from volk instead of linking or loading them itself.
+    target_compile_definitions(devex_render
+        PRIVATE
+            DEVEX_RENDERER_VULKAN=1
+            VMA_STATIC_VULKAN_FUNCTIONS=0
+            VMA_DYNAMIC_VULKAN_FUNCTIONS=0
+    )
+endif()
 set_target_properties(devex_render PROPERTIES
     EXPORT_NAME Render
     FOLDER "Engine"
@@ -858,7 +872,7 @@ devex_set_warnings(devex_ui)
 # The C# side of the engine is built with the .NET SDK when it is installed (see managed/). Without
 # it, the engine runs games written in C++ only.
 # On Android, the .NET runtime is not hosted yet (see Android in docs/decisions.md).
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT EMSCRIPTEN)
     find_program(DEVEX_DOTNET NAMES dotnet)
 endif()
 if(ANDROID)
@@ -1140,7 +1154,12 @@ devex_set_warnings(devex_runtime)
 
 # Engine: every module in one shared library. Its symbols are all exported, so that game modules
 # use the same C++ API as the editor. They must be built with the same compiler and options.
-add_library(devex_engine SHARED src/EngineLibrary.cpp)
+# WebAssembly has no shared libraries to speak of: a game for the web links the engine whole.
+if(EMSCRIPTEN)
+    add_library(devex_engine STATIC src/EngineLibrary.cpp)
+else()
+    add_library(devex_engine SHARED src/EngineLibrary.cpp)
+endif()
 add_library(Devex::Engine ALIAS devex_engine)
 target_link_libraries(devex_engine
     PUBLIC

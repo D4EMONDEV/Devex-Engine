@@ -251,7 +251,9 @@ core::Result<std::unique_ptr<PackageReader>> PackageReader::open(core::MappedFil
 
     std::unique_ptr<PackageReader> reader(new PackageReader());
     reader->m_path = path;
-    serialization::BinaryReader index(bytes.subspan(header.indexOffset, header.indexSize));
+    // Checked above against the size of the file, so they fit in a size_t.
+    serialization::BinaryReader index(
+        bytes.subspan(static_cast<std::size_t>(header.indexOffset), static_cast<std::size_t>(header.indexSize)));
     const auto readBlob = [&index, &header]() -> std::optional<Blob> {
         Blob blob{.offset = index.read<std::uint64_t>(), .storedSize = index.read<std::uint64_t>(),
                   .size = index.read<std::uint64_t>(), .compressed = index.read<std::uint8_t>() != 0};
@@ -352,7 +354,9 @@ std::optional<AssetId> PackageReader::findByPath(std::string_view resourcePath) 
 
 core::Result<std::vector<std::byte>> PackageReader::readBlob(const Blob& blob) const
 {
-    const std::span<const std::byte> stored = m_file.bytes().subspan(blob.offset, blob.storedSize);
+    // A blob was checked to lie before the index when the package was opened.
+    const std::span<const std::byte> stored =
+        m_file.bytes().subspan(static_cast<std::size_t>(blob.offset), static_cast<std::size_t>(blob.storedSize));
     if (!blob.compressed)
     {
         if (blob.size != blob.storedSize)

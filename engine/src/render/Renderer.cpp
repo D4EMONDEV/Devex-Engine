@@ -1,4 +1,7 @@
+#include "RenderBackend.hpp"
+#if DEVEX_RENDERER_VULKAN
 #include "vulkan/VulkanRenderer.hpp"
+#endif
 
 #include <devex/core/Assert.hpp>
 #include <devex/render/Renderer.hpp>
@@ -10,16 +13,24 @@ namespace devex::render {
 core::Result<Renderer> Renderer::create(const platform::Platform& platform,
                                         platform::Window& window, const RendererConfig& config)
 {
+#if DEVEX_RENDERER_VULKAN
     core::Result<std::unique_ptr<vulkan::VulkanRenderer>> implementation =
         vulkan::VulkanRenderer::create(platform, window, config);
     if (!implementation)
     {
         return std::unexpected(implementation.error());
     }
-    return Renderer(std::move(*implementation));
+    return Renderer(std::unique_ptr<RenderBackend>(std::move(*implementation)));
+#else
+    // WebGPU comes in the next step of the web: until then, there is nothing to draw with.
+    static_cast<void>(platform);
+    static_cast<void>(window);
+    static_cast<void>(config);
+    return core::makeError(core::ErrorCode::Unsupported, "this platform has no renderer yet");
+#endif
 }
 
-Renderer::Renderer(std::unique_ptr<vulkan::VulkanRenderer> implementation) noexcept
+Renderer::Renderer(std::unique_ptr<RenderBackend> implementation) noexcept
     : m_implementation(std::move(implementation))
 {
 }
@@ -66,7 +77,13 @@ core::Result<std::string> Renderer::describeGraphics() const
 
 core::Result<std::string> Renderer::describeGraphicsWithoutRenderer(const platform::Platform& platform, platform::Window& window)
 {
+#if DEVEX_RENDERER_VULKAN
     return vulkan::VulkanRenderer::describeGraphicsWithoutRenderer(platform, window);
+#else
+    static_cast<void>(platform);
+    static_cast<void>(window);
+    return core::makeError(core::ErrorCode::Unsupported, "this platform has no renderer yet");
+#endif
 }
 
 core::Result<MeshHandle> Renderer::createMesh(const asset::MeshData& mesh)
@@ -205,7 +222,7 @@ std::vector<PickResult> Renderer::takePickResults()
 std::uint64_t Renderer::requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight)
 {
     DEVEX_ASSERT(m_implementation != nullptr);
-    return m_implementation->requestCapture(maxWidth, maxHeight);
+    return m_implementation->requestCapture(maxWidth, maxHeight, std::nullopt);
 }
 
 std::uint64_t Renderer::requestViewCapture(std::uint32_t view, std::uint32_t maxWidth, std::uint32_t maxHeight)

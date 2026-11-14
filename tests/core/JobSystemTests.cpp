@@ -9,7 +9,7 @@
 
 using devex::core::JobSystem;
 
-TEST_CASE("Scheduled jobs run on worker threads", "[core][jobs]")
+TEST_CASE("Scheduled jobs run on worker threads", "[core][jobs][noweb]")
 {
     JobSystem jobs(3);
     CHECK(jobs.workerCount() == 3);
@@ -60,7 +60,7 @@ TEST_CASE("Nested parallel loops complete while every worker is busy", "[core][j
     CHECK(total == 400);
 }
 
-TEST_CASE("Destroying the job system discards jobs that have not started", "[core][jobs]")
+TEST_CASE("Destroying the job system discards jobs that have not started", "[core][jobs][noweb]")
 {
     std::atomic<int> ran{0};
     {

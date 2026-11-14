@@ -284,8 +284,9 @@ TerrainRegion applyTerrainBrush(TerrainMaps& terrain, float size, const TerrainB
     {
         for (std::int64_t z = windowZ; z <= std::min<std::int64_t>(z1 + 1, last); ++z)
         {
-            const auto row = terrain.heights.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(z) * resolution) + windowX;
-            before.insert(before.end(), row, row + windowWidth);
+            const auto row = terrain.heights.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(z) * resolution) +
+                             static_cast<std::ptrdiff_t>(windowX);
+            before.insert(before.end(), row, row + static_cast<std::ptrdiff_t>(windowWidth));
         }
     }
     const float noiseScale = std::max(brush.radius / 3.0f, 2.0f / scale);

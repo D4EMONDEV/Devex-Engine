@@ -184,7 +184,7 @@ TEST_CASE("A follower can follow a path elsewhere, in the world", "[runtime][pat
     CHECK(follower.distance == 3.0f);
 }
 
-TEST_CASE("A follower is left alone when another player moves it", "[runtime][path][net]")
+TEST_CASE("A follower is left alone when another player moves it", "[runtime][path][net][noweb]")
 {
     Scene scene;
     const Entity rail = scene.createEntity("Rail");

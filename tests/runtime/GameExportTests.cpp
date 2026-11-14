@@ -71,7 +71,7 @@ void makeEngineBuild(const std::filesystem::path& directory, std::string_view co
 
 } // namespace
 
-TEST_CASE("The licenses of what ships stand beside the programs", "[runtime][export]")
+TEST_CASE("The licenses of what ships stand beside the programs", "[runtime][export][noweb]")
 {
     const std::filesystem::path licenses = devex::platform::executableDirectory() / "licenses";
     for (const char* const name : {"README.txt", "devex.txt", "sdl3.txt", "joltphysics.txt", "freetype.txt", "curl.txt", "inter.txt", "lucide.txt", "ufbx.txt",
@@ -186,7 +186,7 @@ prefab = asset("{}")
     CHECK(*fromModel == std::vector{mesh});
 }
 
-TEST_CASE("An export packages the scenes and every asset they need", "[runtime][export]")
+TEST_CASE("An export packages the scenes and every asset they need", "[runtime][export][noweb]")
 {
     TemporaryDirectory directory;
     devex::core::Result<devex::asset::Project> created = devex::asset::createProject(directory.path / "project", "Export test");

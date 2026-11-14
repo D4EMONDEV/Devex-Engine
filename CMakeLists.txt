@@ -57,6 +57,12 @@ set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 include(DevexShowIncludes)
+# C++ exceptions are off by default in Emscripten: Catch2, nlohmann::json and the standard library throw some.
+if(EMSCRIPTEN)
+    add_compile_options(-fwasm-exceptions)
+    add_link_options(-fwasm-exceptions)
+endif()
+
 include(DevexShaders)
 include(DevexWarnings)
 include(DevexBranding)
@@ -67,8 +73,8 @@ add_subdirectory(engine)
 if(DEVEX_BUILD_FUZZERS)
     add_subdirectory(tests/fuzz)
 endif()
-# devex-bindgen runs during the build, on the build machine: not built for a phone.
-if(NOT ANDROID)
+# devex-bindgen runs during the build, on the build machine: not built for a phone or a browser.
+if(NOT ANDROID AND NOT EMSCRIPTEN)
     add_subdirectory(tools/bindgen)
 endif()
 if(DEVEX_DOTNET)

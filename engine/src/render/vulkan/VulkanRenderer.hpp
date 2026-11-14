@@ -9,6 +9,7 @@
 #include "Device.hpp"
 #include "EnvironmentBaker.hpp"
 #include "GpuData.hpp"
+#include "../RenderBackend.hpp"
 #include "../FramePreparation.hpp"
 #include "Instance.hpp"
 #include "Memory.hpp"
@@ -46,63 +47,63 @@ namespace devex::render::vulkan {
 // swapchain or to the viewport image of the tools, the tools' overlay, and the images of the tools
 // composed over the window. The other views of the frame (RenderWorld::views) are recorded before,
 // each in its own submission, with the same passes into an image of its own.
-class VulkanRenderer
+class VulkanRenderer final : public RenderBackend
 {
 public:
     [[nodiscard]] static core::Result<std::unique_ptr<VulkanRenderer>> create(
         const platform::Platform& platform, platform::Window& window, const RendererConfig& config);
 
-    ~VulkanRenderer();
+    ~VulkanRenderer() override;
 
     VulkanRenderer(const VulkanRenderer&) = delete;
     VulkanRenderer& operator=(const VulkanRenderer&) = delete;
 
-    [[nodiscard]] const GpuInfo& gpu() const noexcept;
-    [[nodiscard]] PresentMode presentMode() const noexcept;
-    void setPresentMode(PresentMode mode);
-    [[nodiscard]] core::Result<std::uint32_t> addWindowTarget(platform::Window& window);
-    void removeWindowTarget(std::uint32_t target);
+    [[nodiscard]] const GpuInfo& gpu() const noexcept override;
+    [[nodiscard]] PresentMode presentMode() const noexcept override;
+    void setPresentMode(PresentMode mode) override;
+    [[nodiscard]] core::Result<std::uint32_t> addWindowTarget(platform::Window& window) override;
+    void removeWindowTarget(std::uint32_t target) override;
     // What the machine offers for drawing, in words, for a bug report.
-    [[nodiscard]] core::Result<std::string> describeGraphics() const;
+    [[nodiscard]] core::Result<std::string> describeGraphics() const override;
     // The same with no renderer: a machine that cannot make one is the first to need a report.
     [[nodiscard]] static core::Result<std::string> describeGraphicsWithoutRenderer(const platform::Platform& platform,
                                                                                    platform::Window& window);
 
-    [[nodiscard]] core::Result<MeshHandle> createMesh(const asset::MeshData& mesh);
-    [[nodiscard]] bool isReady(MeshHandle mesh) const noexcept;
-    [[nodiscard]] bool isReady(TextureHandle texture) const noexcept;
-    void destroyMesh(MeshHandle mesh);
-    [[nodiscard]] std::uint32_t submeshCount(MeshHandle mesh) const noexcept;
+    [[nodiscard]] core::Result<MeshHandle> createMesh(const asset::MeshData& mesh) override;
+    [[nodiscard]] bool isReady(MeshHandle mesh) const noexcept override;
+    [[nodiscard]] bool isReady(TextureHandle texture) const noexcept override;
+    void destroyMesh(MeshHandle mesh) override;
+    [[nodiscard]] std::uint32_t submeshCount(MeshHandle mesh) const noexcept override;
 
-    [[nodiscard]] core::Result<TextureHandle> createTexture(const asset::TextureData& texture);
-    void destroyTexture(TextureHandle texture);
+    [[nodiscard]] core::Result<TextureHandle> createTexture(const asset::TextureData& texture) override;
+    void destroyTexture(TextureHandle texture) override;
     [[nodiscard]] core::Result<void> updateTexture(TextureHandle texture, std::uint32_t top, std::uint32_t height,
-                                                   std::span<const std::byte> rows);
+                                                   std::span<const std::byte> rows) override;
 
-    [[nodiscard]] core::Result<ReflectionProbeHandle> createReflectionProbe(const asset::ReflectionProbeData& probe);
-    void destroyReflectionProbe(ReflectionProbeHandle probe);
-    [[nodiscard]] core::Result<IrradianceVolumeHandle> createIrradianceVolume(const asset::IrradianceVolumeData& volume);
-    void destroyIrradianceVolume(IrradianceVolumeHandle volume);
+    [[nodiscard]] core::Result<ReflectionProbeHandle> createReflectionProbe(const asset::ReflectionProbeData& probe) override;
+    void destroyReflectionProbe(ReflectionProbeHandle probe) override;
+    [[nodiscard]] core::Result<IrradianceVolumeHandle> createIrradianceVolume(const asset::IrradianceVolumeData& volume) override;
+    void destroyIrradianceVolume(IrradianceVolumeHandle volume) override;
 
-    [[nodiscard]] MaterialHandle createMaterial(const MaterialDesc& material);
-    void updateMaterial(MaterialHandle handle, const MaterialDesc& material);
-    void destroyMaterial(MaterialHandle material);
+    [[nodiscard]] MaterialHandle createMaterial(const MaterialDesc& material) override;
+    void updateMaterial(MaterialHandle handle, const MaterialDesc& material) override;
+    void destroyMaterial(MaterialHandle material) override;
 
-    [[nodiscard]] core::Result<ShaderHandle> createShader(const asset::ShaderData& shader);
-    [[nodiscard]] core::Result<void> updateShader(ShaderHandle handle, const asset::ShaderData& shader);
-    void destroyShader(ShaderHandle shader);
+    [[nodiscard]] core::Result<ShaderHandle> createShader(const asset::ShaderData& shader) override;
+    [[nodiscard]] core::Result<void> updateShader(ShaderHandle handle, const asset::ShaderData& shader) override;
+    void destroyShader(ShaderHandle shader) override;
 
-    [[nodiscard]] RenderWorld& beginFrame() noexcept;
-    void resetSceneHistory() noexcept;
-    [[nodiscard]] core::Result<void> endFrame();
-    [[nodiscard]] std::vector<PickResult> takePickResults();
+    [[nodiscard]] RenderWorld& beginFrame() noexcept override;
+    void resetSceneHistory() noexcept override;
+    [[nodiscard]] core::Result<void> endFrame() override;
+    [[nodiscard]] std::vector<PickResult> takePickResults() override;
     // Of the main image, or of the view of that id.
     [[nodiscard]] std::uint64_t requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight,
-                                               std::optional<std::uint32_t> view = std::nullopt);
-    [[nodiscard]] std::uint64_t requestWindowCapture();
-    [[nodiscard]] std::vector<CapturedImage> takeCaptures();
+                                               std::optional<std::uint32_t> view = std::nullopt) override;
+    [[nodiscard]] std::uint64_t requestWindowCapture() override;
+    [[nodiscard]] std::vector<CapturedImage> takeCaptures() override;
 
-    [[nodiscard]] RendererStats stats() const noexcept;
+    [[nodiscard]] RendererStats stats() const noexcept override;
 
 private:
     // Frames recorded before the oldest one must complete, which bounds the latency added by

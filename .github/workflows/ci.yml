@@ -179,6 +179,84 @@ jobs:
             ${{ runner.temp }}/vcpkg/buildtrees/**/*.log
           if-no-files-found: ignore
 
+  # The engine for the browser, in WebAssembly with Emscripten, and the tests of what a game does, run by Node: no GPU,
+  # no threads, nothing that only a computer has (the tests tagged [noweb]). See the web in docs/decisions.md.
+  web:
+    name: Web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      VCPKG_DISABLE_METRICS: 1
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      # The generator, and what vcpkg needs to build its ports.
+      - name: Install the packages of the system
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build pkg-config autoconf autoconf-archive automake libtool libltdl-dev
+
+      # The version of Emscripten the web build was made with.
+      - name: Set up Emscripten
+        run: |
+          git clone --quiet --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 7.0.0
+          "$RUNNER_TEMP/emsdk/emsdk" activate 7.0.0
+          echo "EMSDK=$RUNNER_TEMP/emsdk" >> "$GITHUB_ENV"
+
+      # slangc compiles the shaders during the build, for the engine's other systems.
+      - name: Set up the Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.4.350.0
+          install_runtime: false
+          cache: true
+
+      - name: Set up vcpkg
+        run: |
+          root="$RUNNER_TEMP/vcpkg"
+          archives="$RUNNER_TEMP/vcpkg-archives"
+          git clone --quiet https://github.com/microsoft/vcpkg.git "$root"
+          "$root/bootstrap-vcpkg.sh" -disableMetrics
+          mkdir -p "$archives"
+          echo "VCPKG_ROOT=$root" >> "$GITHUB_ENV"
+          echo "VCPKG_DEFAULT_BINARY_CACHE=$archives" >> "$GITHUB_ENV"
+
+      - name: Restore the packages vcpkg built
+        id: vcpkg-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: vcpkg-web-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**', 'cmake/vcpkg-triplets/**') }}
+          restore-keys: vcpkg-web-
+
+      - name: Configure
+        run: |
+          source "$EMSDK/emsdk_env.sh" > /dev/null
+          cmake --preset web -DDEVEX_WARNINGS_AS_ERRORS=ON 2>&1 | tee "$RUNNER_TEMP/configure.log"
+
+      - name: Keep the packages vcpkg built
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: vcpkg-web-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**', 'cmake/vcpkg-triplets/**') }}
+
+      - name: Build
+        run: |
+          source "$EMSDK/emsdk_env.sh" > /dev/null
+          cmake --build out/build/web 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Test
+        run: |
+          source "$EMSDK/emsdk_env.sh" > /dev/null
+          ctest --test-dir out/build/web --label-exclude "gpu|noweb" --output-on-failure --no-tests=error --timeout 600 2>&1 | tee "$RUNNER_TEMP/test.log"
+
   linux:
     name: Linux ${{ matrix.preset }}
     # Ubuntu 24.04 with GCC 14, the compiler of the distributions.

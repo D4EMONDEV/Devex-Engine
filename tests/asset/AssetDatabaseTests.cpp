@@ -191,7 +191,7 @@ TEST_CASE("Asset folders include empty directories and track external changes", 
     CHECK(std::ranges::contains((*database)->folders(), "res://assets/New"));
 }
 
-TEST_CASE("Watched empty folders appear and disappear without an explicit refresh", "[asset][database][filesystem]")
+TEST_CASE("Watched empty folders appear and disappear without an explicit refresh", "[asset][database][filesystem][noweb]")
 {
     TemporaryProject project;
     devex::core::JobSystem jobs(1);
@@ -454,7 +454,7 @@ TEST_CASE("Moving content refuses used names, its own folders and the other cont
     CHECK((*database)->findByPath("res://assets/A.dvxmat") == id);
 }
 
-TEST_CASE("New files get a .dvxmeta and are imported in the background", "[asset][database]")
+TEST_CASE("New files get a .dvxmeta and are imported in the background", "[asset][database][noweb]")
 {
     TemporaryProject project;
     project.write("materials/red.dvxmat", redMaterial);
@@ -858,7 +858,7 @@ TEST_CASE("An import that failed for a moment is retried when the database opens
 }
 
 TEST_CASE("External glTF files are copied into the project with their dependencies",
-          "[asset][database]")
+          "[asset][database][noweb]")
 {
     TemporaryProject project;
     devex::core::JobSystem jobs(2);
@@ -882,7 +882,7 @@ TEST_CASE("External glTF files are copied into the project with their dependenci
     CHECK_FALSE((*database)->addFile(dataDirectory / "checker.png", "res://elsewhere").has_value());
 }
 
-TEST_CASE("External OBJ files are copied into the project with their .mtl and images", "[asset][database]")
+TEST_CASE("External OBJ files are copied into the project with their .mtl and images", "[asset][database][noweb]")
 {
     TemporaryProject project;
     devex::core::JobSystem jobs(2);
@@ -920,7 +920,7 @@ TEST_CASE("External OBJ files are copied into the project with their .mtl and im
     CHECK((*database)->pendingImports() == 0);
 }
 
-TEST_CASE("Watched folders import changes without an explicit refresh", "[asset][database]")
+TEST_CASE("Watched folders import changes without an explicit refresh", "[asset][database][noweb]")
 {
     TemporaryProject project;
     project.write("watched.dvxmat", redMaterial);

@@ -8,12 +8,15 @@
     "vcpkg-configuration": {
         "overlay-ports": [
             "cmake/vcpkg-ports"
+        ],
+        "overlay-triplets": [
+            "cmake/vcpkg-triplets"
         ]
     },
     "dependencies": [
         {
             "name": "basisu",
-            "platform": "!android"
+            "platform": "!android & !emscripten"
         },
         "box2d",
         {
@@ -22,7 +25,7 @@
             "features": [
                 "ssl"
             ],
-            "platform": "!android"
+            "platform": "!android & !emscripten"
         },
         "efsw",
         "enet",
@@ -43,12 +46,21 @@
         {
             "name": "sdl3",
             "features": [
-                "vulkan"
+                {
+                    "name": "vulkan",
+                    "platform": "!emscripten"
+                }
             ]
         },
         "stb",
-        "volk",
-        "vulkan-memory-allocator",
+        {
+            "name": "volk",
+            "platform": "!emscripten"
+        },
+        {
+            "name": "vulkan-memory-allocator",
+            "platform": "!emscripten"
+        },
         "zstd"
     ],
     "features": {

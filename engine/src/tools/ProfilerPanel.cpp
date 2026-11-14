@@ -99,7 +99,7 @@ constexpr std::array<std::string_view, 4> waitingZones{"Frame limit", "Wait for 
     return palette[std::hash<std::string_view>{}(zone.name) % palette.size()];
 }
 
-[[nodiscard]] std::string formatBytes(std::size_t bytes)
+[[nodiscard]] std::string formatBytes(std::uint64_t bytes)
 {
     constexpr double kilobyte = 1024.0;
     const auto value = static_cast<double>(bytes);

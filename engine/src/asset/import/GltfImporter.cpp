@@ -7,6 +7,9 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 
+// simdjson, under fastgltf, uses std::inserter without including <iterator>.
+#include <iterator>
+
 #include <fastgltf/core.hpp>
 #include <fastgltf/tools.hpp>
 #include <fastgltf/types.hpp>

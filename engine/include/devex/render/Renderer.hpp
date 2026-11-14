@@ -158,9 +158,8 @@ struct DEVEX_API RendererStats
     std::uint32_t keptShadowPasses = 0;
 };
 
-namespace vulkan {
-class VulkanRenderer;
-} // namespace vulkan
+// The renderer of an API, behind the facade.
+class RenderBackend;
 
 // Draws RenderWorld snapshots into a window. Only one renderer may exist at a time, and the
 // window must outlive it.
@@ -269,9 +268,9 @@ public:
     [[nodiscard]] RendererStats stats() const noexcept;
 
 private:
-    explicit Renderer(std::unique_ptr<vulkan::VulkanRenderer> implementation) noexcept;
+    explicit Renderer(std::unique_ptr<RenderBackend> implementation) noexcept;
 
-    std::unique_ptr<vulkan::VulkanRenderer> m_implementation;
+    std::unique_ptr<RenderBackend> m_implementation;
 };
 
 } // namespace devex::render

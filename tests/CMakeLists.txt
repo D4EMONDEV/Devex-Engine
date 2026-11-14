@@ -2,13 +2,38 @@ find_package(Catch2 3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 include(Catch)
 
+# In a browser, the tests of what a game does, run by Node: not those of the editor, nor of processes, game modules, C#
+# and sockets, which the web does not have yet. Node reads and writes the files of the machine for them (NODERAWFS).
+if(EMSCRIPTEN)
+    set(DEVEX_WEB_SKIPPED_MODULES file_readers tools net platform audio)
+    set(DEVEX_WEB_SKIPPED_SOURCES
+        runtime/EditorPlayTests.cpp
+        runtime/GameCodeBuilderTests.cpp
+        runtime/GameModuleTests.cpp
+        runtime/ManagedCodeBuilderTests.cpp
+        runtime/ManagedGameTests.cpp
+        runtime/NetworkReplicationTests.cpp
+        runtime/RemoteCallTests.cpp
+        runtime/SystemReportTests.cpp
+    )
+endif()
+
 # devex_add_tests(<module> SOURCES <files...> LIBRARIES <targets...> [ENVIRONMENT <VAR=value...>])
 # Builds devex_<module>_tests and registers each Catch2 test case with CTest.
 function(devex_add_tests module)
     cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;LIBRARIES;ENVIRONMENT")
     set(target devex_${module}_tests)
+    if(EMSCRIPTEN)
+        if(module IN_LIST DEVEX_WEB_SKIPPED_MODULES)
+            return()
+        endif()
+        list(REMOVE_ITEM ARG_SOURCES ${DEVEX_WEB_SKIPPED_SOURCES})
+    endif()
 
     add_executable(${target} ${ARG_SOURCES})
+    if(EMSCRIPTEN)
+        target_link_options(${target} PRIVATE -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB -sEXIT_RUNTIME=1)
+    endif()
     target_link_libraries(${target} PRIVATE ${ARG_LIBRARIES} Catch2::Catch2WithMain)
     set_target_properties(${target} PROPERTIES FOLDER "Tests")
     devex_set_warnings(${target})
@@ -27,7 +52,10 @@ function(devex_add_tests module)
     )
 endfunction()
 
-add_subdirectory(documentation)
+# The examples of the documentation are game modules, which a browser does not load.
+if(NOT EMSCRIPTEN)
+    add_subdirectory(documentation)
+endif()
 
 devex_add_tests(file_readers
     SOURCES fuzz/ReaderTests.cpp
@@ -169,10 +197,13 @@ devex_add_tests(audio
     LIBRARIES
         Devex::Engine
 )
-target_compile_definitions(devex_audio_tests
-    PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
-)
+if(TARGET devex_audio_tests)
+    target_compile_definitions(devex_audio_tests
+        PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
+    )
+endif()
 
+if(NOT EMSCRIPTEN)
 # Crashes on purpose, for the platform tests to read the report and the minidump it leaves.
 add_executable(devex_crash_probe platform/CrashProbe.cpp)
 target_link_libraries(devex_crash_probe PRIVATE Devex::Engine)
@@ -193,6 +224,7 @@ add_dependencies(devex_platform_tests devex_crash_probe)
 target_compile_definitions(devex_platform_tests
     PRIVATE DEVEX_TEST_CRASH_PROBE="$<TARGET_FILE:devex_crash_probe>"
 )
+endif()
 
 devex_add_tests(net
     SOURCES
@@ -286,6 +318,7 @@ devex_add_tests(tools
     LIBRARIES
         Devex::Engine
 )
+if(NOT EMSCRIPTEN)
 # The editor's internals are tested directly.
 target_include_directories(devex_tools_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/engine/src"
@@ -302,6 +335,7 @@ target_link_libraries(devex_lsp_probe PRIVATE nlohmann_json::nlohmann_json)
 devex_set_warnings(devex_lsp_probe)
 add_dependencies(devex_tools_tests devex_lsp_probe)
 
+
 # A game module loaded by the runtime tests.
 add_library(devex_test_game_module SHARED runtime/TestGameModule.cpp)
 target_link_libraries(devex_test_game_module PRIVATE Devex::Engine)
@@ -317,6 +351,7 @@ devex_set_warnings(devex_test_incompatible_game_module)
 add_library(devex_test_plain_library SHARED runtime/TestPlainLibrary.cpp)
 set_target_properties(devex_test_plain_library PROPERTIES FOLDER "Tests")
 devex_set_warnings(devex_test_plain_library)
+endif()
 
 # The dummy SDL video driver lets the main loop run without a display.
 devex_add_tests(runtime
@@ -348,7 +383,9 @@ devex_add_tests(runtime
     ENVIRONMENT
         SDL_VIDEO_DRIVER=dummy
 )
-add_dependencies(devex_runtime_tests devex_test_game_module devex_test_incompatible_game_module devex_test_plain_library)
+if(NOT EMSCRIPTEN)
+    add_dependencies(devex_runtime_tests devex_test_game_module devex_test_incompatible_game_module devex_test_plain_library)
+endif()
 
 # A C# game assembly for the tests of the managed runtime, built when the .NET SDK is installed.
 if(DEVEX_DOTNET)
@@ -396,15 +433,17 @@ if(DEVEX_DOTNET)
     set_tests_properties(devex.formats.csharp_api PROPERTIES LABELS format TIMEOUT 60)
 endif()
 
-add_executable(devex_test_play_process runtime/PlayProcessFixture.cpp)
-target_link_libraries(devex_test_play_process PRIVATE Devex::Engine)
-devex_set_warnings(devex_test_play_process)
-set_target_properties(devex_test_play_process PROPERTIES FOLDER "Tests")
-add_dependencies(devex_runtime_tests devex_test_play_process)
-target_compile_definitions(devex_runtime_tests PRIVATE DEVEX_TEST_PLAY_PROCESS="$<TARGET_FILE:devex_test_play_process>")
-target_compile_definitions(devex_runtime_tests
-    PRIVATE DEVEX_TEST_GAME_MODULE="$<TARGET_FILE:devex_test_game_module>"
-            DEVEX_TEST_PLAIN_LIBRARY="$<TARGET_FILE:devex_test_plain_library>"
-            DEVEX_TEST_INCOMPATIBLE_GAME_MODULE="$<TARGET_FILE:devex_test_incompatible_game_module>"
-            DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
-)
+if(NOT EMSCRIPTEN)
+    add_executable(devex_test_play_process runtime/PlayProcessFixture.cpp)
+    target_link_libraries(devex_test_play_process PRIVATE Devex::Engine)
+    devex_set_warnings(devex_test_play_process)
+    set_target_properties(devex_test_play_process PROPERTIES FOLDER "Tests")
+    add_dependencies(devex_runtime_tests devex_test_play_process)
+    target_compile_definitions(devex_runtime_tests PRIVATE DEVEX_TEST_PLAY_PROCESS="$<TARGET_FILE:devex_test_play_process>")
+    target_compile_definitions(devex_runtime_tests
+        PRIVATE DEVEX_TEST_GAME_MODULE="$<TARGET_FILE:devex_test_game_module>"
+                DEVEX_TEST_PLAIN_LIBRARY="$<TARGET_FILE:devex_test_plain_library>"
+                DEVEX_TEST_INCOMPATIBLE_GAME_MODULE="$<TARGET_FILE:devex_test_incompatible_game_module>"
+    )
+endif()
+target_compile_definitions(devex_runtime_tests PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data")

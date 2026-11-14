@@ -64,7 +64,7 @@ void link(ShaderGraphData& graph, std::uint32_t from, std::uint32_t fromPort, st
 
 } // namespace
 
-TEST_CASE("New shader graphs compile for every kind", "[asset][shader][graph]")
+TEST_CASE("New shader graphs compile for every kind", "[asset][shader][graph][noweb]")
 {
     for (const ShaderKind kind : {ShaderKind::Spatial, ShaderKind::CanvasItem, ShaderKind::Particles, ShaderKind::Sky})
     {
@@ -77,7 +77,7 @@ TEST_CASE("New shader graphs compile for every kind", "[asset][shader][graph]")
     }
 }
 
-TEST_CASE("Shader graphs turn into code that draws, with parameters, textures and conversions", "[asset][shader][graph]")
+TEST_CASE("Shader graphs turn into code that draws, with parameters, textures and conversions", "[asset][shader][graph][noweb]")
 {
     ShaderGraphData graph = devex::asset::makeShaderGraph(ShaderKind::Spatial);
     const std::uint32_t output = graph.outputOf(ShaderFunction::Fragment)->id;
@@ -157,7 +157,7 @@ TEST_CASE("Links of shader graphs stay within a function and never loop", "[asse
     CHECK(graph.linkInto(b, 0) == nullptr);
 }
 
-TEST_CASE("Mistakes of shader graphs name their nodes", "[asset][shader][graph]")
+TEST_CASE("Mistakes of shader graphs name their nodes", "[asset][shader][graph][noweb]")
 {
     ShaderGraphData graph = devex::asset::makeShaderGraph(ShaderKind::Spatial);
     const std::uint32_t output = graph.outputOf(ShaderFunction::Fragment)->id;
@@ -196,7 +196,7 @@ TEST_CASE("Mistakes of shader graphs name their nodes", "[asset][shader][graph]"
     CHECK(names(sample));
 }
 
-TEST_CASE("Canvas, particle and sky graphs read what they draw", "[asset][shader][graph]")
+TEST_CASE("Canvas, particle and sky graphs read what they draw", "[asset][shader][graph][noweb]")
 {
     // A sprite: the colour of its own texture, darkened.
     ShaderGraphData canvas = devex::asset::makeShaderGraph(ShaderKind::CanvasItem);
@@ -239,7 +239,7 @@ TEST_CASE("Canvas, particle and sky graphs read what they draw", "[asset][shader
     CHECK(shader.compiled());
 }
 
-TEST_CASE("Shader graphs survive their files, and import as shaders", "[asset][shader][graph]")
+TEST_CASE("Shader graphs survive their files, and import as shaders", "[asset][shader][graph][noweb]")
 {
     ShaderGraphData graph = devex::asset::makeShaderGraph(ShaderKind::Spatial);
     graph.renderModes = {"cull_disabled", "unshaded"};
@@ -288,7 +288,7 @@ TEST_CASE("Shader graphs survive their files, and import as shaders", "[asset][s
     std::filesystem::remove_all(root);
 }
 
-TEST_CASE("The shader graphs of the sandbox compile without warnings", "[asset][shader][graph]")
+TEST_CASE("The shader graphs of the sandbox compile without warnings", "[asset][shader][graph][noweb]")
 {
     const std::filesystem::path folder = std::filesystem::path{DEVEX_SANDBOX_DIRECTORY} / "assets" / "shaders";
     std::size_t count = 0;
@@ -311,7 +311,7 @@ TEST_CASE("The shader graphs of the sandbox compile without warnings", "[asset][
     CHECK(count == 1);
 }
 
-TEST_CASE("Parameters of shader graphs can be given per instance", "[asset][shader][graph]")
+TEST_CASE("Parameters of shader graphs can be given per instance", "[asset][shader][graph][noweb]")
 {
     ShaderGraphData graph = devex::asset::makeShaderGraph(ShaderKind::Spatial);
     const std::uint32_t glow = add(graph, "Color Parameter");

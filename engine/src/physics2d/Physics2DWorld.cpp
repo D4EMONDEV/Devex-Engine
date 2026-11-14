@@ -104,9 +104,12 @@ constexpr int layerShift = 8;
     return fromBox(b2Body_GetWorldPoint(b2Shape_GetBody(shape), result.point));
 }
 
+// A body points at the owner its record keeps: an entity is 64 bits, more than a pointer holds in WebAssembly. The body
+// of the world, which has no record, belongs to no entity.
 [[nodiscard]] Entity ownerOf(b2ShapeId shape) noexcept
 {
-    return entityOf(static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(b2Body_GetUserData(b2Shape_GetBody(shape)))));
+    const auto* const owner = static_cast<const Entity*>(b2Body_GetUserData(b2Shape_GetBody(shape)));
+    return owner != nullptr ? *owner : entityOf(0);
 }
 
 // The angle around Z of a world matrix: where its X axis points.
@@ -873,7 +876,6 @@ struct Physics2DWorld::Implementation
         definition.gravityScale = rigidBody.gravityScale;
         definition.fixedRotation = rigidBody.fixedRotation;
         definition.isBullet = rigidBody.continuousCollision;
-        definition.userData = reinterpret_cast<void*>(static_cast<std::uintptr_t>(scene::entityKey(description.owner)));
         const b2BodyId body = b2CreateBody(world, &definition);
 
         // The mass of the body spreads over the area of its solid shapes.
@@ -942,6 +944,7 @@ struct Physics2DWorld::Implementation
             .previousAngle = description.angle,
             .seen = true,
         };
+        b2Body_SetUserData(body, &bodies[key].owner);
     }
 
     void removeBody(std::unordered_map<std::uint64_t, BodyRecord>::iterator record)
@@ -1370,7 +1373,6 @@ struct Physics2DWorld::Implementation
                 b2BodyDef definition = b2DefaultBodyDef();
                 definition.type = b2_kinematicBody;
                 definition.position = toBox(position);
-                definition.userData = reinterpret_cast<void*>(static_cast<std::uintptr_t>(key));
                 const b2BodyId body = b2CreateBody(world, &definition);
                 b2ShapeDef shapeDefinition = b2DefaultShapeDef();
                 // Characters meet the solid shapes and characters of the layers they collide with,
@@ -1388,6 +1390,7 @@ struct Physics2DWorld::Implementation
                                                   .position = position,
                                                   .previousPosition = position,
                                                   .seen = true};
+                b2Body_SetUserData(body, &characters[key].owner);
                 continue;
             }
             record->second.seen = true;

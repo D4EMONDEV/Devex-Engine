@@ -91,7 +91,7 @@ TEST_CASE("sRGB mip levels average light, not encoded values", "[asset][texture]
     CHECK(linear->mips[1].bytes[0] == std::byte{128});
 }
 
-TEST_CASE("BC7 textures keep a complete mip chain and close colors", "[asset][texture]")
+TEST_CASE("BC7 textures keep a complete mip chain and close colors", "[asset][texture][noweb]")
 {
     devex::core::JobSystem jobs(2);
     const Image image = gradient(37, 20);
@@ -109,7 +109,7 @@ TEST_CASE("BC7 textures keep a complete mip chain and close colors", "[asset][te
     CHECK(psnr(image, *decoded) > 35.0);
 }
 
-TEST_CASE("Normal maps compress to BC5 and stay normalized", "[asset][texture]")
+TEST_CASE("Normal maps compress to BC5 and stay normalized", "[asset][texture][noweb]")
 {
     // Normals tilted along X, alternating direction every texel: their average points out.
     Image image{.width = 8, .height = 8};
@@ -129,7 +129,7 @@ TEST_CASE("Normal maps compress to BC5 and stay normalized", "[asset][texture]")
     CHECK(std::abs(static_cast<int>(level->rgba[1]) - 128) <= 3);
 }
 
-TEST_CASE("BC textures convert to ASTC for Android with close colors", "[asset][texture]")
+TEST_CASE("BC textures convert to ASTC for Android with close colors", "[asset][texture][noweb]")
 {
     devex::core::JobSystem jobs(2);
     const Image image = gradient(37, 20);

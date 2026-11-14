@@ -38,7 +38,7 @@ TEST_CASE("Binary files are replaced atomically and read back", "[core][file]")
     std::filesystem::remove_all(directory);
 }
 
-TEST_CASE("A file held for a moment by a reader is still replaced", "[core][file]")
+TEST_CASE("A file held for a moment by a reader is still replaced", "[core][file][noweb]")
 {
     const std::filesystem::path directory =
         std::filesystem::temp_directory_path() / ("devex-file-" + devex::core::Uuid::generate().toString());

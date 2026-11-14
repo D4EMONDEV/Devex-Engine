@@ -65,7 +65,7 @@ struct Entry
         };
         const std::string prefix = text(345, 155);
         const std::string name = (prefix.empty() ? "" : prefix + "/") + text(0, 100);
-        const std::size_t size = std::stoull(text(124, 12), nullptr, 8);
+        const auto size = static_cast<std::size_t>(std::stoull(text(124, 12), nullptr, 8));
         entries[name] = {.name = name, .mode = text(100, 8), .group = text(297, 32), .type = header[156], .content = bytes->substr(at + 512, size)};
         at += 512 + (size + 511) / 512 * 512;
     }

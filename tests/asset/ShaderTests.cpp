@@ -159,7 +159,7 @@ TEST_CASE("Mistakes in the statements of a shader are reported on their lines", 
     CHECK(particles.diagnostics.size() == 1);
 }
 
-TEST_CASE("Instance uniforms are numbers that spatial and canvas item shaders read per object", "[asset][shader]")
+TEST_CASE("Instance uniforms are numbers that spatial and canvas item shaders read per object", "[asset][shader][noweb]")
 {
     const ShaderData spatial = devex::asset::compileShader(R"(shader_type spatial;
 uniform float3 tint : source_color = float3(1.0, 1.0, 1.0);
@@ -203,7 +203,7 @@ void fragment() { COLOR.rgb = lerp(COLOR.rgb, float3(1.0), flash); }
     CHECK(hasError(errorsOf("shader_type spatial;\ninstance float x;\nvoid fragment() {}\n"), 2));
 }
 
-TEST_CASE("Every kind of shader compiles into the entry points of its passes", "[asset][shader]")
+TEST_CASE("Every kind of shader compiles into the entry points of its passes", "[asset][shader][noweb]")
 {
     const ShaderData spatial = devex::asset::compileShader(water, "water.dvxshader");
     INFO((spatial.diagnostics.empty() ? std::string{} : spatial.diagnostics.front().message));
@@ -287,7 +287,7 @@ void fragment() { COLOR.rgb *= float3(1.0, 0.6, 0.2); }
     }
 }
 
-TEST_CASE("Errors of the compiler land on the lines of the shader", "[asset][shader]")
+TEST_CASE("Errors of the compiler land on the lines of the shader", "[asset][shader][noweb]")
 {
     const ShaderData shader = devex::asset::compileShader(R"(shader_type spatial;
 uniform float speed = 1.0;
@@ -314,7 +314,7 @@ void fragment()
     CHECK(missing.diagnostics.front().line == 0);
 }
 
-TEST_CASE("Shaders and the parameters of materials survive encoding and their files", "[asset][shader]")
+TEST_CASE("Shaders and the parameters of materials survive encoding and their files", "[asset][shader][noweb]")
 {
     ShaderData shader = devex::asset::compileShader(water, "water.dvxshader");
     REQUIRE(shader.compiled());
@@ -350,7 +350,7 @@ TEST_CASE("Shaders and the parameters of materials survive encoding and their fi
     CHECK_FALSE(devex::asset::parseMaterialFile("[material format=2]\n\n[other]\n"));
 }
 
-TEST_CASE("The asset database imports shaders, with their errors", "[asset][database][shader]")
+TEST_CASE("The asset database imports shaders, with their errors", "[asset][database][shader][noweb]")
 {
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / ("devex-shaders-" + devex::core::Uuid::generate().toString());
@@ -383,7 +383,7 @@ TEST_CASE("The asset database imports shaders, with their errors", "[asset][data
     std::filesystem::remove_all(root);
 }
 
-TEST_CASE("The shaders of the sandbox compile without warnings", "[asset][shader]")
+TEST_CASE("The shaders of the sandbox compile without warnings", "[asset][shader][noweb]")
 {
     const std::filesystem::path folder = std::filesystem::path{DEVEX_SANDBOX_DIRECTORY} / "assets" / "shaders";
     std::size_t count = 0;

@@ -5772,7 +5772,15 @@ d'autres formats ou les textures décompressées ; le jeu attend un clic avant d
 
 Les étapes, chacune livrable et testée :
 
-1. Le moteur se compile en WebAssembly (Emscripten, triplet `wasm32-emscripten` de vcpkg), et ses tests sans GPU tournent dans Node.
+1. ✅ Le moteur se compile en WebAssembly (Emscripten, triplet `wasm32-emscripten` de vcpkg), et ses tests sans GPU tournent dans Node.
+   Le préréglage `web` le construit dans Linux avec l'Emscripten d'`EMSDK` (7.0.0), en bibliothèque statique, sans le backend Vulkan
+   (`Renderer::create` répond qu'il n'y a pas de rendu jusqu'à WebGPU), sans l'éditeur ni le lecteur, et sans threads : le système de
+   tâches y exécute chaque tâche là où elle est donnée. Le renderer passe par une interface, `RenderBackend`, que Vulkan implémente et
+   que WebGPU implémentera. Les exceptions C++ y sont celles de WebAssembly (`-fwasm-exceptions`), pour Devex comme pour ses
+   bibliothèques, dont le triplet de `cmake/vcpkg-triplets` ajoute aussi `<iterator>`, que la bibliothèque C++ d'Emscripten n'apporte
+   plus en passant. Les tests de ce qu'un ordinateur seul fournit (threads, processus, `slangc`, surveillance des dossiers, outils de
+   l'éditeur) sont marqués `[noweb]`. Ce que cette étape a trouvé : en WebAssembly, un pointeur fait 32 bits, et la physique 2D y
+   rangeait l'entité de 64 bits d'un corps, dont elle perdait la génération ; un corps pointe maintenant vers l'entité de sa fiche.
 2. Le renderer WebGPU rend les sprites, les tilemaps et l'interface : un jeu 2D tourne dans un navigateur.
 3. La 3D de Compatibility : PBR, ombres, particules, skinning.
 4. **Web** dans la liste de l'export, avec **Run in Browser** sur un petit serveur local, et les problèmes en rouge.

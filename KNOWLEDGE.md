@@ -3961,3 +3961,12 @@ public:
 - `render/GpuTypes.hpp` : les structures lues par les shaders qui ne sont que des données, partagées par les backends. Une structure qui porte une adresse du GPU
   (`VkDeviceAddress`) reste dans `vulkan/GpuData.hpp`. L'espace de noms `render::vulkan` voit celles de `render` sans qualification.
 - `render/FramePreparation` et `render/ShadowAtlas` : ce que le renderer prépare sur le CPU. Ce qui dépend de l'API (l'espace de clip, les buffers) reste dans le backend, en paramètre ou autour de l'appel.
+
+## Build web (étape 1 du web)
+
+- Dans WSL : Emscripten dans `/root/emsdk` (7.0.0, `source /root/emsdk/emsdk_env.sh`), puis `cmake --preset web` sans `CC`/`CXX`. Les bibliothèques
+  viennent du triplet `cmake/vcpkg-triplets/wasm32-emscripten.cmake` (celui de vcpkg, plus `-include iterator` et `-fwasm-exceptions`).
+- `EMSCRIPTEN` dans CMake : pas de `devex_render` Vulkan (`DEVEX_RENDERER_VULKAN` absent), moteur `STATIC`, pas de bindgen ni de .NET. Les tests
+  passent par Node (`-sNODERAWFS=1`, les fichiers de la machine) ; `DEVEX_WEB_SKIPPED_MODULES` et `DEVEX_WEB_SKIPPED_SOURCES` dans `tests/CMakeLists.txt`
+  écartent ce qui n'a pas de sens dans un navigateur, et `ctest -LE "gpu|noweb"` le reste.
+- Un `uintptr_t` fait 32 bits en WebAssembly : n'y ranger ni une entité (`entityKey`, 64 bits) ni un autre identifiant de 64 bits.

@@ -108,7 +108,7 @@ TEST_CASE("Nothing is measured while the profiler is off, and a pause freezes th
     profiler::setPaused(false);
 }
 
-TEST_CASE("Zones of other threads land in the frame, on their own lane", "[core][profiler]")
+TEST_CASE("Zones of other threads land in the frame, on their own lane", "[core][profiler][noweb]")
 {
     const Recording recording;
     profiler::beginFrame();

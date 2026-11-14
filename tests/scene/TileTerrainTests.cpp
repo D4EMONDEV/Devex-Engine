@@ -20,7 +20,7 @@ using devex::scene::TileGrid;
 namespace {
 
 constexpr std::size_t right = 0;
-constexpr std::size_t topRight = 1;
+[[maybe_unused]] constexpr std::size_t topRight = 1;
 constexpr std::size_t top = 2;
 constexpr std::size_t left = 4;
 constexpr std::size_t bottom = 6;

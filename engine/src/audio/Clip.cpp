@@ -157,7 +157,7 @@ core::Result<ClipInfo> probeClip(std::span<const std::byte> file)
         {
             for (std::uint32_t channel = 0; channel < info.channels; ++channel)
             {
-                slicePeak = std::max(slicePeak, std::abs(chunk[frame * info.channels + channel]));
+                slicePeak = std::max(slicePeak, std::abs(chunk[static_cast<std::size_t>(frame) * info.channels + channel]));
             }
             if (++sliceCount == sliceFrames)
             {

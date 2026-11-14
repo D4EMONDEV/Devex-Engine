@@ -36,6 +36,15 @@ struct ParallelLoop
 
 JobSystem::JobSystem(std::uint32_t workerCount)
 {
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+    constexpr bool threads = false;
+#else
+    constexpr bool threads = true;
+#endif
+    if (!threads)
+    {
+        return;
+    }
     if (workerCount == 0)
     {
         workerCount = std::max(std::thread::hardware_concurrency(), 2u) - 1;
@@ -69,6 +78,11 @@ std::uint32_t JobSystem::workerCount() const noexcept
 void JobSystem::schedule(std::function<void()> job)
 {
     DEVEX_ASSERT(job != nullptr);
+    if (m_workers.empty())
+    {
+        job();
+        return;
+    }
     {
         const std::scoped_lock lock(m_mutex);
         m_queue.push_back(std::move(job));

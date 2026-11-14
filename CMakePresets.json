@@ -119,6 +119,20 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Darwin"
             }
+        },
+        {
+            "name": "web",
+            "displayName": "Web (WebAssembly, Emscripten)",
+            "description": "The engine for the browser, built in Linux with the Emscripten of EMSDK: no Vulkan, no editor, no threads yet",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "VCPKG_TARGET_TRIPLET": "wasm32-emscripten",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+                "DEVEX_BUILD_EDITOR": "OFF",
+                "DEVEX_BUILD_PLAYER": "OFF"
+            }
         }
     ],
     "buildPresets": [
@@ -141,7 +155,9 @@
         {
             "name": "build-linux-fuzz",
             "configurePreset": "linux-fuzz",
-            "targets": ["devex_fuzzers"]
+            "targets": [
+                "devex_fuzzers"
+            ]
         },
         {
             "name": "build-android-arm64",
