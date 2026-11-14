@@ -20,6 +20,23 @@ namespace devex::render {
 DEVEX_API void gatherLights2D(const RenderWorld& world, math::Vec2 cameraPosition, const math::Mat4& viewProjection,
                               std::vector<GpuLight2D>& lights, std::vector<float>& shadows);
 
+// The projection of a camera, depth reversed, turned to the clip space of the API by `clipCorrection`.
+[[nodiscard]] DEVEX_API math::Mat4 projectionMatrix(const RenderCamera& camera, float aspectRatio, const math::Mat4& clipCorrection) noexcept;
+
+// The matrices of the camera of a frame: jittered by the temporal antialiasing (`jitter`, in clip units), and without; the
+// sky's, which an orthographic view sees as a perspective would, a backdrop that turns with the camera but does not move
+// with it; and where the camera stands.
+struct ViewMatrices
+{
+    math::Mat4 viewProjection{1.0f};
+    math::Mat4 unjitteredViewProjection{1.0f};
+    math::Mat4 inverseViewProjection{1.0f};
+    math::Mat4 skyViewProjection{1.0f};
+    math::Vec3 cameraPosition{0.0f};
+};
+[[nodiscard]] DEVEX_API ViewMatrices prepareView(const RenderCamera& camera, math::Extent2D extent, math::Vec2 jitter,
+                                                 const math::Mat4& clipCorrection);
+
 // Where the values of an instance start, when the frame has them; noInstanceParameters otherwise.
 [[nodiscard]] DEVEX_API std::uint32_t instanceParametersOf(const RenderWorld& world, std::uint32_t first) noexcept;
 

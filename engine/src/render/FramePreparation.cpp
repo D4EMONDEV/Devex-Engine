@@ -72,6 +72,37 @@ void gatherLights2D(const RenderWorld& world, math::Vec2 cameraPosition, const m
     }
 }
 
+math::Mat4 projectionMatrix(const RenderCamera& camera, float aspectRatio, const math::Mat4& clipCorrection) noexcept
+{
+    if (camera.projection == Projection::Orthographic)
+    {
+        return clipCorrection * math::orthographicReverseZ(camera.orthographicSize, aspectRatio, camera.nearPlane, camera.farPlane);
+    }
+    return clipCorrection * math::perspectiveReverseZ(camera.verticalFov, aspectRatio, camera.nearPlane);
+}
+
+ViewMatrices prepareView(const RenderCamera& camera, math::Extent2D extent, math::Vec2 jitter, const math::Mat4& clipCorrection)
+{
+    const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(std::max(extent.height, 1U));
+    const math::Mat4 projection = projectionMatrix(camera, aspectRatio, clipCorrection);
+    // Shift clip XY by a fraction of clip W so the offset on the screen does not depend on depth, for both projections.
+    // Changing the Z column directly only works for a perspective: in an orthographic view it multiplies the jitter by the
+    // distance from the camera.
+    const math::Mat4 jittered = math::translate(math::Mat4{1.0f}, math::Vec3{-jitter.x, -jitter.y, 0.0f}) * projection;
+    ViewMatrices view;
+    view.viewProjection = jittered * camera.view;
+    view.unjitteredViewProjection = projection * camera.view;
+    view.inverseViewProjection = math::inverse(view.unjitteredViewProjection);
+    math::Mat4 rotationOnly = camera.view;
+    rotationOnly[3] = math::Vec4{0.0f, 0.0f, 0.0f, 1.0f};
+    RenderCamera skyCamera = camera;
+    skyCamera.projection = Projection::Perspective;
+    skyCamera.verticalFov = camera.projection == Projection::Orthographic ? math::radians(60.0f) : camera.verticalFov;
+    view.skyViewProjection = projectionMatrix(skyCamera, aspectRatio, clipCorrection) * rotationOnly;
+    view.cameraPosition = math::Vec3(math::inverse(camera.view)[3]);
+    return view;
+}
+
 std::uint32_t instanceParametersOf(const RenderWorld& world, std::uint32_t first) noexcept
 {
     return first < world.instanceParameters.size() ? first : noInstanceParameters;

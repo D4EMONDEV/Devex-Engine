@@ -124,17 +124,17 @@ static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
     return result;
 }
 
-[[nodiscard]] math::Mat4 projectionMatrix(const RenderCamera& camera, float aspectRatio) noexcept
+// Vulkan clip space points Y down, while the engine convention points it up.
+[[nodiscard]] math::Mat4 vulkanClip() noexcept
 {
-    // Vulkan clip space points Y down, while the engine convention points it up.
     math::Mat4 clipCorrection{1.0f};
     clipCorrection[1][1] = -1.0f;
-    if (camera.projection == Projection::Orthographic)
-    {
-        return clipCorrection * math::orthographicReverseZ(camera.orthographicSize, aspectRatio, camera.nearPlane,
-                                                           camera.farPlane);
-    }
-    return clipCorrection * math::perspectiveReverseZ(camera.verticalFov, aspectRatio, camera.nearPlane);
+    return clipCorrection;
+}
+
+[[nodiscard]] math::Mat4 projectionMatrix(const RenderCamera& camera, float aspectRatio) noexcept
+{
+    return render::projectionMatrix(camera, aspectRatio, vulkanClip());
 }
 
 } // namespace
@@ -4021,36 +4021,22 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
                                     const std::optional<ShadowCascades>& cascades) const noexcept
 {
     const math::Extent2D extent = m_sceneExtent;
-    const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
     const RenderCamera& camera = m_world.camera;
-    const math::Mat4 projection = projectionMatrix(camera, aspectRatio);
-    // Shift clip XY by a fraction of clip W so the screen-space offset is independent of depth
-    // for both projections. Changing the Z column directly only works for perspective: in an
-    // orthographic view it multiplies the jitter by the distance from the camera.
-    const math::Mat4 jittered =
-        math::translate(math::Mat4{1.0f}, math::Vec3{-m_jitter.x, -m_jitter.y, 0.0f}) * projection;
-
-    math::Mat4 rotationOnly = camera.view;
-    rotationOnly[3] = math::Vec4{0.0f, 0.0f, 0.0f, 1.0f};
+    const ViewMatrices matrices = prepareView(camera, extent, m_jitter, vulkanClip());
 
     GpuSceneData scene;
-    scene.viewProjection = jittered * camera.view;
-    scene.unjitteredViewProjection = projection * camera.view;
+    scene.viewProjection = matrices.viewProjection;
+    scene.unjitteredViewProjection = matrices.unjitteredViewProjection;
     scene.previousViewProjection = m_previousViewProjection;
-    scene.inverseViewProjection = math::inverse(scene.unjitteredViewProjection);
+    scene.inverseViewProjection = matrices.inverseViewProjection;
     scene.projectionJitter = m_jitter;
     // What the camera keeps of the world, and what each cascade keeps of its casters.
     m_cameraFrustum = frustumOf(scene.unjitteredViewProjection);
     m_unjitteredViewProjection = scene.unjitteredViewProjection;
     scene.view = camera.view;
-    // An orthographic view looks along one direction only: its sky is seen as a perspective would
-    // see it, a backdrop that turns with the camera but does not move with it.
-    RenderCamera skyCamera = camera;
-    skyCamera.projection = Projection::Perspective;
-    skyCamera.verticalFov = camera.projection == Projection::Orthographic ? math::radians(60.0f) : camera.verticalFov;
-    m_skyViewProjection = projectionMatrix(skyCamera, aspectRatio) * rotationOnly;
+    m_skyViewProjection = matrices.skyViewProjection;
     scene.skyInverseViewProjection = math::inverse(m_skyViewProjection);
-    scene.cameraPosition = math::Vec3(math::inverse(camera.view)[3]);
+    scene.cameraPosition = matrices.cameraPosition;
     m_cameraPosition = scene.cameraPosition;
     scene.exposure = exposureFromEv100(m_ev100);
     frame.exposure = scene.exposure;

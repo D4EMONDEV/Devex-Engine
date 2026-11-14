@@ -108,6 +108,35 @@ TEST_CASE("The interface of a frame counts each surface from its own vertices", 
     CHECK(packed.toolsStart == 3);
 }
 
+TEST_CASE("The matrices of a view follow the clip space of the API, and an orthographic sky is a perspective", "[render][view]")
+{
+    devex::render::RenderCamera camera;
+    camera.view = math::lookAt(math::Vec3{1.0f, 2.0f, 3.0f}, math::Vec3{0.0f}, math::Vec3{0.0f, 1.0f, 0.0f});
+    math::Mat4 flipped{1.0f};
+    flipped[1][1] = -1.0f;
+    const devex::render::ViewMatrices view = devex::render::prepareView(camera, {200, 100}, math::Vec2{0.0f}, flipped);
+    CHECK(math::length(view.cameraPosition - math::Vec3{1.0f, 2.0f, 3.0f}) < 1e-4f);
+    // Without jitter, the two views are the same, and the clip space is the one asked for.
+    CHECK(view.viewProjection == view.unjitteredViewProjection);
+    const math::Mat4 expected = flipped * devex::render::projectionMatrix(camera, 2.0f, math::Mat4{1.0f}) * camera.view;
+    CHECK(math::length(view.unjitteredViewProjection[1] - expected[1]) < 1e-5f);
+
+    // The jitter moves the image, not the view without it.
+    const devex::render::ViewMatrices moved = devex::render::prepareView(camera, {200, 100}, math::Vec2{0.01f, 0.0f}, flipped);
+    CHECK(moved.unjitteredViewProjection == view.unjitteredViewProjection);
+    CHECK(moved.viewProjection != view.viewProjection);
+
+    // An orthographic camera keeps a sky in perspective, which does not move with it.
+    camera.projection = devex::render::Projection::Orthographic;
+    const devex::render::ViewMatrices flat = devex::render::prepareView(camera, {200, 100}, math::Vec2{0.0f}, flipped);
+    devex::render::RenderCamera skyCamera = camera;
+    skyCamera.projection = devex::render::Projection::Perspective;
+    skyCamera.verticalFov = math::radians(60.0f);
+    math::Mat4 turned = camera.view;
+    turned[3] = math::Vec4{0.0f, 0.0f, 0.0f, 1.0f};
+    CHECK(flat.skyViewProjection == devex::render::projectionMatrix(skyCamera, 2.0f, flipped) * turned);
+}
+
 TEST_CASE("The air keeps the camera inside it, a meter above the ground at least", "[render][atmosphere]")
 {
     RenderWorld world;
