@@ -233,6 +233,8 @@ devex_add_tests(render
         render/LightingTests.cpp
         render/PhotometryTests.cpp
         render/PostProcessTests.cpp
+        render/FramePreparationTests.cpp
+        render/ShadowAtlasTests.cpp
         render/GpuCullingTests.cpp
         render/GpuSkinningTests.cpp
         render/MeshLodTests.cpp

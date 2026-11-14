@@ -1,8 +1,11 @@
 #include "VulkanRenderer.hpp"
 
+#include "../FramePreparation.hpp"
+
 #include "Commands.hpp"
 #include "GpuData.hpp"
 
+#include <devex/render/ShadowAtlas.hpp>
 #include <devex/asset/ShaderData.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
@@ -44,12 +47,6 @@ constexpr std::uint64_t noTimeout = std::numeric_limits<std::uint64_t>::max();
 constexpr float clusterFarPlane = 500.0f;
 
 static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
-
-// Where the values of an instance start, when the frame has them; none otherwise.
-[[nodiscard]] std::uint32_t instanceParametersOf(const RenderWorld& world, std::uint32_t first) noexcept
-{
-    return first < world.instanceParameters.size() ? first : noInstanceParameters;
-}
 
 [[nodiscard]] VkFormat toVulkanFormat(asset::TextureFormat format) noexcept
 {
@@ -3298,151 +3295,31 @@ void VulkanRenderer::updateExposure(FrameContext& frame)
     m_ev100 = adaptExposure(m_ev100, m_targetEv100, camera.adaptationSpeed, deltaSeconds);
 }
 
-// Where each face of a cube around a point light looks, in the order the shader expects.
-namespace {
-
-struct CubeFace
-{
-    math::Vec3 direction;
-    math::Vec3 up;
-};
-
-constexpr std::array<CubeFace, 6> cubeFaces{{
-    {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
-    {{-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
-    {{0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-    {{0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}},
-    {{0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}},
-    {{0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}},
-}};
-
-} // namespace
-
 void VulkanRenderer::assignShadowViews()
 {
-    m_shadowViews.clear();
-    m_shadowViewFrustums.clear();
-    for (GpuLight& light : m_gpuLights)
-    {
-        light.firstShadowView = -1;
-    }
-
-    // The lights that ask for a shadow, the brightest and nearest first: a light that fills the
-    // screen deserves its tile more than one that lights a corner far away.
-    std::vector<std::pair<float, std::size_t>> ranked;
-    for (std::size_t index = 0; index < m_world.lights.size() && index < m_gpuLights.size(); ++index)
-    {
-        const RenderLight& light = m_world.lights[index];
-        if (!light.castShadows)
-        {
-            continue;
-        }
-        const math::Aabb reach{light.position - math::Vec3{light.range},
-                               light.position + math::Vec3{light.range}};
-        if (!m_cameraFrustum.intersects(reach))
-        {
-            continue;
-        }
-        const float power = std::max({light.intensity.r, light.intensity.g, light.intensity.b});
-        const math::Vec3 toCamera = light.position - m_cameraPosition;
-        const float distanceSquared = std::max(math::dot(toCamera, toCamera), 1.0f);
-        ranked.emplace_back(power / distanceSquared, index);
-    }
-    std::ranges::sort(ranked, std::greater{}, &std::pair<float, std::size_t>::first);
-
-    // The atlas is cut into square cells; a tile is one cell, or a block of two by two for the
-    // lights at the top of the list.
-    std::array<bool, shadowAtlasCells * shadowAtlasCells> taken{};
-    const auto allocate = [&taken](std::uint32_t span) -> std::optional<std::pair<std::uint32_t, std::uint32_t>> {
-        for (std::uint32_t y = 0; y + span <= shadowAtlasCells; y += span)
-        {
-            for (std::uint32_t x = 0; x + span <= shadowAtlasCells; x += span)
-            {
-                bool free = true;
-                for (std::uint32_t dy = 0; dy < span && free; ++dy)
-                {
-                    for (std::uint32_t dx = 0; dx < span; ++dx)
-                    {
-                        free = free && !taken[(y + dy) * shadowAtlasCells + x + dx];
-                    }
-                }
-                if (!free)
-                {
-                    continue;
-                }
-                for (std::uint32_t dy = 0; dy < span; ++dy)
-                {
-                    for (std::uint32_t dx = 0; dx < span; ++dx)
-                    {
-                        taken[(y + dy) * shadowAtlasCells + x + dx] = true;
-                    }
-                }
-                return std::pair{x, y};
-            }
-        }
-        return std::nullopt;
-    };
-
+    // Vulkan's clip space points Y down: the views of the shadows are turned to it.
     math::Mat4 clipCorrection{1.0f};
     clipCorrection[1][1] = -1.0f;
-    constexpr float nearPlane = 0.05f;
-
-    for (std::size_t rank = 0; rank < ranked.size(); ++rank)
+    const std::size_t count = std::min(m_world.lights.size(), m_gpuLights.size());
+    const ShadowAssignment assigned =
+        render::assignShadowViews(std::span<const RenderLight>(m_world.lights).first(count), m_cameraFrustum, m_cameraPosition,
+                                  ShadowAtlasLayout{.size = shadowAtlasSize, .cell = shadowAtlasCell, .largeLights = largeShadowLights},
+                                  clipCorrection);
+    for (std::size_t index = 0; index < m_gpuLights.size(); ++index)
     {
-        const std::size_t index = ranked[rank].second;
-        const RenderLight& light = m_world.lights[index];
-        const bool point = light.type == LightType::Point;
-        const std::uint32_t span = rank < largeShadowLights ? 2 : 1;
-        const std::uint32_t views = point ? 6 : 1;
-
-        // Every view of a light is placed, or none of it is.
-        std::vector<std::pair<std::uint32_t, std::uint32_t>> cells;
-        for (std::uint32_t view = 0; view < views; ++view)
+        GpuLight& light = m_gpuLights[index];
+        light.firstShadowView = index < count ? assigned.firstView[index] : -1;
+        if (light.firstShadowView >= 0)
         {
-            const std::optional<std::pair<std::uint32_t, std::uint32_t>> cell = allocate(span);
-            if (!cell)
-            {
-                break;
-            }
-            cells.push_back(*cell);
+            light.shadowFar = assigned.far[index];
         }
-        if (cells.size() < views)
-        {
-            // The atlas is full: this light keeps its light and loses its shadow. What it took
-            // back stays taken, which only costs the tiles of a light that did not fit.
-            continue;
-        }
-
-        m_gpuLights[index].firstShadowView = static_cast<std::int32_t>(m_shadowViews.size());
-        m_gpuLights[index].shadowFar = std::max(light.range, 1e-3f);
-        const float atlasSize = static_cast<float>(shadowAtlasSize);
-        const float tileSize = static_cast<float>(span * shadowAtlasCell);
-        for (std::uint32_t view = 0; view < views; ++view)
-        {
-            const math::Vec3 direction =
-                point ? cubeFaces[view].direction
-                      : (math::length(light.direction) > 0.0f ? math::normalize(light.direction)
-                                                              : math::Vec3{0.0f, 0.0f, -1.0f});
-            const math::Vec3 up =
-                point ? cubeFaces[view].up
-                      : (std::abs(direction.y) > 0.99f ? math::Vec3{0.0f, 0.0f, 1.0f}
-                                                       : math::Vec3{0.0f, 1.0f, 0.0f});
-            // A spot covers its whole cone, a point a quarter turn on each face.
-            const float fov = point ? math::radians(90.0f)
-                                    : std::clamp(light.outerAngle * 2.0f, math::radians(5.0f),
-                                                 math::radians(175.0f));
-            const math::Mat4 view4 = math::lookAt(light.position, light.position + direction, up);
-            const math::Mat4 projection =
-                math::perspective(fov, 1.0f, nearPlane, std::max(light.range, nearPlane * 2.0f));
-            const auto [cellX, cellY] = cells[view];
-            m_shadowViews.push_back({
-                .viewProjection = clipCorrection * projection * view4,
-                .tile = {static_cast<float>(cellX * shadowAtlasCell) / atlasSize,
-                         static_cast<float>(cellY * shadowAtlasCell) / atlasSize,
-                         tileSize / atlasSize, tileSize / atlasSize},
-            });
-            m_shadowViewFrustums.push_back(frustumOf(m_shadowViews.back().viewProjection));
-        }
+    }
+    m_shadowViews.clear();
+    m_shadowViewFrustums.clear();
+    for (const ShadowView& view : assigned.views)
+    {
+        m_shadowViews.push_back({.viewProjection = view.viewProjection, .tile = view.tile});
+        m_shadowViewFrustums.push_back(frustumOf(view.viewProjection));
     }
 }
 
@@ -4269,37 +4146,9 @@ void VulkanRenderer::writeAtmosphere(FrameContext& frame, GpuSceneData& scene) c
     {
         return;
     }
-    GpuAtmosphere gpu;
-    gpu.bottomRadius = std::max(air.planetRadius, 1.0f);
-    gpu.topRadius = gpu.bottomRadius + std::max(air.height, 1.0f);
-    gpu.rayleighHeight = air.rayleighHeight;
-    gpu.mieHeight = air.mieHeight;
-    gpu.rayleighScattering = air.rayleighScattering;
-    gpu.mieScattering = air.mieScattering;
-    gpu.ozoneAbsorption = air.ozoneAbsorption;
-    gpu.mieAbsorption = air.mieAbsorption;
-    gpu.groundAlbedo = air.groundAlbedo;
-    gpu.mieAnisotropy = std::clamp(air.mieAnisotropy, -0.99f, 0.99f);
-    // The camera stands in the air, a meter above the ground at least; the ground of the scene is
-    // the planet's.
-    const float altitude = std::clamp(m_cameraPosition.y * 0.001f, 0.001f, gpu.topRadius - gpu.bottomRadius - 0.01f);
-    gpu.cameraRadius = gpu.bottomRadius + altitude;
-    const float sunLength = math::length(m_world.sun.direction);
-    gpu.sunDirection = sunLength > 0.0f ? -m_world.sun.direction / sunLength : math::Vec3{0.0f, 1.0f, 0.0f};
-    gpu.sunIlluminance = m_world.sun.illuminance * air.intensity;
-    gpu.sunCosRadius = std::cos(std::clamp(air.sunDiskSize, 0.0f, 0.5f) * 0.5f);
-    gpu.sunDiskIntensity = air.sunDiskIntensity;
-    gpu.aerialScale = std::max(air.aerialPerspective, 0.0f);
-    gpu.aerialDistance = 32.0f;
-    gpu.fogColor = fog.color;
-    gpu.fogDensity = fog.enabled ? std::max(fog.density, 0.0f) : 0.0f;
-    gpu.fogHeight = fog.height;
-    gpu.fogFalloff = std::max(fog.falloff, 0.01f);
-    gpu.fogStart = std::max(fog.startDistance, 0.0f);
-    gpu.fogMaxOpacity = std::clamp(fog.maxOpacity, 0.0f, 1.0f);
-    gpu.fogSunScattering = std::max(fog.sunScattering, 0.0f);
-    gpu.fogSunAnisotropy = std::clamp(fog.sunAnisotropy, -0.99f, 0.99f);
-    gpu.fogSkyBlend = std::clamp(fog.skyBlend, 0.0f, 1.0f);
+    const PackedAtmosphere packed = packAtmosphere(m_world, m_cameraPosition.y);
+    const GpuAtmosphere& gpu = packed.gpu;
+    const float altitude = packed.altitude;
     std::memcpy(frame.atmosphere->mappedBytes().data(), &gpu, sizeof(gpu));
     scene.atmosphere = frame.atmosphere->deviceAddress();
     if (!air.enabled)
@@ -4955,9 +4804,9 @@ std::uint32_t VulkanRenderer::drawTransparent(VkCommandBuffer commandBuffer, VkD
         m_transparentItems.push_back(
             {.distance = sortDistance(m_world.particleDraws[index].center, m_cameraPosition), .kind = 1, .index = index});
     }
-    for (std::uint32_t index = 0; index < m_spriteBatches.size(); ++index)
+    for (std::uint32_t index = 0; index < m_spriteFrame.batches.size(); ++index)
     {
-        const SpriteBatch& batch = m_spriteBatches[index];
+        const SpriteBatch& batch = m_spriteFrame.batches[index];
         if (batch.count > 0)
         {
             m_transparentItems.push_back(
@@ -5013,7 +4862,7 @@ std::uint32_t VulkanRenderer::drawTransparent(VkCommandBuffer commandBuffer, VkD
             {
                 flush();
             }
-            const SpriteBatch& batch = m_spriteBatches[item.index];
+            const SpriteBatch& batch = m_spriteFrame.batches[item.index];
             if (spriteCount == 0)
             {
                 firstSprite = batch.first;
@@ -5079,171 +4928,31 @@ float VulkanRenderer::sortDistance(math::Vec3 point, math::Vec3 cameraPosition) 
 
 core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
 {
-    m_spriteBatches.clear();
-    m_gpuSprites.clear();
-    m_spriteOutlined.clear();
-    m_spriteShaders.clear();
-    // The canvas_item shader of a material, which draws its sprites.
-    const auto shaderHandleOf = [this](MaterialHandle material) {
-        const MaterialDesc* const description = m_materials.find(material);
-        return shaderOf(description, asset::ShaderKind::CanvasItem) != nullptr ? description->shader : ShaderHandle{};
+    const SpriteResources resources{
+        .textureSlot =
+            [this](TextureHandle handle) {
+                const GpuTexture* const texture = m_textures.find(handle);
+                return texture != nullptr && texture->ready ? texture->slot : noParticleTexture;
+            },
+        .materialIndex = [this](MaterialHandle material) { return materialIndex(material); },
+        // The canvas_item shader of a material, which draws its sprites.
+        .canvasShader =
+            [this](MaterialHandle material) {
+                const MaterialDesc* const description = m_materials.find(material);
+                return shaderOf(description, asset::ShaderKind::CanvasItem) != nullptr ? description->shader : ShaderHandle{};
+            },
+        .sortDistance = [this](math::Vec3 point) { return sortDistance(point, m_cameraPosition); },
     };
-    const auto boxOf = [](const math::Mat4& transform, math::Vec2 low, math::Vec2 high) {
-        math::Aabb bounds;
-        for (const float x : {low.x, high.x})
-        {
-            for (const float y : {low.y, high.y})
-            {
-                bounds.add(math::Vec3(transform * math::Vec4(x, y, 0.0f, 1.0f)));
-            }
-        }
-        return bounds;
-    };
-    for (std::uint32_t index = 0; index < m_world.sprites.size(); ++index)
-    {
-        const RenderSprite& sprite = m_world.sprites[index];
-        // The box of the four corners, flipped or not: the flip mirrors around the pivot.
-        const math::Vec2 low = -sprite.pivot * sprite.size;
-        const math::Vec2 high = (math::Vec2{1.0f} - sprite.pivot) * sprite.size;
-        const math::Vec2 extent = math::max(math::abs(low), math::abs(high));
-        if (!m_cameraFrustum.intersects(boxOf(sprite.transform, -extent, extent)))
-        {
-            continue;
-        }
-        const math::Vec2 middle = (low + high) * 0.5f;
-        const math::Vec3 center = math::Vec3(sprite.transform * math::Vec4(middle, 0.0f, 1.0f));
-        m_spriteBatches.push_back({.layer = sprite.layer,
-                                   .order = sprite.order,
-                                   .distance = sortDistance(center, m_cameraPosition),
-                                   .source = index,
-                                   .count = 1});
-    }
-    // A tilemap sorts as a whole, from the middle of its tiles.
-    for (std::uint32_t index = 0; index < m_world.tilemaps.size(); ++index)
-    {
-        const RenderTilemap& tilemap = m_world.tilemaps[index];
-        const std::uint32_t end = std::min<std::uint32_t>(tilemap.firstTile + tilemap.tileCount,
-                                                          static_cast<std::uint32_t>(m_world.tiles.size()));
-        if (tilemap.firstTile >= end)
-        {
-            continue;
-        }
-        math::IVec2 low{std::numeric_limits<std::int32_t>::max()};
-        math::IVec2 high{std::numeric_limits<std::int32_t>::lowest()};
-        for (std::uint32_t tile = tilemap.firstTile; tile < end; ++tile)
-        {
-            low = math::min(low, m_world.tiles[tile].cell);
-            high = math::max(high, m_world.tiles[tile].cell + math::IVec2{1});
-        }
-        const math::Vec2 lowCorner = math::Vec2(low) * tilemap.cellSize;
-        const math::Vec2 highCorner = math::Vec2(high) * tilemap.cellSize;
-        if (!m_cameraFrustum.intersects(boxOf(tilemap.transform, lowCorner, highCorner)))
-        {
-            continue;
-        }
-        const math::Vec3 center = math::Vec3(tilemap.transform * math::Vec4((lowCorner + highCorner) * 0.5f, 0.0f, 1.0f));
-        m_spriteBatches.push_back({.layer = tilemap.layer,
-                                   .order = tilemap.order,
-                                   .distance = sortDistance(center, m_cameraPosition),
-                                   .tilemap = true,
-                                   .source = index});
-    }
-    std::ranges::stable_sort(m_spriteBatches, [](const SpriteBatch& a, const SpriteBatch& b) {
-        if (a.layer != b.layer)
-        {
-            return a.layer < b.layer;
-        }
-        if (a.order != b.order)
-        {
-            return a.order < b.order;
-        }
-        return a.distance > b.distance;
-    });
+    gatherSprites(m_world, m_cameraFrustum, resources, m_spriteFrame);
 
-    const auto slotOf = [this](TextureHandle handle) {
-        const GpuTexture* const texture = m_textures.find(handle);
-        return texture != nullptr && texture->ready ? texture->slot : noParticleTexture;
-    };
-    for (SpriteBatch& batch : m_spriteBatches)
-    {
-        batch.first = static_cast<std::uint32_t>(m_gpuSprites.size());
-        if (!batch.tilemap)
-        {
-            const RenderSprite& sprite = m_world.sprites[batch.source];
-            std::uint32_t flags = static_cast<std::uint32_t>(sprite.mode) & 3U;
-            flags |= (sprite.flipX ? spriteFlipX : 0U) | (sprite.flipY ? spriteFlipY : 0U);
-            flags |= (sprite.additive ? spriteAdditive : 0U) | (sprite.lit ? spriteLit : 0U);
-            flags |= sprite.unshaded ? spriteUnshaded : 0U;
-            GpuSprite& gpu = m_gpuSprites.emplace_back(GpuSprite{
-                .world = sprite.transform,
-                .uvRect = sprite.uvRect,
-                .color = sprite.color,
-                .border = sprite.border,
-                .size = sprite.size,
-                .pivot = sprite.pivot,
-                .naturalSize = sprite.naturalSize,
-                .texture = slotOf(sprite.texture),
-                .flags = flags,
-                .objectId = sprite.objectId,
-                .lightMask = sprite.lightMask,
-                .normalTexture = slotOf(sprite.normalTexture),
-                .material = materialIndex(sprite.material),
-                .instanceParameters = instanceParametersOf(m_world, sprite.instanceParameters),
-            });
-            // A sprite whose texture is still loading waits for it rather than showing a plain rectangle.
-            if (sprite.texture.isValid() && gpu.texture == noParticleTexture)
-            {
-                gpu.color.a = 0.0f;
-            }
-            m_spriteOutlined.push_back(sprite.outlined ? 1 : 0);
-            m_spriteShaders.push_back(shaderHandleOf(sprite.material));
-            continue;
-        }
-        // The tiles the camera sees, each filling its cell.
-        const RenderTilemap& tilemap = m_world.tilemaps[batch.source];
-        const std::uint32_t end = std::min<std::uint32_t>(tilemap.firstTile + tilemap.tileCount,
-                                                          static_cast<std::uint32_t>(m_world.tiles.size()));
-        for (std::uint32_t index = tilemap.firstTile; index < end; ++index)
-        {
-            const RenderTile& tile = m_world.tiles[index];
-            const math::Vec2 corner = math::Vec2(tile.cell) * tilemap.cellSize;
-            if (!m_cameraFrustum.intersects(boxOf(tilemap.transform, corner, corner + tilemap.cellSize)))
-            {
-                continue;
-            }
-            GpuSprite& gpu = m_gpuSprites.emplace_back(GpuSprite{
-                .world = tilemap.transform * math::translate(math::Mat4{1.0f}, math::Vec3(corner, 0.0f)),
-                .uvRect = tile.uvRect,
-                .color = tilemap.color,
-                .size = tilemap.cellSize,
-                .pivot = math::Vec2{0.0f},
-                .naturalSize = tilemap.cellSize,
-                .texture = slotOf(tile.texture),
-                .flags = (tilemap.lit ? spriteLit : 0U) | (tilemap.unshaded ? spriteUnshaded : 0U),
-                .objectId = tilemap.objectId,
-                .lightMask = tilemap.lightMask,
-                .normalTexture = slotOf(tile.normalTexture),
-                .material = materialIndex(tilemap.material),
-                .instanceParameters = instanceParametersOf(m_world, tilemap.instanceParameters),
-            });
-            if (tile.texture.isValid() && gpu.texture == noParticleTexture)
-            {
-                gpu.color.a = 0.0f;
-            }
-            m_spriteOutlined.push_back(tilemap.outlined ? 1 : 0);
-            m_spriteShaders.push_back(shaderHandleOf(tilemap.material));
-        }
-        batch.count = static_cast<std::uint32_t>(m_gpuSprites.size()) - batch.first;
-    }
-
-    const VkDeviceSize bytes = std::max<std::size_t>(m_gpuSprites.size(), 1) * sizeof(GpuSprite);
+    const VkDeviceSize bytes = std::max<std::size_t>(m_spriteFrame.sprites.size(), 1) * sizeof(GpuSprite);
     if (core::Result<void> ensured = ensureHostBuffer(frame.sprites, bytes); !ensured)
     {
         return ensured;
     }
-    if (!m_gpuSprites.empty())
+    if (!m_spriteFrame.sprites.empty())
     {
-        std::memcpy(frame.sprites->mappedBytes().data(), m_gpuSprites.data(), m_gpuSprites.size() * sizeof(GpuSprite));
+        std::memcpy(frame.sprites->mappedBytes().data(), m_spriteFrame.sprites.data(), m_spriteFrame.sprites.size() * sizeof(GpuSprite));
     }
     gatherLights2D();
     const VkDeviceSize lightBytes = std::max<std::size_t>(m_gpuLights2D.size(), 1) * sizeof(GpuLight2D);
@@ -5271,65 +4980,11 @@ void VulkanRenderer::gatherLights2D() const
 {
     m_gpuLights2D.clear();
     m_shadows2D.clear();
-    if (m_gpuSprites.empty())
+    if (m_spriteFrame.sprites.empty())
     {
         return;
     }
-    // What the camera sees of the plane of the sprites: lights beyond it light nothing seen, and the
-    // shadows of directional lights cover it. A camera looking along the plane keeps a wide square.
-    std::pair<math::Vec2, math::Vec2> view{math::Vec2(m_cameraPosition) - math::Vec2{100.0f},
-                                           math::Vec2(m_cameraPosition) + math::Vec2{100.0f}};
-    if (const std::optional<std::pair<math::Vec2, math::Vec2>> seen = visiblePlane2D(m_unjitteredViewProjection))
-    {
-        view = *seen;
-    }
-    std::uint32_t shadowed = 0;
-    const auto shadowSpan = [this, &shadowed]() -> std::span<float> {
-        ++shadowed;
-        m_shadows2D.resize(m_shadows2D.size() + shadow2DResolution);
-        return std::span(m_shadows2D).last(shadow2DResolution);
-    };
-    for (const RenderLight2D& light : m_world.lights2D)
-    {
-        if (m_gpuLights2D.size() >= maxLights2D)
-        {
-            break;
-        }
-        GpuLight2D gpu{.color = math::Vec4(light.color, std::max(light.falloff, 0.01f)), .itemMask = light.itemMask};
-        const bool shadows = light.shadows && shadowed < maxShadowedLights2D;
-        if (!light.directional)
-        {
-            const float radius = std::max(light.radius, 0.0f);
-            if (radius <= 0.0f || light.position.x + radius < view.first.x || light.position.y + radius < view.first.y ||
-                light.position.x - radius > view.second.x || light.position.y - radius > view.second.y)
-            {
-                continue;
-            }
-            gpu.kind = 0;
-            gpu.position = math::Vec4(light.position, std::max(light.height, 0.0f), radius);
-            gpu.shadow = math::Vec4(std::max(light.shadowSoftness, 0.0f), 0.0f, 0.0f, 0.0f);
-            if (shadows)
-            {
-                gpu.shadowOffset = static_cast<std::int32_t>(m_shadows2D.size());
-                pointShadow2D(light.position, radius, m_world.occluders2D, light.shadowMask, shadowSpan());
-            }
-        }
-        else
-        {
-            const DirectionalShadowFrame2D frame =
-                directionalShadowFrame(light.direction, view.first, view.second, shadows ? std::max(light.shadowDistance, 0.0f) : 0.0f);
-            gpu.kind = 1;
-            gpu.position = math::Vec4(frame.origin, std::clamp(light.height, 0.0f, 1.0f), frame.width);
-            gpu.direction = math::Vec4(frame.direction, frame.across);
-            gpu.shadow = math::Vec4(std::max(light.shadowSoftness, 0.0f), std::max(light.shadowDistance, 0.0f), frame.length, 0.0f);
-            if (shadows)
-            {
-                gpu.shadowOffset = static_cast<std::int32_t>(m_shadows2D.size());
-                directionalShadow2D(frame, m_world.occluders2D, light.shadowMask, shadowSpan());
-            }
-        }
-        m_gpuLights2D.push_back(gpu);
-    }
+    render::gatherLights2D(m_world, math::Vec2(m_cameraPosition), m_unjitteredViewProjection, m_gpuLights2D, m_shadows2D);
 }
 
 std::uint32_t VulkanRenderer::drawSprites(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
@@ -5337,18 +4992,18 @@ std::uint32_t VulkanRenderer::drawSprites(VkCommandBuffer commandBuffer, VkDevic
                                           std::uint32_t first, std::uint32_t count) const
 {
     std::uint32_t drawCalls = 0;
-    const std::uint32_t end = std::min(first + count, static_cast<std::uint32_t>(m_spriteShaders.size()));
+    const std::uint32_t end = std::min(first + count, static_cast<std::uint32_t>(m_spriteFrame.shaders.size()));
     for (std::uint32_t position = first; position < end;)
     {
         std::uint32_t next = position + 1;
-        while (next < end && m_spriteShaders[next] == m_spriteShaders[position])
+        while (next < end && m_spriteFrame.shaders[next] == m_spriteFrame.shaders[position])
         {
             ++next;
         }
         const Pipeline* pipeline = pass == SpritePass::Scene  ? &*m_spritePipeline
                                    : pass == SpritePass::Pick ? &*m_spritePickPipeline
                                                               : &*m_spriteMaskPipeline;
-        if (const GpuShader* const shader = m_spriteShaders[position].isValid() ? m_shaders.find(m_spriteShaders[position]) : nullptr)
+        if (const GpuShader* const shader = m_spriteFrame.shaders[position].isValid() ? m_shaders.find(m_spriteFrame.shaders[position]) : nullptr)
         {
             const std::optional<Pipeline>& own = pass == SpritePass::Scene  ? shader->scene
                                                  : pass == SpritePass::Pick ? shader->pick
@@ -5765,18 +5420,9 @@ const VulkanRenderer::PreviousInstance* VulkanRenderer::previousInstance(std::ui
 core::Result<void> VulkanRenderer::uploadUi(FrameContext& frame, bool tools, std::vector<std::uint32_t>& surfaceIndexBases,
                                            std::uint32_t& toolsIndexBase)
 {
-    // The surfaces and the layer of the tools, drawn only with the tools, follow the interface of the
-    // scene in the same buffers.
-    const std::span<const UiSurface> surfaces = tools ? std::span<const UiSurface>(m_world.uiSurfaces) : std::span<const UiSurface>();
-    std::size_t vertexCount = m_world.uiVertices.size() + (tools ? m_world.toolsVertices.size() : 0);
-    std::size_t indexCount = m_world.uiIndices.size() + (tools ? m_world.toolsIndices.size() : 0);
-    for (const UiSurface& surface : surfaces)
-    {
-        vertexCount += surface.vertices.size();
-        indexCount += surface.indices.size();
-    }
-    const std::size_t vertexBytes = std::max<std::size_t>(vertexCount, 1) * sizeof(GpuUiVertex);
-    const std::size_t indexBytes = std::max<std::size_t>(indexCount, 1) * sizeof(std::uint32_t);
+    packUi(m_world, tools, m_packedUi);
+    const std::size_t vertexBytes = std::max<std::size_t>(m_packedUi.vertices.size(), 1) * sizeof(GpuUiVertex);
+    const std::size_t indexBytes = std::max<std::size_t>(m_packedUi.indices.size(), 1) * sizeof(std::uint32_t);
     if (core::Result<void> ensured = ensureHostBuffer(frame.uiVertices, vertexBytes); !ensured)
     {
         return ensured;
@@ -5785,45 +5431,16 @@ core::Result<void> VulkanRenderer::uploadUi(FrameContext& frame, bool tools, std
     {
         return ensured;
     }
-
-    const std::span<std::byte> vertices = frame.uiVertices->mappedBytes();
-    for (std::size_t index = 0; index < m_world.uiVertices.size(); ++index)
+    if (!m_packedUi.vertices.empty())
     {
-        const UiVertex& vertex = m_world.uiVertices[index];
-        const GpuUiVertex gpuVertex{.position = vertex.position, .uv = vertex.uv, .color = vertex.color};
-        std::memcpy(vertices.data() + index * sizeof(GpuUiVertex), &gpuVertex, sizeof(gpuVertex));
+        std::memcpy(frame.uiVertices->mappedBytes().data(), m_packedUi.vertices.data(), m_packedUi.vertices.size() * sizeof(GpuUiVertex));
     }
-    if (!m_world.uiIndices.empty())
+    if (!m_packedUi.indices.empty())
     {
-        std::memcpy(frame.uiIndices->mappedBytes().data(), m_world.uiIndices.data(),
-                    m_world.uiIndices.size() * sizeof(std::uint32_t));
+        std::memcpy(frame.uiIndices->mappedBytes().data(), m_packedUi.indices.data(), m_packedUi.indices.size() * sizeof(std::uint32_t));
     }
-    // Each surface counts its indices from its own first vertex, placed after what came before.
-    auto vertexBase = static_cast<std::uint32_t>(m_world.uiVertices.size());
-    auto indexBase = static_cast<std::uint32_t>(m_world.uiIndices.size());
-    surfaceIndexBases.clear();
-    auto* const indices = reinterpret_cast<std::uint32_t*>(frame.uiIndices->mappedBytes().data());
-    const auto append = [&](std::span<const UiVertex> layerVertices, std::span<const std::uint32_t> layerIndices) {
-        for (std::size_t index = 0; index < layerVertices.size(); ++index)
-        {
-            const UiVertex& vertex = layerVertices[index];
-            const GpuUiVertex gpuVertex{.position = vertex.position, .uv = vertex.uv, .color = vertex.color};
-            std::memcpy(vertices.data() + (vertexBase + index) * sizeof(GpuUiVertex), &gpuVertex, sizeof(gpuVertex));
-        }
-        for (std::size_t index = 0; index < layerIndices.size(); ++index)
-        {
-            indices[indexBase + index] = vertexBase + layerIndices[index];
-        }
-        const std::uint32_t first = indexBase;
-        vertexBase += static_cast<std::uint32_t>(layerVertices.size());
-        indexBase += static_cast<std::uint32_t>(layerIndices.size());
-        return first;
-    };
-    for (const UiSurface& surface : surfaces)
-    {
-        surfaceIndexBases.push_back(append(surface.vertices, surface.indices));
-    }
-    toolsIndexBase = tools ? append(m_world.toolsVertices, m_world.toolsIndices) : indexBase;
+    surfaceIndexBases = m_packedUi.surfaceStarts;
+    toolsIndexBase = m_packedUi.toolsStart;
     return {};
 }
 

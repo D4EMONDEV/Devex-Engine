@@ -1049,7 +1049,7 @@ void VulkanRenderer::addPickPasses(FrameGraph& view)
                 drawTerrains(commands, view.sceneData, MeshPass::Pick, 0, view.frameSlot);
                 static_cast<void>(drawSprites(commands, view.sceneData, view.frame, view.frameSlot,
                                               SpritePass::Pick, 0,
-                                              static_cast<std::uint32_t>(m_gpuSprites.size())));
+                                              static_cast<std::uint32_t>(m_spriteFrame.sprites.size())));
                 vkCmdEndRendering(commands);
             });
         view.graph.addPass(
@@ -1093,16 +1093,16 @@ void VulkanRenderer::addPickPasses(FrameGraph& view)
                 drawMeshes(commands, view.sceneData, view.boneMatrices, MeshPass::SelectionMask, 0,
                            view.frameSlot);
                 // Runs of outlined sprites, in their order.
-                const auto outlinedCount = static_cast<std::uint32_t>(m_spriteOutlined.size());
+                const auto outlinedCount = static_cast<std::uint32_t>(m_spriteFrame.outlined.size());
                 for (std::uint32_t position = 0; position < outlinedCount;)
                 {
-                    if (m_spriteOutlined[position] == 0)
+                    if (m_spriteFrame.outlined[position] == 0)
                     {
                         ++position;
                         continue;
                     }
                     std::uint32_t end = position + 1;
-                    while (end < outlinedCount && m_spriteOutlined[end] != 0)
+                    while (end < outlinedCount && m_spriteFrame.outlined[end] != 0)
                     {
                         ++end;
                     }

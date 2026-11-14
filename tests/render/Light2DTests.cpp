@@ -1,5 +1,7 @@
 #include <devex/render/Light2D.hpp>
 
+#include "render/FramePreparation.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -102,4 +104,22 @@ TEST_CASE("The rectangle of the 2D plane a camera sees", "[render][light2d]")
     REQUIRE(wide.has_value());
     CHECK_THAT(wide->first.x, WithinAbs(-10.0, 1e-2));
     CHECK_THAT(wide->second.y, WithinAbs(10.0, 1e-2));
+}
+
+TEST_CASE("The 2D lights a frame packs are those the camera sees, and the first shadowed ones keep their shadows", "[render][light2d]")
+{
+    devex::render::RenderWorld world;
+    // Seen, with a shadow; far beyond what the camera sees; seen, without a shadow.
+    world.lights2D.push_back({.position = {0.0f, 0.0f}, .radius = 3.0f, .shadows = true});
+    world.lights2D.push_back({.position = {500.0f, 0.0f}, .radius = 3.0f, .shadows = true});
+    world.lights2D.push_back({.position = {1.0f, 1.0f}, .radius = 2.0f});
+    const devex::math::Mat4 viewProjection = devex::math::ortho(-10.0f, 10.0f, -10.0f, 10.0f, -100.0f, 100.0f);
+    std::vector<devex::render::GpuLight2D> lights;
+    std::vector<float> shadows;
+    devex::render::gatherLights2D(world, {0.0f, 0.0f}, viewProjection, lights, shadows);
+    REQUIRE(lights.size() == 2);
+    CHECK(lights[0].shadowOffset == 0);
+    CHECK(shadows.size() == devex::render::shadow2DResolution);
+    CHECK(lights[1].position.w == 2.0f);
+    CHECK(lights[1].shadowOffset < 0);
 }

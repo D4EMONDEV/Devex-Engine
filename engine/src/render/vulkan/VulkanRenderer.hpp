@@ -9,6 +9,7 @@
 #include "Device.hpp"
 #include "EnvironmentBaker.hpp"
 #include "GpuData.hpp"
+#include "../FramePreparation.hpp"
 #include "Instance.hpp"
 #include "Memory.hpp"
 #include "Pipeline.hpp"
@@ -742,25 +743,11 @@ private:
         std::uint32_t index = 0;
     };
     // Sprites drawn together among the blended surfaces: one sprite, or the tiles of a tilemap.
-    struct SpriteBatch
-    {
-        std::int32_t layer = 0;
-        std::int32_t order = 0;
-        float distance = 0.0f;
-        // A sprite of RenderWorld::sprites, or a tilemap of RenderWorld::tilemaps.
-        bool tilemap = false;
-        std::uint32_t source = 0;
-        // Where it is in the sorted buffer.
-        std::uint32_t first = 0;
-        std::uint32_t count = 0;
-    };
     // Scratch for the sprites of the frame: the batches in drawing order, their GPU data in the
     // same order, and which of those are outlined.
-    mutable std::vector<SpriteBatch> m_spriteBatches;
-    mutable std::vector<GpuSprite> m_gpuSprites;
+    mutable SpriteFrame m_spriteFrame;
+    PackedUi m_packedUi;
     // The canvas_item shader of each sprite of the buffer; invalid for the standard one.
-    mutable std::vector<ShaderHandle> m_spriteShaders;
-    mutable std::vector<std::uint8_t> m_spriteOutlined;
     mutable std::vector<GpuLight2D> m_gpuLights2D;
     mutable std::vector<float> m_shadows2D;
     mutable std::vector<TransparentItem> m_transparentItems;

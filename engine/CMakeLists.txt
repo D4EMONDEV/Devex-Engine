@@ -382,7 +382,9 @@ target_sources(devex_render
         src/render/Photometry.cpp
         src/render/PostProcess.cpp
         src/render/Renderer.cpp
+        src/render/FramePreparation.cpp
         src/render/Selection.cpp
+        src/render/ShadowAtlas.cpp
         src/render/Selection.hpp
         src/render/vulkan/Atmosphere.cpp
         src/render/vulkan/Atmosphere.hpp
@@ -432,6 +434,7 @@ target_sources(devex_render
             include/devex/render/PostProcess.hpp
             include/devex/render/Renderer.hpp
             include/devex/render/RenderWorld.hpp
+            include/devex/render/ShadowAtlas.hpp
 )
 
 target_link_libraries(devex_render

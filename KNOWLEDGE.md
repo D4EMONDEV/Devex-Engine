@@ -3955,3 +3955,9 @@ public:
 - `DrawContext::sharp` donne une texture dessinée à la taille affichée, en pixels ; `drawImage` pose alors l'image sur des pixels entiers.
   `EditorUiKit::sharpIcon` dessine chaque icône à chaque taille vue (jusqu'à 128 pixels) et la garde. Les jeux n'ont pas `sharp` : leurs images ne changent pas.
 - Le texte était déjà dessiné par FreeType à sa taille (`GlyphAtlas`) et mélangé en espace d'affichage (`displaySpace`) : comparé pixel à pixel, il est celui de Godot.
+
+## Partie commune du renderer (jalon 123)
+
+- `render/GpuTypes.hpp` : les structures lues par les shaders qui ne sont que des données, partagées par les backends. Une structure qui porte une adresse du GPU
+  (`VkDeviceAddress`) reste dans `vulkan/GpuData.hpp`. L'espace de noms `render::vulkan` voit celles de `render` sans qualification.
+- `render/FramePreparation` et `render/ShadowAtlas` : ce que le renderer prépare sur le CPU. Ce qui dépend de l'API (l'espace de clip, les buffers) reste dans le backend, en paramètre ou autour de l'appel.
