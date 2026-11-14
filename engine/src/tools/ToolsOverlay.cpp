@@ -368,6 +368,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     {
         applyWindowLayout(state, detail::WindowLayout::ProjectManager);
         detail::drawProjectManager(state);
+        detail::drawCreateProjectWindow(state);
         detail::drawSettingsWindow(state);
         state.viewportPixels = {};
         detail::updateWindowTitle(state, scene);
@@ -703,6 +704,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     // The panels made with the interface of the engine draw into images of their own, in the
     // overlay of a game as in the editor, which the tools then place over the window.
     detail::renderProjectManager(state, world);
+    detail::renderCreateProjectWindow(state, world);
     detail::renderEditorDock(state, world);
     detail::renderModalLayer(state, world);
     detail::renderFileSystem(state, world);

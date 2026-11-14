@@ -1182,6 +1182,12 @@ bool terminalClosesWithProgram() noexcept
 #endif
 }
 
+std::filesystem::path documentsDirectory()
+{
+    const char* const folder = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
+    return folder != nullptr ? core::pathFromUtf8(folder) : std::filesystem::path{};
+}
+
 void showErrorMessage(std::string_view title, std::string_view message)
 {
     const std::string caption(title);

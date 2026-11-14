@@ -597,6 +597,10 @@ core::Result<Project> parseProject(std::string_view text, const std::filesystem:
     const serialization::TextValue* const name = section->findAttribute("name");
     const std::string* const nameText = name != nullptr ? serialization::asString(*name) : nullptr;
     project.name = nameText != nullptr ? *nameText : core::toUtf8(projectFile.stem());
+    if (const std::string* const method = serialization::stringAttribute(*section, "rendering_method"))
+    {
+        project.renderingMethod = *method == "compatibility" ? RenderingMethod::Compatibility : RenderingMethod::ForwardPlus;
+    }
     if (const std::string* const description = serialization::stringAttribute(*section, "description"))
     {
         project.description = *description;
@@ -776,6 +780,10 @@ std::string writeProjectText(const Project& project)
     const bool newer = core::compareVersions(project.engineVersion, core::version()) > 0;
     section.attributes.push_back({"engine", serialization::TextValue(newer ? project.engineVersion : std::string(core::version()))});
     section.attributes.push_back({"name", serialization::TextValue(project.name)});
+    if (project.renderingMethod == RenderingMethod::Compatibility)
+    {
+        section.attributes.push_back({"rendering_method", serialization::TextValue(std::string("compatibility"))});
+    }
     if (!project.description.empty())
     {
         section.attributes.push_back({"description", serialization::TextValue(project.description)});
@@ -995,6 +1003,16 @@ std::string writeProjectText(const Project& project)
         actionSection.properties.push_back({"bindings", serialization::makeCall("list", std::move(bindings))});
     }
     return serialization::writeText(document);
+}
+
+core::Result<void> writeGitFiles(const Project& project)
+{
+    if (core::Result<void> written = core::writeTextFile(project.root / ".gitignore", "# What Devex makes again by itself, and what it exports.\n.devex/\nexport/\n");
+        !written)
+    {
+        return written;
+    }
+    return core::writeTextFile(project.root / ".gitattributes", "# The line ends of every file Git takes for text, the same on every system.\n* text=auto eol=lf\n");
 }
 
 core::Result<Project> createProject(const std::filesystem::path& directory, std::string_view name)

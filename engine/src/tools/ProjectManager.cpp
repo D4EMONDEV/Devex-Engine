@@ -142,50 +142,6 @@ void showImportDialog(ToolsState& state)
                                   });
 }
 
-// Why the new project cannot be created, or nothing.
-[[nodiscard]] std::optional<std::string> createProblem(const ProjectManagerState& manager,
-                                                       const std::filesystem::path& directory)
-{
-    if (manager.createName.empty())
-    {
-        return "The project needs a name.";
-    }
-    if (manager.createName.find_first_of("<>:\"/\\|?*") != std::string::npos)
-    {
-        return "The name cannot contain < > : \" / \\ | ? *";
-    }
-    std::error_code error;
-    if (manager.createParent.empty() || !std::filesystem::is_directory(core::pathFromUtf8(manager.createParent), error))
-    {
-        return "Choose an existing folder for the project.";
-    }
-    if (std::filesystem::exists(directory, error) && !std::filesystem::is_empty(directory, error))
-    {
-        return "The project folder must be empty.";
-    }
-    return std::nullopt;
-}
-
-void createProject(ToolsState& state, const std::filesystem::path& directory)
-{
-    const core::Result<asset::Project> project = asset::createProject(directory, state.projectManager.createName);
-    if (!project)
-    {
-        DEVEX_LOG_ERROR("Cannot create the project: {}", project.error());
-        return;
-    }
-    const std::filesystem::path scenePath = project->assetsDirectory() / "scenes" / "Main.dvxscene";
-    if (core::Result<void> saved = scene::saveSceneFile(makeDefaultScene(), scenePath); !saved)
-    {
-        DEVEX_LOG_WARNING("Cannot write the first scene: {}", saved.error());
-    }
-    state.projects.add(project->file);
-    state.projectManager.refresh = true;
-    saveUserSettings(state);
-    DEVEX_LOG_INFO("Created project {} in {}", project->name, core::toUtf8(project->root));
-    state.requests.openProject = project->file;
-}
-
 // One project of the list and what its row shows.
 struct Row
 {
@@ -245,16 +201,6 @@ struct ProjectManagerUi : PanelBuilder
     Button menuFavorite;
     Button menuRemove;
 
-    Entity createDialog;
-    Entity createName;
-    Entity createParent;
-    Button browse;
-    Entity createFolder;
-    Entity createStatusIcon;
-    Entity createStatus;
-    Button createConfirm;
-    Button createCancel;
-    std::string syncedParent;
 
     Entity renameDialog;
     Entity renameName;
@@ -422,35 +368,6 @@ void ProjectManagerUi::build(ToolsState& state, EditorUiKit& kit)
     scene().add<scene::UiImage>(separator, scene::UiImage{.raycastTarget = false});
     menuFavorite = button(kit, rowMenu, Icon::Star, "Add to Favorites", "menu_item", -1.0f, item, scene::TextAlign::Left);
     menuRemove = button(kit, rowMenu, Icon::Trash, "Remove from List", "menu_item", -1.0f, item, scene::TextAlign::Left);
-
-    // Creating a project: its name, the folder it goes in, and whether a folder of its name is made.
-    createDialog = dialog("Create dialog", {font * 34.0f, font * 19.5f});
-    text(createDialog, wide(font * 1.6f), "Create New Project", "text", true, scene::TextAlign::Left, font * 1.15f);
-    text(createDialog, wide(font * 1.4f), "Project Name:", "text");
-    createName = field(createDialog, wide(line), state.projectManager.createName, "", "create");
-    text(createDialog, wide(font * 1.4f), "Project Path:", "text");
-    const Entity pathLine = add(createDialog, "Path", wide(line));
-    scene().add<scene::UiLayout>(pathLine, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
-                                                           .spacing = font * 0.45f,
-                                                           .align = scene::TextAlign::Left});
-    createParent = field(pathLine, grow(line), state.projectManager.createParent, "", "create");
-    browse = button(kit, pathLine, Icon::FolderOpen, "Browse");
-    const Entity folderLine = add(createDialog, "Folder", wide(font * 1.6f));
-    scene().add<scene::UiLayout>(folderLine, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
-                                                             .spacing = font * 0.5f,
-                                                             .align = scene::TextAlign::Left});
-    createFolder = add(folderLine, "Create folder", middle({font * 1.2f, font * 1.2f}), "toggle");
-    scene().add<scene::UiImage>(createFolder);
-    scene().add<scene::UiToggle>(createFolder, scene::UiToggle{.value = state.projectManager.createFolder});
-    text(folderLine, middle({font * 8.0f, font * 1.6f}), "Create folder", "text");
-    const Entity statusLine = add(createDialog, "Status", wide(font * 1.6f));
-    scene().add<scene::UiLayout>(statusLine, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
-                                                             .spacing = font * 0.5f,
-                                                             .align = scene::TextAlign::Left});
-    createStatusIcon = icon(kit, statusLine, middle({font * 1.1f, font * 1.1f}), Icon::CircleCheck, "icon_success");
-    createStatus = text(statusLine, grow(font * 1.6f), "", "success");
-    add(createDialog, "Gap", wide(font * 0.3f));
-    std::tie(createConfirm, createCancel) = dialogButtons(kit, createDialog, Icon::Plus, "Create & Edit", font * 9.0f);
 
     renameDialog = dialog("Rename dialog", {font * 26.0f, font * 12.5f});
     text(renameDialog, wide(font * 1.6f), "Rename Project", "text", true, scene::TextAlign::Left, font * 1.15f);
@@ -686,25 +603,6 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         }
     }
 
-    // The dialogs keep what they edit in the state of the manager, which the dialog of a folder
-    // may change as well.
-    const std::filesystem::path parent = core::pathFromUtf8(manager.createParent);
-    const std::filesystem::path directory = manager.createFolder ? parent / core::pathFromUtf8(manager.createName) : parent;
-    const std::optional<std::string> problem = createProblem(manager, directory);
-    if (world.isPopupOpen(scene(), createDialog))
-    {
-        scene().get<scene::UiText>(createStatus).text = problem ? *problem : "The project goes in " + core::toUtf8(directory);
-        scene().get<UiRect>(createStatus).style = problem ? "error" : "success";
-        scene().get<scene::UiImage>(createStatusIcon).texture = kit.icon(problem ? Icon::CircleX : Icon::CircleCheck);
-        scene().get<UiRect>(createStatusIcon).style = problem ? "icon_error" : "icon_success";
-        enable(createConfirm, !problem.has_value());
-    }
-    if (manager.createParent != syncedParent)
-    {
-        scene().get<scene::UiText>(createParent).text = manager.createParent;
-        syncedParent = manager.createParent;
-    }
-
     // The panel takes the mouse and the keys of its window, and lays itself out.
     panel.update(kit, delta, UiPanel::zoomFor(font));
 
@@ -720,12 +618,8 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         {
             const auto newest = std::ranges::max_element(state.projects.entries(), {}, &ProjectEntry::lastOpened);
             manager.createParent = core::toUtf8(newest->file.parent_path().parent_path());
-            scene().get<scene::UiText>(createParent).text = manager.createParent;
-            syncedParent = manager.createParent;
         }
-        scene().get<scene::UiText>(createName).text = manager.createName;
-        world.openPopup(scene(), createDialog);
-        world.startEditing(scene(), createName);
+        state.showCreateProject = true;
     }
     const std::string announced = announcedRelease(state.updates, core::version());
     UiRect& notice = scene().get<UiRect>(updateNotice.entity);
@@ -836,7 +730,7 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         }
     }
     // Enter opens the selected project, when nothing else takes it.
-    const bool dialogOpen = world.isPopupOpen(scene(), createDialog) || world.isPopupOpen(scene(), renameDialog) ||
+    const bool dialogOpen = world.isPopupOpen(scene(), renameDialog) ||
                             world.isPopupOpen(scene(), removeDialog) || world.isPopupOpen(scene(), upgradeDialog) || world.isPopupOpen(scene(), newerDialog);
     if (panel.focused() && !dialogOpen && !world.isEditing() && state.input.pressed(platform::Key::Enter, false) &&
         !manager.selected.empty())
@@ -848,8 +742,7 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     const bool escaped = panel.focused() && state.input.pressed(platform::Key::Escape, false);
     if (std::exchange(manager.openCreate, false))
     {
-        world.openPopup(scene(), createDialog);
-        world.startEditing(scene(), createName);
+        state.showCreateProject = true;
     }
     if (std::exchange(manager.openRename, false))
     {
@@ -863,26 +756,6 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         scene().get<scene::UiText>(removeText).text =
             std::format("Remove {} from the list?", info != nullptr ? info->name : std::string("the project"));
         world.openPopup(scene(), removeDialog);
-    }
-    if (world.isPopupOpen(scene(), createDialog))
-    {
-        manager.createName = scene().get<scene::UiText>(createName).text;
-        manager.createParent = scene().get<scene::UiText>(createParent).text;
-        syncedParent = manager.createParent;
-        manager.createFolder = scene().get<scene::UiToggle>(createFolder).value;
-        if (world.wasClicked(browse.entity))
-        {
-            showFolderDialog(state, &DialogAnswers::newProjectLocation);
-        }
-        if ((world.wasClicked(createConfirm.entity) || world.wasSubmitted("create")) && !problem)
-        {
-            world.closePopup(scene(), createDialog);
-            createProject(state, directory);
-        }
-        else if (world.wasClicked(createCancel.entity) || world.wasCancelled() || escaped)
-        {
-            world.closePopup(scene(), createDialog);
-        }
     }
     if (world.isPopupOpen(scene(), renameDialog))
     {

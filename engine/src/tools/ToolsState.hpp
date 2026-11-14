@@ -190,6 +190,7 @@ struct DEVEX_API ProbeBake
 
 class EditorUiKit;
 struct ProjectManagerUi;
+struct CreateProjectUi;
 struct ReleaseCheck;
 struct FileSystemUi;
 struct OutputUi;
@@ -500,6 +501,10 @@ struct DEVEX_API ProjectManagerState
     std::string createName = "New Game Project";
     std::string createParent;
     bool createFolder = true;
+    asset::RenderingMethod createRenderer = asset::RenderingMethod::ForwardPlus;
+    bool createGit = true;
+    // Opens the project once it is made.
+    bool editNow = true;
     bool openRename = false;
     std::string renameBuffer;
     bool openRemove = false;
@@ -833,6 +838,8 @@ struct DEVEX_API ToolsState
     // project manager, the first of them.
     std::shared_ptr<EditorUiKit> uiKit;
     std::shared_ptr<ProjectManagerUi> projectManagerUi;
+    std::shared_ptr<CreateProjectUi> createProjectUi;
+    bool showCreateProject = false;
     std::shared_ptr<FileSystemUi> fileSystemUi;
     std::shared_ptr<OutputUi> outputUi;
     std::shared_ptr<CreationDialogUi> creationDialog;
@@ -1483,6 +1490,9 @@ DEVEX_API void drawInterfaceOverlay(ToolsState& state, const scene::Scene& scene
 // Shows the viewport in the screen of the kind of the active scene, 2D or 3D.
 DEVEX_API void showSceneScreen(ToolsState& state, const scene::Scene& scene);
 DEVEX_API void drawProjectManager(ToolsState& state);
+// Create New Project, in a window of its own over the project list.
+DEVEX_API void drawCreateProjectWindow(ToolsState& state);
+DEVEX_API void renderCreateProjectWindow(ToolsState& state, render::RenderWorld& world);
 // Adds the image of the project manager to the frame, when it was drawn this frame.
 DEVEX_API void renderProjectManager(ToolsState& state, render::RenderWorld& world);
 DEVEX_API void renderFileSystem(ToolsState& state, render::RenderWorld& world);

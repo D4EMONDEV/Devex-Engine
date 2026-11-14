@@ -43,10 +43,11 @@ constexpr std::size_t scriptsPage = 3;
 constexpr std::size_t compilationPage = 4;
 constexpr std::size_t networkPage = 5;
 // The pages of the project, by the numbers their cards use; those of General are listed by projectTree.
-constexpr std::array<std::string_view, 11> projectPages{
+constexpr std::array<std::string_view, 12> projectPages{
     "Config", "Window",    "Physics",      "Collision", "Sorting",
-    "Audio",  "Input Map", "Localization", "Globals",   "Addons", "Run"};
+    "Audio",  "Input Map", "Localization", "Globals",   "Addons", "Run", "Renderer"};
 constexpr std::size_t runPage = 10;
+constexpr std::size_t rendererPage = 11;
 
 // A category of the list on the left and its pages; without a name, a page that stands alone.
 struct PageTree
@@ -54,15 +55,15 @@ struct PageTree
     std::string_view group;
     std::array<int, 2> pages{-1, -1};
 };
-constexpr std::array<PageTree, 5> projectTree{PageTree{"Application", {0, static_cast<int>(runPage)}}, PageTree{"Display", {1, -1}},
-                                              PageTree{"", {2, -1}}, PageTree{"", {5, -1}}, PageTree{"Layer Names", {3, 4}}};
+constexpr std::array<PageTree, 6> projectTree{PageTree{"Application", {0, static_cast<int>(runPage)}}, PageTree{"Display", {1, -1}},
+                                              PageTree{"", {2, -1}}, PageTree{"", {5, -1}}, PageTree{"Rendering", {static_cast<int>(rendererPage), -1}}, PageTree{"Layer Names", {3, 4}}};
 constexpr std::array<PageTree, 5> editorTree{PageTree{"Interface", {0, 1}}, PageTree{"", {2, -1}}, PageTree{"", {3, -1}}, PageTree{"", {4, -1}},
                                              PageTree{"", {5, -1}}};
 
 // The pages of the first tab of the project settings, the others being tabs of their own.
 [[nodiscard]] constexpr bool isGeneralPage(std::size_t page) noexcept
 {
-    return page < 6 || page == runPage;
+    return page < 6 || page == runPage || page == rendererPage;
 }
 
 [[nodiscard]] math::Vec4 linearOf(math::Vec3 srgb)
@@ -1255,6 +1256,11 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     frameRate = numbers(rateRow.editor, single, {.minValue = 0.0f, .maxValue = 1000.0f, .step = 1.0f, .dragSpeed = 0.5f, .decimals = 0}).front();
     tooltip(rateRow.row, "The most frames a second the game draws; 0 leaves it unlimited");
     note(&sync, "Changes apply the next time the game starts.");
+    Section& rendering = pageCard(kit, rendererPage, "");
+    const FormRow methodRow = formRow(rendering, "Rendering Method");
+    renderingMethod = choice(methodRow.editor);
+    tooltip(methodRow.row, "Forward+ has every effect. Compatibility leaves out what does not run everywhere, for the same picture on every system.");
+    note(&rendering, "Compatibility turns off ambient occlusion, screen reflections and volumetric fog, here as in the game. The web will need it.", "dim", 2.0f);
 
     // Physics.
     Section& physics = pageCard(kit, 2, "");
@@ -1434,6 +1440,7 @@ void ProjectSettingsUi::sync(ToolsState& state, EditorUiKit& kit)
     setToggle(resizable, project.window.resizable);
     setToggle(borderless, project.window.borderless);
     setChoice(vsyncMode, {"Disabled", "Enabled", "Adaptive", "Mailbox"}, static_cast<std::int32_t>(project.window.vsyncMode));
+    setChoice(renderingMethod, {"Forward+", "Compatibility"}, project.renderingMethod == asset::RenderingMethod::Compatibility ? 1 : 0);
     setNumber(frameRate, static_cast<float>(project.window.maxFrameRate));
     scene::UiNumberField& rate = scene().get<scene::UiNumberField>(frameRate);
     rate.format = rate.value < 0.5f ? "Unlimited" : "{} fps";
@@ -1568,6 +1575,10 @@ void ProjectSettingsUi::answer(ToolsState& state, EditorUiKit& kit)
     if (const std::optional<std::size_t> mode = chosen(vsyncMode))
     {
         project.window.vsyncMode = static_cast<asset::VSyncMode>(*mode);
+    }
+    if (const std::optional<std::size_t> method = chosen(renderingMethod))
+    {
+        project.renderingMethod = *method == 1 ? asset::RenderingMethod::Compatibility : asset::RenderingMethod::ForwardPlus;
     }
     if (const std::string* const typed = typedText(description))
     {

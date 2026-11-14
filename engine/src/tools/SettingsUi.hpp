@@ -28,6 +28,7 @@ inline constexpr std::uint32_t projectSettingsSurface = 8;
 inline constexpr std::uint32_t exportSurface = 9;
 inline constexpr std::uint32_t debuggingSurface = 10;
 inline constexpr std::uint32_t dialogSurface = 11;
+inline constexpr std::uint32_t createProjectSurface = 26;
 
 // Opens a window that floats over the others, in the middle of the editor when it appears, its
 // content filling it without a margin: false while it is folded away, and then nothing is to draw.
@@ -205,6 +206,7 @@ struct ProjectSettingsUi : SettingsUi
     scene::Entity resizable;
     scene::Entity borderless;
     scene::Entity vsyncMode;
+    scene::Entity renderingMethod;
     scene::Entity frameRate;
     // Physics.
     std::vector<scene::Entity> gravity;

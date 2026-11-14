@@ -185,6 +185,8 @@ DEVEX_API void sleepPrecise(std::chrono::nanoseconds duration);
 // Directory containing the executable, available without a Platform, as for command-line tools.
 // On Android, the folder where the activity extracted the files of the engine.
 [[nodiscard]] DEVEX_API std::filesystem::path executableDirectory();
+// The Documents folder of the user, where Godot proposes new projects; empty when the system has none.
+[[nodiscard]] DEVEX_API std::filesystem::path documentsDirectory();
 
 #if defined(__ANDROID__)
 // Maps a file of the APK's assets, which must be stored uncompressed, such as the package of the game.

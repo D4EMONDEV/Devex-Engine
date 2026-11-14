@@ -838,6 +838,26 @@ struct DEVEX_API RenderWorld
     std::vector<std::uint32_t> toolsIndices;
     std::vector<UiDraw> toolsDraws;
 
+    // What the Compatibility renderer of a project leaves out, which not every system can do: ambient occlusion,
+    // reflections of the screen and volumetric fog.
+    void limitToCompatibility() noexcept
+    {
+        const auto limit = [](RenderCamera& settings) {
+            settings.ambientOcclusion = 0.0f;
+            settings.screenReflections = 0.0f;
+        };
+        limit(camera);
+        for (RenderView& view : views)
+        {
+            limit(view.camera);
+        }
+        for (RenderPostVolume& volume : postVolumes)
+        {
+            limit(volume.settings);
+        }
+        volumetricFog.enabled = false;
+    }
+
     // Restores the defaults while keeping allocated storage.
     void reset() noexcept
     {

@@ -694,6 +694,28 @@ TEST_CASE("What describes a game and how its window opens are saved and read bac
     // Off and on stay what they were for the versions before the modes.
     project.window.vsyncMode = VSyncMode::Disabled;
     CHECK(devex::asset::writeProjectText(project).find("vsync_mode") == std::string::npos);
+
+    // Forward+ is not written, as projects from before have it; Compatibility is kept.
+    CHECK(plain.find("rendering_method") == std::string::npos);
+    CHECK(before->renderingMethod == devex::asset::RenderingMethod::ForwardPlus);
+    project.renderingMethod = devex::asset::RenderingMethod::Compatibility;
+    const auto compatible = devex::asset::parseProject(devex::asset::writeProjectText(project), project.file);
+    REQUIRE(compatible.has_value());
+    CHECK(compatible->renderingMethod == devex::asset::RenderingMethod::Compatibility);
+}
+
+TEST_CASE("A new project can come with the files of Git", "[asset][project]")
+{
+    TemporaryProject temporary;
+    REQUIRE(devex::asset::writeGitFiles(temporary.project));
+    const auto ignored = devex::core::readTextFile(temporary.project.root / ".gitignore");
+    REQUIRE(ignored.has_value());
+    // What Devex makes again by itself, and what it exports, stay out of the repository.
+    CHECK(ignored->find(".devex/") != std::string::npos);
+    CHECK(ignored->find("export/") != std::string::npos);
+    const auto attributes = devex::core::readTextFile(temporary.project.root / ".gitattributes");
+    REQUIRE(attributes.has_value());
+    CHECK(attributes->find("* text=auto eol=lf") != std::string::npos);
 }
 
 TEST_CASE("Input actions and contexts of projects are saved and read back", "[asset][project][input]")

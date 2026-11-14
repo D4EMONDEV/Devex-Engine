@@ -73,6 +73,14 @@ struct DEVEX_API SortingSettings
     bool operator==(const SortingSettings&) const = default;
 };
 
+// What the renderer of a project does. Forward+ has every effect; Compatibility leaves out what does not run everywhere
+// (ambient occlusion, reflections of the screen, volumetric fog), for the same picture on every system, the web to come.
+enum class RenderingMethod : std::uint8_t
+{
+    ForwardPlus,
+    Compatibility,
+};
+
 // How the window of the game starts, in the player and in exported games.
 // How a game waits for the display between frames, as the project says.
 enum class VSyncMode : std::uint8_t
@@ -320,6 +328,7 @@ struct DEVEX_API Project
     // What the game is, and its version, for the system and the player.
     std::string description;
     std::string version;
+    RenderingMethod renderingMethod = RenderingMethod::ForwardPlus;
     PhysicsSettings physics;
     AudioSettings audio;
     SortingSettings sorting;
@@ -396,6 +405,10 @@ enum class ProjectAge : std::uint8_t
 [[nodiscard]] DEVEX_API std::string writeProjectText(const Project& project);
 
 // Writes a .dvxproj file into the directory and creates its assets/ and empty code/ folders.
+// A .gitignore that leaves out what Devex makes again by itself and what it exports, and a .gitattributes that keeps
+// the line ends of text the same on every system, as Godot writes them.
+[[nodiscard]] DEVEX_API core::Result<void> writeGitFiles(const Project& project);
+
 [[nodiscard]] DEVEX_API core::Result<Project> createProject(const std::filesystem::path& directory,
                                                             std::string_view name);
 

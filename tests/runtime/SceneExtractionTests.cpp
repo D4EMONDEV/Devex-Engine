@@ -19,6 +19,32 @@ using devex::scene::Entity;
 using devex::scene::Scene;
 using devex::scene::Transform;
 
+TEST_CASE("Compatibility leaves out what does not run everywhere", "[runtime][extraction]")
+{
+    devex::render::RenderWorld world;
+    world.camera.ambientOcclusion = 1.0f;
+    world.camera.screenReflections = 0.5f;
+    world.camera.bloom = 0.2f;
+    world.views.push_back({});
+    world.views.back().camera.ambientOcclusion = 1.0f;
+    world.views.back().camera.screenReflections = 1.0f;
+    world.postVolumes.push_back({});
+    world.postVolumes.back().settings.ambientOcclusion = 1.0f;
+    world.postVolumes.back().settings.screenReflections = 1.0f;
+    world.volumetricFog.enabled = true;
+
+    world.limitToCompatibility();
+    CHECK(world.camera.ambientOcclusion == 0.0f);
+    CHECK(world.camera.screenReflections == 0.0f);
+    CHECK(world.views.back().camera.ambientOcclusion == 0.0f);
+    CHECK(world.views.back().camera.screenReflections == 0.0f);
+    CHECK(world.postVolumes.back().settings.ambientOcclusion == 0.0f);
+    CHECK(world.postVolumes.back().settings.screenReflections == 0.0f);
+    CHECK_FALSE(world.volumetricFog.enabled);
+    // What runs everywhere stays.
+    CHECK(world.camera.bloom == 0.2f);
+}
+
 TEST_CASE("Extraction copies the camera, the lights and the loaded meshes", "[runtime][extraction]")
 {
     Scene scene;

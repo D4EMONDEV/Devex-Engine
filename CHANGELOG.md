@@ -5,6 +5,9 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 
 ## À venir
 
+- **Create New Project comme Godot**, dans une vraie fenêtre : nom, chemin avec **Create Folder** et **Browse**, un message en vert ou en rouge, le **renderer**, **Version Control Metadata** (Git écrit un `.gitignore` et un `.gitattributes`) et **Edit Now**. Le dossier proposé est celui du dernier projet, ou Documents.
+- **Forward+ ou Compatibility**, dans **Project Settings > Rendering** : Compatibility laisse de côté l'occlusion ambiante, les reflets de l'écran et le brouillard volumétrique, dans l'éditeur comme dans le jeu. C'est ce que demandera l'export web.
+
 ## 0.10.1 — 2026-11-07
 
 Des corrections, les licences, et la première version qu'une version précédente annonce d'elle-même : installée, la 0.10.0 la

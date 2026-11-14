@@ -1419,6 +1419,12 @@ void ApplicationRunner::render(bool gameplay)
         DEVEX_PROFILE_SCOPE("Editor overlays");
         m_services.tools->prepareRender(scene, world, m_playState);
     }
+    // In the editor as in the game, for the same picture.
+    if (const asset::AssetSource* const source = assetSource();
+        source != nullptr && source->project().renderingMethod == asset::RenderingMethod::Compatibility)
+    {
+        world.limitToCompatibility();
+    }
     m_animationViews.clear();
     m_animationViews.push_back(math::Vec3(math::inverse(world.camera.view)[3]));
     for (const auto& view : world.views)

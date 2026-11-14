@@ -994,6 +994,7 @@ target_sources(devex_tools
         src/tools/ProjectList.cpp
         src/tools/ProjectList.hpp
         src/tools/ProfilerPanel.cpp
+        src/tools/CreateProjectWindow.cpp
         src/tools/ProjectManager.cpp
         src/tools/SceneCommands.cpp
         src/tools/SceneTabs.cpp

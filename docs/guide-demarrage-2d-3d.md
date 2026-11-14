@@ -45,8 +45,9 @@ La programmation C++ demande aussi les outils de compilation configurés pour De
 1. Lancer `devex-editor.exe` pour afficher le gestionnaire.
 2. Cliquer sur **Create**.
 3. Nommer le projet `MonPremierJeu`.
-4. Choisir le dossier parent et laisser **Create folder** activé pour isoler le projet.
-5. Cliquer sur **Create & Edit**.
+4. Choisir le dossier parent et laisser **Create Folder** activé pour isoler le projet. Le message sous le chemin dit en vert où ira le projet, ou en rouge ce qui manque.
+5. Choisir le **Renderer** : **Forward+** a tous les effets ; **Compatibility** se limite à ce qui tourne partout, et sera demandé par l'export web. Il se change ensuite dans **Project Settings > Rendering**.
+6. Laisser **Version Control Metadata** sur **Git** pour un dépôt Git : un `.gitignore` et un `.gitattributes` sont écrits. Puis **Create**, avec **Edit Now** coché pour ouvrir le projet tout de suite.
 
 ![Dialogue de création d'un projet](images/guide-demarrage/02-creer-projet.jpg)
 

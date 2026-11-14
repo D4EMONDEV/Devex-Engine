@@ -5580,6 +5580,7 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+122. ✅ **Create New Project comme Godot, et le renderer d'un projet** — la création passe dans une fenêtre du système, disposée comme celle de Godot. À la place de ses trois renderers, deux : **Forward+**, avec tous les effets, et **Compatibility**, qui se limite à ce qui tournera partout, le web compris (pas d'occlusion ambiante, de reflets de l'écran ni de brouillard volumétrique). C'est un réglage du projet (`rendering_method`, écrit seulement pour Compatibility), qui s'applique au monde rendu dans l'éditeur comme dans le jeu (`RenderWorld::limitToCompatibility`) : ce qu'on voit est ce que le web montrera. **Version Control Metadata** propose None ou Git, qui écrit un `.gitignore` (`.devex/`, `export/`) et un `.gitattributes` (`* text=auto eol=lf`), comme Godot. **Edit Now** décoché laisse le projet dans la liste.
 121. ✅ **Quand l'éditeur plante, il le dit** — il se fermait sans un mot, laissant son rapport dans un dossier que personne ne connaît. Le processus qui plante n'est plus en état d'ouvrir une fenêtre : son tas ou le fil de sa fenêtre peuvent être ce qui a cassé. Une fois le rapport écrit, le gestionnaire de plantage lance donc `devex-editor --crash-message` (`CrashReporting::notifier`), qui lit le journal et montre le message, avec un bouton vers le dossier. Sous Windows, le lancement se fait sur un fil à part avec une limite de temps, pour qu'un verrou laissé tenu n'empêche pas le processus de finir ; sous Linux, avec `posix_spawn` plutôt que `fork`, dont les gestionnaires veulent ces verrous. Personne n'est prévenu sans personne devant : ni la version console dans un terminal, ni `--screenshot` et `--profile`. Un plantage rattrapé par `runGuarded`, comme le code d'un jeu joué dans l'éditeur, a déjà sa fenêtre. Les jeux exportés ne changent pas.
 120. ✅ **Les licences avec le moteur et avec les jeux** — la plupart des licences de ce que Devex livre demandent que leur texte accompagne chaque copie, et les paquets ne contenaient que celle de Devex. `cmake/DevexLicenses.cmake` rassemble à la configuration, dans `bin/licenses`, un fichier par composant : ce que vcpkg a construit pour ce système, sauf les tests et ses outils, plus ce qui vient d'ailleurs (polices, icônes, ufbx, Slang, le runtime .NET). Le dossier est au même endroit dans un build et dans un moteur installé, et l'export y lit. Un jeu emporte les licences de ce qu'il contient, sans celles de libcurl et d'OpenSSL, que l'éditeur est seul à utiliser. Le bouton **Licenses** de la fenêtre **About** ouvre le dossier.
 119. ✅ **Un avis de nouvelle version, et la 0.10.0** — la liste des projets dit qu'une version plus récente existe, comme Godot à côté de son numéro, et le bouton ouvre sa page GitHub : on lit ce qui change et on télécharge soi-même, rien ne s'installe sans nous. Actif par défaut, une fois par jour au plus, avec **Editor Settings > Network > Check for Updates**. Aucune donnée des projets n'est envoyée, et une absence de réponse ne dit rien. La liste des releases, et pas `releases/latest`, car les 0.x sortent par défaut en préversions, que `latest` ignore ; une version 1.0 ou plus n'entend plus parler des préversions. L'adresse ouverte est construite ici à partir d'un numéro fait de chiffres et de points : rien de ce que dit le réseau ne choisit la page. libcurl, plutôt que l'outil `curl` du système, pour marcher sur une machine qui ne l'a pas : il est lié au programme de l'éditeur seul (`ApplicationConfig::fetchText`), ni au moteur ni aux jeux, et `goesWithExportedGame` écarte `libcurl.dll` des exports. Windows vérifie les certificats ; OpenSSL, lié statiquement sous Linux, lit ceux du système à l'un de ses emplacements connus.
@@ -5750,6 +5751,34 @@ Les choix :
 - **L'API C# se compare par réflexion** dans un petit programme `tests/managed/ApiProbe`, sans paquet à télécharger.
 - **`0.1.0` est la première version figée.** Les projets existants sans `engine` passeront une fois par la fenêtre, ce qui
   fait une copie de plus mais n'en perd aucune. API des jeux 51.
+
+## Le web — plan décidé le 2026-11-14
+
+Avant la 1.0, les jeux Devex tournent dans un navigateur. Les choix :
+
+- **WebGPU**, un second renderer à côté de Vulkan, qui n'existe pas dans un navigateur. Il est proche de Vulkan, a les compute
+  shaders (particules, skinning, culling), et Slang écrit déjà du WGSL. Chrome, Edge, Firefox et Safari récents le lancent ; WebGL 2
+  marcherait sur plus de vieux navigateurs, mais sans compute shaders, il aurait fallu refaire ou couper une partie du rendu.
+- **Les scènes et le C++ d'abord**, comme Godot 4, qui n'exporte pas le C# vers le web. Le C++ du jeu est compilé avec Emscripten à
+  l'export, qu'on installe comme le NDK pour Android. Le C# viendra après.
+- **Sans threads d'abord** : les threads demandent à l'hébergeur des en-têtes (COOP/COEP) qu'itch.io sait mettre et GitHub Pages non.
+  Le jeu tourne sur un seul thread, chez n'importe quel hébergeur ; une case comme *Thread Support* de Godot viendra ensuite.
+- **Compatibility** (jalon 122) est ce que le web rend : un projet Forward+ se verra demander de passer en Compatibility.
+
+Ce que le navigateur change aussi : pas d'UDP, donc pas d'ENet (le multijoueur web viendra avec WebSockets ou WebRTC) ; les
+sauvegardes dans IndexedDB ; le son par Web Audio (miniaudio) ; les textures BC n'existent que sur les ordinateurs, il faut donc
+d'autres formats ou les textures décompressées ; le jeu attend un clic avant de jouer du son ou de prendre la souris.
+
+Les étapes, chacune livrable et testée :
+
+1. Le moteur se compile en WebAssembly (Emscripten, triplet `wasm32-emscripten` de vcpkg), et ses tests sans GPU tournent dans Node.
+2. Le renderer WebGPU rend les sprites, les tilemaps et l'interface : un jeu 2D tourne dans un navigateur.
+3. La 3D de Compatibility : PBR, ombres, particules, skinning.
+4. **Web** dans la liste de l'export, avec **Run in Browser** sur un petit serveur local, et les problèmes en rouge.
+5. Le C++ des jeux compilé avec Emscripten.
+6. Saisie, plein écran, souris capturée, son et sauvegardes dans le navigateur.
+
+Ensuite : les threads, le C#, le multijoueur sur le web.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

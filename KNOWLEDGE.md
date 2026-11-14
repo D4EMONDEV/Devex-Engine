@@ -3944,3 +3944,8 @@ public:
 
 - `installCrashHandler` prend `notifier` et ses arguments, préparés à l'installation : rien n'alloue au moment du plantage. L'éditeur s'y passe lui-même avec `--crash-message`.
 - `runtime/CrashMessage.cpp` lit le journal : la dernière ligne `*** The process crashed`, et la ligne `fatal` qui la précède. Ces deux formats sont donc lus : les changer demande de changer ce code.
+
+## Création de projet et renderer (jalon 122)
+
+- `tools/CreateProjectWindow.cpp` : la fenêtre (`state.showCreateProject`), `createProblem` et `createProject`. La liste des projets ne fait que l'ouvrir.
+- `Project::renderingMethod` : `Application` appelle `RenderWorld::limitToCompatibility` après `prepareRender`, une fois tout le monde extrait. Un effet de plus que le web ne saura pas faire s'y ajoute.
