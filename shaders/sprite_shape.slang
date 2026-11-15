@@ -2,6 +2,8 @@
 // (canvas.slang) and of WebGPU (webgpu_sprite.slang): plain arithmetic, without resources.
 module sprite_shape;
 
+static const float pi = 3.14159265358979;
+
 public struct Sprite
 {
     public float4x4 world;
@@ -119,4 +121,151 @@ public float2 spritePlanePosition(Sprite sprite, float2 local)
         position.y = -position.y;
     }
     return position;
+}
+
+// A light of the 2D plane, as render::vulkan::GpuLight2D.
+public struct Light2D
+{
+    // A point light: position, height and radius. A directional one: the middle of the line its
+    // shadow strips start from, its height, and the width of the strips.
+    public float4 position;
+    // Colour times energy, and how fast a point light fades.
+    public float4 color;
+    // A directional light: the way it goes, then the line across it.
+    public float4 direction;
+    // Softness of the shadows, how far those of a directional light reach, and the length of its strips.
+    public float4 shadow;
+    public uint kind;
+    public uint itemMask;
+    // Where its distances start in the shadow buffer; -1 without shadows.
+    public int shadowOffset;
+    public uint padding;
+};
+
+// Where the 2D lights of a frame come from: the pointers of Vulkan, or the storage buffers of WebGPU.
+public interface ILights2D
+{
+    uint count();
+    Light2D light(uint index);
+    // A distance kept by the shadow of a light, at its shadowOffset plus a place along its line.
+    float shadow(int index);
+    // How many distances each shadowed light keeps.
+    uint shadowResolution();
+};
+
+// The normal of the sprite at a fragment, in the world, from the X and Y of its normal map from -1 to
+// 1: mirrored as the sprite shows it and turned with its entity.
+public float3 spriteNormalOf(Sprite sprite, float2 encoded)
+{
+    float3 normal = float3(encoded, sqrt(saturate(1.0 - dot(encoded, encoded))));
+    // A flipped sprite, or a tile whose coordinates run backwards, shows its normals mirrored.
+    if (((sprite.flags & flagFlipX) != 0) != (sprite.uvRect.z < sprite.uvRect.x))
+    {
+        normal.x = -normal.x;
+    }
+    if (((sprite.flags & flagFlipY) != 0) != (sprite.uvRect.w < sprite.uvRect.y))
+    {
+        normal.y = -normal.y;
+    }
+    return normalize(mul(sprite.world, float4(normal, 0.0)).xyz);
+}
+
+static const float shadowBias2D = 0.02;
+
+// The distance a shadowed light keeps nearest to a place along its line of distances.
+float occluderAt<L : ILights2D>(L lights, Light2D light, float place, bool wraps)
+{
+    const int count = int(lights.shadowResolution());
+    int index = int(floor(place + 0.5));
+    index = wraps ? ((index % count) + count) % count : clamp(index, 0, count - 1);
+    return lights.shadow(light.shadowOffset + index);
+}
+
+// How much of a point light reaches a point `distance` away along `fromLight`: its edges blur more
+// the farther they fall behind the occluder.
+float pointShadow<L : ILights2D>(L lights, Light2D light, float2 fromLight, float distance)
+{
+    const float count = float(lights.shadowResolution());
+    float angle = atan2(fromLight.y, fromLight.x);
+    angle = angle < 0.0 ? angle + 2.0 * pi : angle;
+    const float place = angle / (2.0 * pi) * count - 0.5;
+    const float behind = max(distance - occluderAt(lights, light, place, true), 0.0);
+    const float spread = light.shadow.x * behind / max(distance, 1e-3) / (2.0 * pi) * count;
+    float lit = 0.0;
+    for (int tap = -2; tap <= 2; ++tap)
+    {
+        lit += distance <= occluderAt(lights, light, place + float(tap) * 0.5 * spread, true) + shadowBias2D ? 1.0 : 0.0;
+    }
+    return lit / 5.0;
+}
+
+// The same for a directional light, whose shadows reach `shadow.y` beyond their occluder.
+float directionalShadow<L : ILights2D>(L lights, Light2D light, float2 position)
+{
+    const float count = float(lights.shadowResolution());
+    const float2 offset = position - light.position.xy;
+    const float width = max(light.position.w, 1e-3);
+    const float place = (dot(offset, light.direction.zw) + width * 0.5) / width * count - 0.5;
+    if (place < -0.5 || place > count - 0.5)
+    {
+        return 1.0;
+    }
+    const float along = dot(offset, light.direction.xy);
+    const float reach = light.shadow.y;
+    const float behind = max(along - occluderAt(lights, light, place, false), 0.0);
+    const float spread = light.shadow.x * behind / width * count;
+    float lit = 0.0;
+    for (int tap = -2; tap <= 2; ++tap)
+    {
+        const float occluder = occluderAt(lights, light, place + float(tap) * 0.5 * spread, false);
+        lit += along <= occluder + shadowBias2D || along > occluder + reach ? 1.0 : 0.0;
+    }
+    return lit / 5.0;
+}
+
+// The light the 2D lights of `lights` give a point of a sprite, for its light mask and normal.
+public float3 spriteLight2D<L : ILights2D>(L lights, float3 position, float3 normal, bool mapped, uint lightMask)
+{
+    float3 total = float3(0.0);
+    for (uint index = 0; index < lights.count(); ++index)
+    {
+        const Light2D light = lights.light(index);
+        if ((light.itemMask & lightMask) == 0)
+        {
+            continue;
+        }
+        float3 toLight;
+        float amount = 1.0;
+        if (light.kind == 0)
+        {
+            const float2 offset = light.position.xy - position.xy;
+            const float distance = length(offset);
+            const float radius = light.position.w;
+            if (distance >= radius)
+            {
+                continue;
+            }
+            amount = pow(saturate(1.0 - distance / radius), light.color.w);
+            toLight = normalize(float3(offset, max(light.position.z, 1e-3)));
+            if (light.shadowOffset >= 0)
+            {
+                amount *= pointShadow(lights, light, -offset, distance);
+            }
+        }
+        else
+        {
+            const float height = light.position.z;
+            toLight = normalize(float3(-light.direction.xy * sqrt(max(1.0 - height * height, 0.0)), height));
+            if (light.shadowOffset >= 0)
+            {
+                amount *= directionalShadow(lights, light, position.xy);
+            }
+        }
+        if (mapped)
+        {
+            amount *= saturate(dot(normal, toLight));
+        }
+        total += light.color.rgb * amount;
+    }
+    return total;
 }

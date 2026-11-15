@@ -9,6 +9,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/platform/Window.hpp>
 #include <devex/render/Culling.hpp>
+#include <devex/render/Light2D.hpp>
 #include <devex/render/Photometry.hpp>
 #include <devex/render/PostProcess.hpp>
 
@@ -40,6 +41,9 @@ struct FrameData
 {
     math::Mat4 viewProjection{1.0f};
     math::Vec4 canvasModulate{1.0f};
+    std::uint32_t lightCount = 0;
+    std::uint32_t shadowResolution = shadow2DResolution;
+    std::uint32_t padding[2]{};
 };
 struct SpriteDrawData
 {
@@ -77,7 +81,7 @@ struct GridData
     std::uint32_t height = luminanceGridHeight;
     std::uint32_t padding[2]{};
 };
-static_assert(sizeof(FrameData) == 80 && sizeof(SpriteDrawData) == 16 && sizeof(UiDrawData) == 48 &&
+static_assert(sizeof(FrameData) == 96 && sizeof(SpriteDrawData) == 16 && sizeof(UiDrawData) == 48 &&
               sizeof(TonemapData) == 80 && sizeof(GridData) == 16);
 
 [[nodiscard]] std::string text(wgpu::StringView view)
@@ -500,9 +504,17 @@ core::Result<void> WebGpuRenderer::createPipelines()
     sprites.binding = 1;
     sprites.visibility = both;
     sprites.buffer.type = wgpu::BufferBindingType::ReadOnlyStorage;
+    wgpu::BindGroupLayoutEntry lights = sprites;
+    lights.binding = 3;
+    lights.visibility = wgpu::ShaderStage::Fragment;
+    wgpu::BindGroupLayoutEntry shadows = lights;
+    shadows.binding = 4;
     const std::array spriteEntries{uniformEntry(0, both, false, sizeof(FrameData)), sprites,
-                                   uniformEntry(2, both, true, sizeof(SpriteDrawData))};
+                                   uniformEntry(2, both, true, sizeof(SpriteDrawData)), lights, shadows};
     m_spriteLayout = bindGroupLayout(m_device, "Sprites", spriteEntries);
+    const std::array spriteTextureEntries{textureEntry(0, wgpu::ShaderStage::Fragment), samplerEntry(1, wgpu::ShaderStage::Fragment),
+                                          textureEntry(2, wgpu::ShaderStage::Fragment), samplerEntry(3, wgpu::ShaderStage::Fragment)};
+    m_spriteTexturesLayout = bindGroupLayout(m_device, "Sprite textures", spriteTextureEntries);
     const std::array uiEntries{uniformEntry(0, both, true, sizeof(UiDrawData))};
     m_uiLayout = bindGroupLayout(m_device, "Interface", uiEntries);
     const std::array tonemapEntries{uniformEntry(0, wgpu::ShaderStage::Fragment, true, sizeof(TonemapData)),
@@ -531,7 +543,7 @@ core::Result<void> WebGpuRenderer::createPipelines()
     spriteFragment.entryPoint = "spriteFragment";
     spriteFragment.targetCount = 1;
     spriteFragment.targets = &spriteTarget;
-    const std::array spriteGroups{m_spriteLayout, m_textureLayout};
+    const std::array spriteGroups{m_spriteLayout, m_spriteTexturesLayout};
     // Sprites lie among the blended surfaces: behind what the meshes drew nearer, without hiding the others.
     wgpu::DepthStencilState spriteDepth;
     spriteDepth.format = wgpu::TextureFormat::Depth32Float;
@@ -1203,8 +1215,24 @@ core::Result<void> WebGpuRenderer::endFrame()
 
     // WebGPU's clip space has Y up, as the engine's matrices.
     const ViewMatrices matrices = prepareView(m_world.camera, size, math::Vec2{0.0f}, math::Mat4{1.0f});
-    const FrameData frameData{.viewProjection = matrices.viewProjection, .canvasModulate = math::Vec4(m_world.canvasModulate, 1.0f)};
+    // The 2D lights that light what the camera sees of the plane of the sprites, and their shadows, as Vulkan gathers them.
+    gatherLights2D(m_world, math::Vec2(matrices.cameraPosition), matrices.unjitteredViewProjection, m_lights2D, m_shadows2D);
+    const FrameData frameData{.viewProjection = matrices.viewProjection,
+                              .canvasModulate = math::Vec4(m_world.canvasModulate, 1.0f),
+                              .lightCount = static_cast<std::uint32_t>(m_lights2D.size())};
     m_queue.WriteBuffer(m_frameBuffer, 0, &frameData, sizeof(frameData));
+    const std::uint64_t lights2DBytes = std::max<std::size_t>(m_lights2D.size(), 1) * sizeof(GpuLight2D);
+    const std::uint64_t shadows2DBytes = std::max<std::size_t>(m_shadows2D.size(), 1) * sizeof(float);
+    growBuffer(m_lights2DBuffer, m_lights2DCapacity, lights2DBytes, wgpu::BufferUsage::Storage, "2D lights");
+    growBuffer(m_shadows2DBuffer, m_shadows2DCapacity, shadows2DBytes, wgpu::BufferUsage::Storage, "2D shadows");
+    if (!m_lights2D.empty())
+    {
+        m_queue.WriteBuffer(m_lights2DBuffer, 0, m_lights2D.data(), m_lights2D.size() * sizeof(GpuLight2D));
+    }
+    if (!m_shadows2D.empty())
+    {
+        m_queue.WriteBuffer(m_shadows2DBuffer, 0, m_shadows2D.data(), m_shadows2D.size() * sizeof(float));
+    }
 
     // The sprites in drawing order, by runs that read one texture.
     const SpriteResources resources{
@@ -1231,9 +1259,10 @@ core::Result<void> WebGpuRenderer::endFrame()
     for (std::uint32_t index = 0; index < m_spriteFrame.sprites.size(); ++index)
     {
         const std::uint32_t texture = m_spriteFrame.sprites[index].texture;
-        if (m_spriteRuns.empty() || m_spriteRuns.back().texture != texture)
+        const std::uint32_t normalTexture = m_spriteFrame.sprites[index].normalTexture;
+        if (m_spriteRuns.empty() || m_spriteRuns.back().texture != texture || m_spriteRuns.back().normalTexture != normalTexture)
         {
-            m_spriteRuns.push_back({.first = index, .count = 0, .texture = texture});
+            m_spriteRuns.push_back({.first = index, .count = 0, .texture = texture, .normalTexture = normalTexture});
         }
         ++m_spriteRuns.back().count;
     }
@@ -1257,8 +1286,23 @@ core::Result<void> WebGpuRenderer::endFrame()
     }
     const std::array spriteEntries{bufferBinding(0, m_frameBuffer, sizeof(FrameData)),
                                    bufferBinding(1, m_spriteBuffer, spriteBytes),
-                                   bufferBinding(2, m_drawBuffer, sizeof(SpriteDrawData))};
+                                   bufferBinding(2, m_drawBuffer, sizeof(SpriteDrawData)),
+                                   bufferBinding(3, m_lights2DBuffer, lights2DBytes),
+                                   bufferBinding(4, m_shadows2DBuffer, shadows2DBytes)};
     const wgpu::BindGroup spriteGroup = bindGroup(m_device, m_spriteLayout, spriteEntries);
+    // The texture and the normal map of each run; white for what has none.
+    for (SpriteRun& run : m_spriteRuns)
+    {
+        const GpuTexture* const texture = textureAtSlot(run.texture);
+        const GpuTexture* const normal = textureAtSlot(run.normalTexture);
+        const auto viewOf = [this](const GpuTexture* found) { return found != nullptr ? found->texture.CreateView() : m_white.CreateView(); };
+        const auto samplerOf = [this](const GpuTexture* found) {
+            return found != nullptr && found->nearest ? m_nearestSampler : m_linearSampler;
+        };
+        const std::array entries{viewBinding(0, viewOf(texture)), samplerBinding(1, samplerOf(texture)),
+                                 viewBinding(2, viewOf(normal)), samplerBinding(3, samplerOf(normal))};
+        run.group = bindGroup(m_device, m_spriteTexturesLayout, entries);
+    }
 
     // The interface, in batches of one texture and one shape, cut to their rectangles.
     packUi(m_world, false, m_ui);
@@ -1356,10 +1400,9 @@ core::Result<void> WebGpuRenderer::endFrame()
             for (std::uint32_t run = 0; run < m_spriteRuns.size(); ++run)
             {
                 const SpriteRun& drawn = m_spriteRuns[run];
-                const GpuTexture* const texture = textureAtSlot(drawn.texture);
                 const auto offset = static_cast<std::uint32_t>(std::uint64_t{run} * uniformStride);
                 pass.SetBindGroup(0, spriteGroup, 1, &offset);
-                pass.SetBindGroup(1, texture != nullptr ? texture->group : m_whiteGroup);
+                pass.SetBindGroup(1, drawn.group);
                 pass.Draw(6, drawn.count);
                 ++m_drawCalls;
             }

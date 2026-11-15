@@ -160,12 +160,14 @@ private:
         math::Extent2D maxSize;
         bool window = false;
     };
-    // A run of sprites that read the same texture, drawn at once.
+    // A run of sprites that read the same texture and normal map, drawn at once.
     struct SpriteRun
     {
         std::uint32_t first = 0;
         std::uint32_t count = 0;
         std::uint32_t texture = 0;
+        std::uint32_t normalTexture = 0;
+        wgpu::BindGroup group;
     };
     // A batch of the interface as it is drawn.
     struct UiRun
@@ -232,6 +234,14 @@ private:
     wgpu::Sampler m_clampSampler;
     wgpu::BindGroupLayout m_textureLayout;
     wgpu::BindGroupLayout m_spriteLayout;
+    // The texture and the normal map of a run of sprites, with their samplers.
+    wgpu::BindGroupLayout m_spriteTexturesLayout;
+    wgpu::Buffer m_lights2DBuffer;
+    std::uint64_t m_lights2DCapacity = 0;
+    wgpu::Buffer m_shadows2DBuffer;
+    std::uint64_t m_shadows2DCapacity = 0;
+    std::vector<GpuLight2D> m_lights2D;
+    std::vector<float> m_shadows2D;
     wgpu::BindGroupLayout m_uiLayout;
     wgpu::BindGroupLayout m_tonemapLayout;
     wgpu::BindGroupLayout m_luminanceLayout;

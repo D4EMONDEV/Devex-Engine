@@ -263,6 +263,73 @@ private:
     return std::move(captured.front());
 }
 
+// The window of a 2D scene under 2D lights drawn by one API: a point light and a directional one, which cast shadows
+// from occluders, over a dark canvas, on a floor and on a sprite with a normal map.
+[[nodiscard]] devex::render::CapturedImage drawLights2D(devex::render::RenderApi api)
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform.has_value());
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window.has_value());
+    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true, .api = api});
+    if (!renderer)
+    {
+        FAIL(std::format("{}", renderer.error()));
+    }
+    devex::asset::TextureData white{.format = devex::asset::TextureFormat::Rgba8Srgb};
+    white.mips.push_back({.width = 2, .height = 2, .bytes = std::vector<std::byte>(16, std::byte{230})});
+    // Normals tilted left, right, down and up, as a normal map stores them.
+    devex::asset::TextureData normals{.format = devex::asset::TextureFormat::Rgba8Unorm, .filter = devex::asset::TextureFilter::Nearest};
+    normals.mips.push_back({.width = 2,
+                            .height = 2,
+                            .bytes = {std::byte{40}, std::byte{128}, std::byte{230}, std::byte{255}, std::byte{215}, std::byte{128},
+                                      std::byte{230}, std::byte{255}, std::byte{128}, std::byte{40}, std::byte{230}, std::byte{255},
+                                      std::byte{128}, std::byte{215}, std::byte{230}, std::byte{255}}});
+    const auto texture = renderer->createTexture(white);
+    const auto normalMap = renderer->createTexture(normals);
+    REQUIRE((texture && normalMap));
+
+    std::vector<devex::render::CapturedImage> captured;
+    for (int frame = 0; frame < 10 && captured.empty(); ++frame)
+    {
+        devex::render::RenderWorld& world = renderer->beginFrame();
+        world.camera.view = devex::math::inverse(at(0.0f, 0.0f, 10.0f));
+        world.camera.projection = devex::render::Projection::Orthographic;
+        world.camera.orthographicSize = 3.0f;
+        world.camera.farPlane = 100.0f;
+        world.camera.autoExposure = false;
+        world.camera.antialiasing = devex::render::Antialiasing::None;
+        world.camera.tonemapper = devex::render::Tonemapper::None;
+        world.camera.bloom = 0.0f;
+        world.environment.color = {0.0f, 0.0f, 0.0f};
+        world.canvasModulate = {0.25f, 0.25f, 0.3f};
+        world.sprites.push_back({.transform = at(0.0f, 0.0f, 0.0f), .size = {8.0f, 6.0f}, .naturalSize = {8.0f, 6.0f}, .texture = *texture});
+        world.sprites.push_back({.transform = at(1.5f, 0.5f, 0.1f), .size = {1.5f, 1.5f}, .naturalSize = {1.5f, 1.5f},
+                                 .texture = *texture, .normalTexture = *normalMap, .layer = 1});
+        world.lights2D.push_back({.position = {-1.0f, 0.5f}, .color = {1.0f, 0.7f, 0.4f}, .radius = 4.0f, .falloff = 1.5f,
+                                  .height = 0.4f, .shadows = true});
+        world.lights2D.push_back({.directional = true, .direction = {0.5f, -1.0f}, .color = {0.2f, 0.3f, 0.6f}, .height = 0.3f,
+                                  .shadows = true});
+        world.occluders2D.push_back({.from = {-0.5f, -0.5f}, .to = {0.0f, 1.0f}});
+        world.occluders2D.push_back({.from = {-2.5f, -1.5f}, .to = {-1.5f, -1.8f}});
+        if (frame == 3)
+        {
+            static_cast<void>(renderer->requestWindowCapture());
+        }
+        const devex::core::Result<void> presented = renderer->endFrame();
+        if (!presented)
+        {
+            FAIL(std::format("frame {}: {}", frame, presented.error()));
+        }
+        for (devex::render::CapturedImage& image : renderer->takeCaptures())
+        {
+            captured.push_back(std::move(image));
+        }
+    }
+    REQUIRE(captured.size() == 1);
+    return std::move(captured.front());
+}
+
 // How far two images of the same scene are: the channels further apart than `tolerance`, and the mean difference.
 struct Difference
 {
@@ -335,6 +402,23 @@ TEST_CASE("WebGPU draws lit meshes and their shadows as Vulkan does", "[render][
     CHECK(difference.channels < vulkan.rgba.size() / 100);
     CHECK(difference.mean < 1.5);
 
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("WebGPU lights sprites with the 2D lights and their shadows as Vulkan does", "[render][gpu][webgpu]")
+{
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawLights2D(devex::render::RenderApi::Vulkan);
+    const devex::render::CapturedImage webgpu = drawLights2D(devex::render::RenderApi::WebGpu);
+    REQUIRE(webgpu.rgba.size() == vulkan.rgba.size());
+    const Difference difference = compare(vulkan, webgpu, 6);
+    INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));
+    CHECK(difference.channels < vulkan.rgba.size() / 200);
+    CHECK(difference.mean < 1.0);
     for (const std::string& error : capture.errors())
     {
         UNSCOPED_INFO(error);

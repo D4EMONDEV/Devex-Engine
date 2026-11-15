@@ -5822,6 +5822,13 @@ Les étapes, chacune livrable et testée :
      bilinéaires, avec le même biais de pente. Les matrices sont celles de Vulkan, Y vers le bas, pour lire les cartes avec les
      mêmes calculs ; elles sont retournées vers le Y de WebGPU pour les dessiner. La profondeur est bornée plutôt que coupée là
      où l'appareil le permet (`depth-clip-control`). Le test de la 3D compare maintenant aussi les ombres.
+   - 3c, les lumières 2D ✅ : les sprites de WebGPU sont éclairés par les lumières 2D à travers leurs normal maps, et cachés
+     par les occulteurs comme ceux de Vulkan. Le calcul est partagé dans `sprite_shape.slang`, générique sur la source des
+     lumières (`ILights2D`) : les pointeurs de Vulkan, les tampons de stockage de WebGPU. Un test compare une lumière
+     ponctuelle et une directionnelle, avec leurs ombres, sur un sol et un sprite à normal map.
+   - Décidé le 2026-11-15 : **l'air physique après la 1.0** (le ciel de l'atmosphère, le disque du soleil, le voile du lointain,
+     dont il faudrait porter les tables précalculées) : c'est le plus gros morceau de 3c pour le moins de jeux. 3c garde le
+     brouillard de hauteur et les particules.
 4. **Web** dans la liste de l'export, avec **Run in Browser** sur un petit serveur local, et les problèmes en rouge.
 5. Le C++ des jeux compilé avec Emscripten.
 6. Saisie, plein écran, souris capturée, son et sauvegardes dans le navigateur.
