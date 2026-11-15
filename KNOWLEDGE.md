@@ -3997,3 +3997,6 @@ public:
 - WebGPU dessine en deux passes : la première écrit la profondeur (ciel, maillages opaques), la seconde la lit sans l'écrire
   (`depthReadOnly`), et peut donc l'échantillonner pour les particules douces : transparents, particules et sprites y passent
   dans l'ordre de Vulkan (`orderTransparent`). Un pipeline de cette passe doit avoir `depthWriteEnabled = false`.
+- Le TAA de WebGPU tourne le saut de `temporalJitter` (Y vers le bas de Vulkan) vers son Y, et reconstruit le mouvement
+  par la profondeur (`m_previousViewProjection`) : il n'y a pas de pré-passe. Ce que la tonemapping lit est l'image
+  résolue (`resolve()`) ; le bloom lit la même et écrit son halo dans le niveau 0 de la chaîne.

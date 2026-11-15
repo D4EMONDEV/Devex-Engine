@@ -477,11 +477,13 @@ if(DEVEX_WEBGPU)
         SOURCES
             ibl.slang
             webgpu_luminance.slang
+            webgpu_bloom.slang
             webgpu_mesh.slang
             webgpu_particle.slang
             webgpu_shadow.slang
             webgpu_sky.slang
             webgpu_sprite.slang
+            webgpu_taa.slang
             webgpu_tonemap.slang
             webgpu_ui.slang
     )

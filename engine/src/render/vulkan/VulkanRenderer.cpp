@@ -110,19 +110,6 @@ static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
     return matrix;
 }
 
-// The n-th point of the Halton sequence in a base, which fills an interval without clumping.
-[[nodiscard]] float haltonPoint(std::uint32_t index, std::uint32_t base) noexcept
-{
-    float result = 0.0f;
-    float fraction = 1.0f;
-    while (index > 0)
-    {
-        fraction /= static_cast<float>(base);
-        result += fraction * static_cast<float>(index % base);
-        index /= base;
-    }
-    return result;
-}
 
 // Vulkan clip space points Y down, while the engine convention points it up.
 [[nodiscard]] math::Mat4 vulkanClip() noexcept
@@ -1414,10 +1401,7 @@ core::Result<bool> VulkanRenderer::prepareScene(FrameContext& frame, bool main)
     }
     // Halton points cover a pixel evenly, whatever the number of frames that are kept.
     const bool antialiased = m_world.camera.antialiasing == Antialiasing::Temporal;
-    const auto sample = static_cast<std::uint32_t>(m_frameIndex % taaSampleCount);
-    m_jitter = antialiased ? math::Vec2{(haltonPoint(sample + 1, 2) - 0.5f) * 2.0f / static_cast<float>(m_sceneExtent.width),
-                                        (haltonPoint(sample + 1, 3) - 0.5f) * 2.0f / static_cast<float>(m_sceneExtent.height)}
-                           : math::Vec2{0.0f};
+    m_jitter = antialiased ? temporalJitter(m_frameIndex, m_sceneExtent) : math::Vec2{0.0f};
     {
         DEVEX_PROFILE_SCOPE("Reflection probes");
         if (core::Result<void> probes = uploadReflectionProbes(frame); !probes)

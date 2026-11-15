@@ -34,6 +34,9 @@ struct ViewMatrices
     math::Mat4 skyViewProjection{1.0f};
     math::Vec3 cameraPosition{0.0f};
 };
+// How far the projection of a frame moves, in clip units with Vulkan's Y down, for the temporal antialiasing: a point of
+// the Halton sequence, which covers a pixel evenly over the 8 frames it comes back after.
+[[nodiscard]] DEVEX_API math::Vec2 temporalJitter(std::uint64_t frame, math::Extent2D extent) noexcept;
 [[nodiscard]] DEVEX_API ViewMatrices prepareView(const RenderCamera& camera, math::Extent2D extent, math::Vec2 jitter,
                                                  const math::Mat4& clipCorrection);
 

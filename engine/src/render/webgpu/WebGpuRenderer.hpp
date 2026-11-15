@@ -233,6 +233,13 @@ private:
     void prepareParticles(const ViewMatrices& matrices);
     void orderTransparent(const ViewMatrices& matrices);
     void drawTransparent(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& sprites);
+    // The temporal antialiasing and the bloom, in WebGpuScene.cpp: what the tonemapping reads, resolved and haloed.
+    [[nodiscard]] core::Result<void> createPostPipelines();
+    void ensurePostTargets(math::Extent2D size);
+    // Mixes the frame with the ones before when the camera asks for it; the image the bloom and the tonemapping read.
+    [[nodiscard]] wgpu::TextureView resolve(const wgpu::CommandEncoder& encoder, const ViewMatrices& matrices);
+    // The halo of what is brighter than the threshold, in the first level of the chain; null without bloom.
+    [[nodiscard]] wgpu::TextureView drawBloom(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& finished);
     // How far a point is from the camera for sorting, as Vulkan measures it: along the view for an orthographic camera,
     // squared otherwise.
     [[nodiscard]] float sortDistance(math::Vec3 point, math::Vec3 cameraPosition) const noexcept;
@@ -378,6 +385,29 @@ private:
     std::vector<wgpu::BindGroup> m_particleGroups;
     wgpu::BindGroup m_particleDrawGroup;
     std::vector<TransparentDraw> m_transparentDraws;
+
+    // The temporal antialiasing: the frames it counts for its jitter, the two images it resolves into in turn, the
+    // one before being its history, and what the frame before saw.
+    std::uint64_t m_frameIndex = 0;
+    std::array<wgpu::Texture, 2> m_resolved;
+    std::array<wgpu::TextureView, 2> m_resolvedViews;
+    bool m_historyValid = false;
+    float m_historyExposure = 1.0f;
+    math::Mat4 m_previousViewProjection{1.0f};
+    math::Mat4 m_previousSkyViewProjection{1.0f};
+    wgpu::BindGroupLayout m_taaLayout;
+    wgpu::RenderPipeline m_taaPipeline;
+    wgpu::Buffer m_taaBuffer;
+    // The bloom: five levels, each half the one before, and its steps.
+    std::array<wgpu::Texture, 5> m_bloomChain;
+    std::array<wgpu::TextureView, 5> m_bloomViews;
+    std::array<math::Extent2D, 5> m_bloomSizes;
+    wgpu::BindGroupLayout m_bloomLayout;
+    wgpu::RenderPipeline m_bloomThreshold;
+    wgpu::RenderPipeline m_bloomDownsample;
+    wgpu::RenderPipeline m_bloomUpsample;
+    wgpu::Buffer m_bloomBuffer;
+    wgpu::Texture m_black;
     core::SlotMap<Empty, ShaderTag> m_shaders;
     core::SlotMap<Empty, ReflectionProbeTag> m_probes;
     core::SlotMap<Empty, IrradianceVolumeTag> m_volumes;

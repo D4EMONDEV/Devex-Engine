@@ -4,6 +4,7 @@
 // dragging the past behind them.
 
 import common;
+import temporal;
 
 struct TaaData
 {
@@ -34,17 +35,6 @@ VertexOutput vertexMain(uint vertexIndex : SV_VertexID)
     output.uv = fullscreenUv(vertexIndex);
     output.position = float4(output.uv * 2.0 - 1.0, 0.0, 1.0);
     return output;
-}
-
-// Bright pixels weigh less, so that a single spark cannot drag the whole neighborhood with it.
-float3 weigh(float3 color)
-{
-    return color / (1.0 + max(color.r, max(color.g, color.b)));
-}
-
-float3 unweigh(float3 color)
-{
-    return color / max(1.0 - max(color.r, max(color.g, color.b)), 1e-4);
 }
 
 [shader("fragment")]

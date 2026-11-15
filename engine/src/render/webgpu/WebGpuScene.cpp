@@ -74,6 +74,28 @@ struct SceneData
     float padding2 = 0.0f;
     math::Mat4 inverseViewProjection{1.0f};
 };
+struct TaaData
+{
+    float blend = 0.9f;
+    float historyValid = 0.0f;
+    float texelWidth = 0.0f;
+    float texelHeight = 0.0f;
+    math::Mat4 inverseViewProjection{1.0f};
+    math::Mat4 previousViewProjection{1.0f};
+    math::Mat4 skyInverseViewProjection{1.0f};
+    math::Mat4 previousSkyViewProjection{1.0f};
+};
+struct BloomData
+{
+    float texelWidth = 0.0f;
+    float texelHeight = 0.0f;
+    float strength = 1.0f;
+    float padding = 0.0f;
+};
+// What a still pixel keeps of its history, as Vulkan keeps it.
+constexpr float taaBlend = 0.9f;
+// The steps of the bloom: the threshold, four halvings and four additions.
+constexpr std::uint32_t bloomSteps = 9;
 struct ParticleDrawData
 {
     std::uint32_t first = 0;
@@ -1238,6 +1260,202 @@ void WebGpuRenderer::drawTransparent(const wgpu::RenderPassEncoder& pass, const 
             break;
         }
     }
+}
+
+core::Result<void> WebGpuRenderer::createPostPipelines()
+{
+    const wgpu::ShaderStage fragment = wgpu::ShaderStage::Fragment;
+    wgpu::BindGroupLayoutEntry depth = textureEntry(3, fragment);
+    depth.texture.sampleType = wgpu::TextureSampleType::Depth;
+    const std::array taaEntries{uniformEntry(0, fragment, false, sizeof(TaaData)), textureEntry(1, fragment),
+                                textureEntry(2, fragment), depth, samplerEntry(4, fragment)};
+    m_taaLayout = bindGroupLayout(m_device, "Temporal antialiasing", taaEntries);
+    const std::array bloomEntries{uniformEntry(0, fragment, true, sizeof(BloomData)), textureEntry(1, fragment),
+                                  samplerEntry(2, fragment)};
+    m_bloomLayout = bindGroupLayout(m_device, "Bloom", bloomEntries);
+    const auto fullscreen = [this](const wgpu::BindGroupLayout& layout, const wgpu::ShaderModule& module, const char* vertex,
+                                   const char* fragmentEntry, const wgpu::BlendState* blend) {
+        wgpu::ColorTargetState target;
+        target.format = sceneFormat;
+        target.blend = blend;
+        wgpu::FragmentState fragmentState;
+        fragmentState.module = module;
+        fragmentState.entryPoint = fragmentEntry;
+        fragmentState.targetCount = 1;
+        fragmentState.targets = &target;
+        const std::array groups{layout};
+        wgpu::RenderPipelineDescriptor descriptor;
+        descriptor.label = fragmentEntry;
+        descriptor.layout = pipelineLayout(m_device, groups);
+        descriptor.vertex.module = module;
+        descriptor.vertex.entryPoint = vertex;
+        descriptor.fragment = &fragmentState;
+        return m_device.CreateRenderPipeline(&descriptor);
+    };
+    m_taaPipeline = fullscreen(m_taaLayout, shaderModule("webgpu_taa"), "taaVertex", "taaFragment", nullptr);
+    const wgpu::ShaderModule bloom = shaderModule("webgpu_bloom");
+    m_bloomThreshold = fullscreen(m_bloomLayout, bloom, "bloomVertex", "thresholdFragment", nullptr);
+    m_bloomDownsample = fullscreen(m_bloomLayout, bloom, "bloomVertex", "downsampleFragment", nullptr);
+    // Each level adds itself over the one above.
+    wgpu::BlendState add;
+    add.color = {.operation = wgpu::BlendOperation::Add, .srcFactor = wgpu::BlendFactor::One, .dstFactor = wgpu::BlendFactor::One};
+    add.alpha = add.color;
+    m_bloomUpsample = fullscreen(m_bloomLayout, bloom, "bloomVertex", "upsampleFragment", &add);
+
+    wgpu::BufferDescriptor taa;
+    taa.label = "Temporal antialiasing";
+    taa.size = sizeof(TaaData);
+    taa.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+    m_taaBuffer = m_device.CreateBuffer(&taa);
+    wgpu::BufferDescriptor steps = taa;
+    steps.label = "Bloom";
+    steps.size = bloomSteps * uniformStride;
+    m_bloomBuffer = m_device.CreateBuffer(&steps);
+    // What the tonemapping reads as its halo without bloom.
+    wgpu::TextureDescriptor black;
+    black.size = {1, 1, 1};
+    black.format = sceneFormat;
+    black.usage = wgpu::TextureUsage::TextureBinding;
+    m_black = m_device.CreateTexture(&black);
+    return {};
+}
+
+void WebGpuRenderer::ensurePostTargets(math::Extent2D size)
+{
+    if (m_resolved[0] && m_bloomSizes[0].width == std::max(size.width >> 1, 1U) && m_bloomSizes[0].height == std::max(size.height >> 1, 1U))
+    {
+        return;
+    }
+    wgpu::TextureDescriptor descriptor;
+    descriptor.format = sceneFormat;
+    descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+    descriptor.label = "Resolved";
+    descriptor.size = {size.width, size.height, 1};
+    for (std::size_t index = 0; index < m_resolved.size(); ++index)
+    {
+        m_resolved[index] = m_device.CreateTexture(&descriptor);
+        m_resolvedViews[index] = m_resolved[index].CreateView();
+    }
+    // A history of another size cannot be followed.
+    m_historyValid = false;
+    descriptor.label = "Bloom";
+    for (std::size_t level = 0; level < m_bloomChain.size(); ++level)
+    {
+        // Every level halves the one before it, down to a few pixels.
+        m_bloomSizes[level] = {std::max(size.width >> (level + 1), 1U), std::max(size.height >> (level + 1), 1U)};
+        descriptor.size = {m_bloomSizes[level].width, m_bloomSizes[level].height, 1};
+        m_bloomChain[level] = m_device.CreateTexture(&descriptor);
+        m_bloomViews[level] = m_bloomChain[level].CreateView();
+    }
+}
+
+wgpu::TextureView WebGpuRenderer::resolve(const wgpu::CommandEncoder& encoder, const ViewMatrices& matrices)
+{
+    const bool antialiased = m_world.camera.antialiasing == Antialiasing::Temporal;
+    if (!antialiased)
+    {
+        m_historyValid = false;
+        return m_sceneView;
+    }
+    // An abrupt change of exposure, over a quarter stop, starts afresh: the scene mixes physical light and colours
+    // relative to the exposure, which scaling the history would change.
+    constexpr float exposureLimit = 1.1892071f;
+    const float exposureRatio = m_exposure / m_historyExposure;
+    const bool historyValid = m_historyValid && exposureRatio >= 1.0f / exposureLimit && exposureRatio <= exposureLimit;
+    const TaaData data{
+        .blend = taaBlend,
+        .historyValid = historyValid ? 1.0f : 0.0f,
+        .texelWidth = 1.0f / static_cast<float>(m_sceneSize.width),
+        .texelHeight = 1.0f / static_cast<float>(m_sceneSize.height),
+        .inverseViewProjection = matrices.inverseViewProjection,
+        .previousViewProjection = m_previousViewProjection,
+        .skyInverseViewProjection = math::inverse(matrices.skyViewProjection),
+        .previousSkyViewProjection = m_previousSkyViewProjection,
+    };
+    m_queue.WriteBuffer(m_taaBuffer, 0, &data, sizeof(data));
+    const std::size_t into = m_frameIndex % 2;
+    const std::array entries{bufferBinding(0, m_taaBuffer, sizeof(TaaData)), viewBinding(1, m_sceneView),
+                             viewBinding(2, m_resolvedViews[1 - into]), viewBinding(3, m_depthView),
+                             samplerBinding(4, m_clampSampler)};
+    const wgpu::BindGroup group = bindGroup(m_device, m_taaLayout, entries);
+    wgpu::RenderPassColorAttachment color;
+    color.view = m_resolvedViews[into];
+    color.loadOp = wgpu::LoadOp::Clear;
+    color.storeOp = wgpu::StoreOp::Store;
+    wgpu::RenderPassDescriptor descriptor;
+    descriptor.label = "Temporal antialiasing";
+    descriptor.colorAttachmentCount = 1;
+    descriptor.colorAttachments = &color;
+    const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+    pass.SetPipeline(m_taaPipeline);
+    pass.SetBindGroup(0, group);
+    pass.Draw(3);
+    pass.End();
+    ++m_drawCalls;
+    // What the next frame follows its pixels back to.
+    m_historyValid = true;
+    m_historyExposure = m_exposure;
+    return m_resolvedViews[into];
+}
+
+wgpu::TextureView WebGpuRenderer::drawBloom(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& finished)
+{
+    if (m_world.camera.bloom <= 0.0f)
+    {
+        return nullptr;
+    }
+    // The settings of every step at offsets of their own: the threshold, then each halving, then each addition.
+    std::vector<std::byte> steps(bloomSteps * uniformStride);
+    const auto setStep = [&steps](std::uint32_t step, math::Extent2D read, float strength) {
+        const BloomData data{.texelWidth = 1.0f / static_cast<float>(read.width),
+                             .texelHeight = 1.0f / static_cast<float>(read.height),
+                             .strength = strength};
+        std::memcpy(steps.data() + std::size_t{step} * uniformStride, &data, sizeof(data));
+    };
+    setStep(0, m_sceneSize, m_world.camera.bloomThreshold);
+    for (std::uint32_t level = 1; level < m_bloomChain.size(); ++level)
+    {
+        setStep(level, m_bloomSizes[level - 1], 1.0f);
+    }
+    for (std::uint32_t level = static_cast<std::uint32_t>(m_bloomChain.size()) - 1; level > 0; --level)
+    {
+        setStep(static_cast<std::uint32_t>(m_bloomChain.size()) + (static_cast<std::uint32_t>(m_bloomChain.size()) - 1 - level),
+                m_bloomSizes[level], 1.0f);
+    }
+    m_queue.WriteBuffer(m_bloomBuffer, 0, steps.data(), steps.size());
+    const auto pass = [&](const wgpu::RenderPipeline& pipeline, const wgpu::TextureView& read, const wgpu::TextureView& into,
+                          std::uint32_t step, bool keep) {
+        const std::array entries{bufferBinding(0, m_bloomBuffer, sizeof(BloomData)), viewBinding(1, read),
+                                 samplerBinding(2, m_clampSampler)};
+        const wgpu::BindGroup group = bindGroup(m_device, m_bloomLayout, entries);
+        wgpu::RenderPassColorAttachment color;
+        color.view = into;
+        color.loadOp = keep ? wgpu::LoadOp::Load : wgpu::LoadOp::Clear;
+        color.storeOp = wgpu::StoreOp::Store;
+        wgpu::RenderPassDescriptor descriptor;
+        descriptor.label = "Bloom";
+        descriptor.colorAttachmentCount = 1;
+        descriptor.colorAttachments = &color;
+        const wgpu::RenderPassEncoder encoded = encoder.BeginRenderPass(&descriptor);
+        encoded.SetPipeline(pipeline);
+        const auto offset = static_cast<std::uint32_t>(std::uint64_t{step} * uniformStride);
+        encoded.SetBindGroup(0, group, 1, &offset);
+        encoded.Draw(3);
+        encoded.End();
+        ++m_drawCalls;
+    };
+    // The first step reads the finished image; each halving reads the level above; the last steps add themselves back.
+    pass(m_bloomThreshold, finished, m_bloomViews[0], 0, false);
+    for (std::uint32_t level = 1; level < m_bloomChain.size(); ++level)
+    {
+        pass(m_bloomDownsample, m_bloomViews[level - 1], m_bloomViews[level], level, false);
+    }
+    for (std::uint32_t level = static_cast<std::uint32_t>(m_bloomChain.size()) - 1; level > 0; --level)
+    {
+        pass(m_bloomUpsample, m_bloomViews[level], m_bloomViews[level - 1],
+             static_cast<std::uint32_t>(m_bloomChain.size()) + (static_cast<std::uint32_t>(m_bloomChain.size()) - 1 - level), true);
+    }
+    return m_bloomViews[0];
 }
 
 } // namespace devex::render::webgpu

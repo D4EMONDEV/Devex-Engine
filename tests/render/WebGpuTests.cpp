@@ -154,7 +154,7 @@ private:
 // The window of a 3D scene drawn by one API: a rough sphere and a metallic one, a textured box on a plane and a
 // skinned box, lit by the sun, a point light and a spot, which cast shadows, and the environment baked from a sky
 // texture, in a height fog, with particles and a ribbon.
-[[nodiscard]] devex::render::CapturedImage drawMeshes(devex::render::RenderApi api)
+[[nodiscard]] devex::render::CapturedImage drawMeshes(devex::render::RenderApi api, bool temporalAndBloom = false)
 {
     auto platform = devex::platform::Platform::create();
     REQUIRE(platform.has_value());
@@ -217,8 +217,10 @@ private:
                                                 devex::math::Vec3{0.0f, 1.0f, 0.0f});
         world.camera.autoExposure = false;
         world.camera.ev100 = 0.0f;
-        world.camera.antialiasing = devex::render::Antialiasing::None;
-        world.camera.bloom = 0.0f;
+        // The antialiasing mixes the frames from the first, and the bloom halos what is brighter than its threshold.
+        world.camera.antialiasing = temporalAndBloom ? devex::render::Antialiasing::Temporal : devex::render::Antialiasing::None;
+        world.camera.bloom = temporalAndBloom ? 0.6f : 0.0f;
+        world.camera.bloomThreshold = 0.6f;
         world.camera.ambientOcclusion = 0.0f;
         world.camera.screenReflections = 0.0f;
         world.environment.sky = *skyTexture;
@@ -432,6 +434,23 @@ TEST_CASE("WebGPU draws lit meshes, their shadows, the fog and particles as Vulk
     CHECK(difference.channels < vulkan.rgba.size() / 100);
     CHECK(difference.mean < 1.5);
 
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("WebGPU resolves the temporal antialiasing and the bloom as Vulkan does", "[render][gpu][webgpu]")
+{
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan, true);
+    const devex::render::CapturedImage webgpu = drawMeshes(devex::render::RenderApi::WebGpu, true);
+    REQUIRE(webgpu.rgba.size() == vulkan.rgba.size());
+    const Difference difference = compare(vulkan, webgpu, 8);
+    INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));
+    CHECK(difference.channels < vulkan.rgba.size() / 100);
+    CHECK(difference.mean < 1.5);
     for (const std::string& error : capture.errors())
     {
         UNSCOPED_INFO(error);

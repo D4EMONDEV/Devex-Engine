@@ -30,14 +30,17 @@ devex_add_shaders(devex_shaders
         canvas.slang
         common.slang
         custom.slang
+        bloom_filter.slang
         geometry.slang
         particles.slang
         particle_shape.slang
         pbr.slang
         sprite_shape.slang
         surface_shading.slang
+        temporal.slang
         tonemapping.slang
         ui_shape.slang
+        webgpu_bloom.slang
         webgpu_luminance.slang
         webgpu_mesh.slang
         webgpu_particle.slang
@@ -45,6 +48,7 @@ devex_add_shaders(devex_shaders
         webgpu_shadow.slang
         webgpu_sky.slang
         webgpu_sprite.slang
+        webgpu_taa.slang
         webgpu_tonemap.slang
         webgpu_ui.slang
 )

@@ -1,6 +1,6 @@
-// Maps the exposed high dynamic range scene to the display for WebGPU, compiled to WGSL: the grading,
-// the operators and the vignette and grain of tonemap.slang, without its bloom, chromatic aberration
-// and table of colours yet. The image drawn into encodes sRGB itself, or this pass encodes it.
+// Maps the exposed high dynamic range scene to the display for WebGPU, compiled to WGSL: the bloom, the grading,
+// the operators and the vignette and grain of tonemap.slang, without its chromatic aberration and table of colours
+// (after the 1.0). The image drawn into encodes sRGB itself, or this pass encodes it.
 
 import tonemapping;
 
@@ -22,7 +22,8 @@ struct TonemapData
     // The colour grading: saturation and contrast (1 leaves them).
     float saturation;
     float contrast;
-    float padding0;
+    // How much of the halo of bright things is added back to the image.
+    float bloom;
     float padding1;
     float padding2;
     // The filter the colours are multiplied by, and the factors of the white balance on the cones
@@ -37,6 +38,8 @@ ConstantBuffer<TonemapData> settings;
 Texture2D sceneTexture;
 [[vk::binding(2, 0)]]
 SamplerState clampSampler;
+[[vk::binding(3, 0)]]
+Texture2D bloomTexture;
 
 struct VertexOutput
 {
@@ -67,7 +70,13 @@ float4 tonemapFragment(VertexOutput input) : SV_Target
     const float2 fromMiddle = imageUv - 0.5;
     const float3 sampled = sceneTexture.SampleLevel(clampSampler, input.position.xy / targetSize, 0.0).rgb;
     const float3 loaded = sceneTexture.Load(int3(int2(input.position.xy), 0)).rgb;
+    // The halo, read by every pixel as WGSL wants it.
+    const float3 halo = max(bloomTexture.Sample(clampSampler, imageUv).rgb, float3(0.0));
     float3 color = max(smaller ? sampled : loaded, float3(0.0));
+    if (settings.bloom > 0.0)
+    {
+        color += halo * settings.bloom;
+    }
     color = grade(color, settings.balance.rgb, settings.filter.rgb, settings.contrast, settings.saturation);
     float3 mapped = tonemap(color, settings.tonemapper);
     if (settings.vignette > 0.0)

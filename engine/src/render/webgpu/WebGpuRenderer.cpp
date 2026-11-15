@@ -71,7 +71,8 @@ struct TonemapData
     std::uint32_t encode = 0;
     float saturation = 1.0f;
     float contrast = 1.0f;
-    float padding[3]{};
+    float bloom = 0.0f;
+    float padding[2]{};
     math::Vec4 filter{1.0f};
     math::Vec4 balance{1.0f};
 };
@@ -468,6 +469,10 @@ core::Result<void> WebGpuRenderer::initialize()
     {
         return particles;
     }
+    if (core::Result<void> post = createPostPipelines(); !post)
+    {
+        return post;
+    }
     return {};
 }
 
@@ -522,7 +527,8 @@ core::Result<void> WebGpuRenderer::createPipelines()
     const std::array uiEntries{uniformEntry(0, both, true, sizeof(UiDrawData))};
     m_uiLayout = bindGroupLayout(m_device, "Interface", uiEntries);
     const std::array tonemapEntries{uniformEntry(0, wgpu::ShaderStage::Fragment, true, sizeof(TonemapData)),
-                                    textureEntry(1, wgpu::ShaderStage::Fragment), samplerEntry(2, wgpu::ShaderStage::Fragment)};
+                                    textureEntry(1, wgpu::ShaderStage::Fragment), samplerEntry(2, wgpu::ShaderStage::Fragment),
+                                    textureEntry(3, wgpu::ShaderStage::Fragment)};
     m_tonemapLayout = bindGroupLayout(m_device, "Tonemap", tonemapEntries);
     wgpu::BindGroupLayoutEntry output;
     output.binding = 3;
@@ -735,6 +741,7 @@ void WebGpuRenderer::ensureSceneTarget(math::Extent2D size)
     descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
     m_sceneTarget = m_device.CreateTexture(&descriptor);
     m_sceneView = m_sceneTarget.CreateView();
+    ensurePostTargets(size);
     wgpu::TextureDescriptor depth;
     depth.label = "Depth";
     depth.size = {size.width, size.height, 1};
@@ -1018,6 +1025,7 @@ RenderWorld& WebGpuRenderer::beginFrame() noexcept
 void WebGpuRenderer::resetSceneHistory() noexcept
 {
     m_snapExposure = true;
+    m_historyValid = false;
 }
 
 void WebGpuRenderer::updateExposure()
@@ -1082,6 +1090,7 @@ void WebGpuRenderer::drawImage(const wgpu::CommandEncoder& encoder, const wgpu::
         .encode = 0,
         .saturation = std::max(m_world.camera.saturation, 0.0f),
         .contrast = std::max(m_world.camera.contrast, 0.01f),
+        .bloom = std::max(m_world.camera.bloom, 0.0f),
         .filter = math::Vec4(math::max(m_world.camera.colorFilter, math::Vec3{0.0f}), 1.0f),
         .balance = math::Vec4(balance, 1.0f),
     };
@@ -1218,8 +1227,9 @@ core::Result<void> WebGpuRenderer::endFrame()
     updateExposure();
     m_exposure = exposureFromEv100(m_ev100);
 
-    // WebGPU's clip space has Y up, as the engine's matrices.
-    const ViewMatrices matrices = prepareView(m_world.camera, size, math::Vec2{0.0f}, math::Mat4{1.0f});
+    // WebGPU's clip space has Y up, as the engine's matrices: the jitter of the antialiasing, given Y down, turns.
+    const math::Vec2 jitter = m_world.camera.antialiasing == Antialiasing::Temporal ? temporalJitter(m_frameIndex, size) : math::Vec2{0.0f};
+    const ViewMatrices matrices = prepareView(m_world.camera, size, math::Vec2{jitter.x, -jitter.y}, math::Mat4{1.0f});
     // The 2D lights that light what the camera sees of the plane of the sprites, and their shadows, as Vulkan gathers them.
     gatherLights2D(m_world, math::Vec2(matrices.cameraPosition), matrices.unjitteredViewProjection, m_lights2D, m_shadows2D);
     const FrameData frameData{.viewProjection = matrices.viewProjection,
@@ -1362,9 +1372,6 @@ core::Result<void> WebGpuRenderer::endFrame()
     // Every image this frame tonemaps reads its settings at an offset of its own.
     growBuffer(m_tonemapBuffer, m_tonemapCapacity, (m_captureRequests.size() + 1) * uniformStride, wgpu::BufferUsage::Uniform,
                "Tonemap");
-    const std::array tonemapEntries{bufferBinding(0, m_tonemapBuffer, sizeof(TonemapData)), viewBinding(1, m_sceneView),
-                                    samplerBinding(2, m_clampSampler)};
-    m_tonemapGroup = bindGroup(m_device, m_tonemapLayout, tonemapEntries);
 
     const wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
     drawShadows(encoder);
@@ -1410,6 +1417,16 @@ core::Result<void> WebGpuRenderer::endFrame()
         drawTransparent(pass, spriteGroup);
         pass.End();
     }
+
+    // What the antialiasing resolved, and its halo, which the tonemapping reads.
+    const wgpu::TextureView finished = resolve(encoder, matrices);
+    const wgpu::TextureView halo = drawBloom(encoder, finished);
+    const std::array tonemapEntries{bufferBinding(0, m_tonemapBuffer, sizeof(TonemapData)), viewBinding(1, finished),
+                                    samplerBinding(2, m_clampSampler), viewBinding(3, halo ? halo : m_black.CreateView())};
+    m_tonemapGroup = bindGroup(m_device, m_tonemapLayout, tonemapEntries);
+    m_previousViewProjection = matrices.unjitteredViewProjection;
+    m_previousSkyViewProjection = matrices.skyViewProjection;
+    ++m_frameIndex;
 
     // The luminance of the scene for the exposure of the frames after, unless a measure is still on its way.
     std::optional<Readback> measured;

@@ -5836,6 +5836,13 @@ Les étapes, chacune livrable et testée :
      Vulkan (calque, ordre, du plus loin), dans une passe qui lit la profondeur sans l'écrire, que les particules douces
      lisent. La scène WebGPU devient un module, `webgpu_scene.slang`, que les maillages, le ciel et les particules importent.
      Le test de la 3D compare maintenant aussi le brouillard, des particules douces, additives et étirées, et une traînée.
+   - 3d ✅ le bloom et le TAA. Le bloom de WebGPU suit la chaîne de Vulkan (un seuil qui divise l'image par deux, quatre
+     divisions, quatre additions) avec les mêmes filtres, partagés dans `bloom_filter.slang`, génériques sur l'image lue. Le
+     TAA reprend le saut de Halton de Vulkan (`temporalJitter`, partagé), l'historique en alternance, la pondération
+     (`temporal.slang`) et la remise à zéro sur un changement brusque d'exposition ; WebGPU ne dessine pas le mouvement de
+     chaque pixel : il le reconstruit à partir de la profondeur et des matrices de l'image d'avant, ce qui suit la caméra
+     mais pas un objet qui bouge, que le voisinage borne. Un test compare une scène antialiasée et voilée de bloom à Vulkan.
+     La 3D de Compatibility est faite, hors de ce qui vient après la 1.0.
 4. **Web** dans la liste de l'export, avec **Run in Browser** sur un petit serveur local, et les problèmes en rouge.
 5. Le C++ des jeux compilé avec Emscripten.
 6. Saisie, plein écran, souris capturée, son et sauvegardes dans le navigateur.

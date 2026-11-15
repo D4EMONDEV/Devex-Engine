@@ -82,6 +82,31 @@ math::Mat4 projectionMatrix(const RenderCamera& camera, float aspectRatio, const
     return clipCorrection * math::perspectiveReverseZ(camera.verticalFov, aspectRatio, camera.nearPlane);
 }
 
+namespace {
+
+// The n-th point of the Halton sequence in a base, which fills an interval without clumping.
+float haltonPoint(std::uint32_t index, std::uint32_t base) noexcept
+{
+    float result = 0.0f;
+    float fraction = 1.0f;
+    while (index > 0)
+    {
+        fraction /= static_cast<float>(base);
+        result += fraction * static_cast<float>(index % base);
+        index /= base;
+    }
+    return result;
+}
+
+} // namespace
+
+math::Vec2 temporalJitter(std::uint64_t frame, math::Extent2D extent) noexcept
+{
+    const auto sample = static_cast<std::uint32_t>(frame % 8);
+    return {(haltonPoint(sample + 1, 2) - 0.5f) * 2.0f / static_cast<float>(std::max(extent.width, 1U)),
+            (haltonPoint(sample + 1, 3) - 0.5f) * 2.0f / static_cast<float>(std::max(extent.height, 1U))};
+}
+
 ViewMatrices prepareView(const RenderCamera& camera, math::Extent2D extent, math::Vec2 jitter, const math::Mat4& clipCorrection)
 {
     const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(std::max(extent.height, 1U));
