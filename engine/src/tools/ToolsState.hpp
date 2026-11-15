@@ -26,6 +26,7 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/NavMeshData.hpp>
+#include <devex/tools/WebServer.hpp>
 #include <devex/asset/AssetMemory.hpp>
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/AudioClipData.hpp>
@@ -1218,6 +1219,10 @@ struct DEVEX_API ToolsState
     std::vector<std::string> androidAbis;
     std::string androidProblem;
     std::string otherDesktopProblem;
+    std::string webProblem;
+    std::function<std::string(const asset::Project&)> webProjectProblem;
+    // The server Run in Browser plays the last game exported for the web from.
+    std::unique_ptr<WebServer> webServer;
     ExportStatus exportStatus;
     GizmoHandle hoveredHandle = GizmoHandle::None;
     // The view of the last rendered frame, which mouse interactions refer to.

@@ -1408,6 +1408,8 @@ core::Result<void> WebGpuRenderer::endFrame()
         wgpu::RenderPassDepthStencilAttachment depth;
         depth.view = m_depthView;
         depth.depthReadOnly = true;
+        // Unused, but a browser reads it, and refuses the undefined value, which is not a number.
+        depth.depthClearValue = 0.0f;
         wgpu::RenderPassDescriptor descriptor;
         descriptor.label = "Blended";
         descriptor.colorAttachmentCount = 1;

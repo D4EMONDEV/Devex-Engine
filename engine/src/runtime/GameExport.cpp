@@ -89,7 +89,7 @@ struct TargetSystem
 #else
     constexpr std::string_view own = "desktop";
 #endif
-    return name == "desktop" || name == "android" || name == own || (!asset::otherDesktopSystem().empty() && name == asset::otherDesktopSystem());
+    return name == "desktop" || name == "android" || name == "web" || name == own || (!asset::otherDesktopSystem().empty() && name == asset::otherDesktopSystem());
 }
 
 [[nodiscard]] TargetSystem targetOf(const ExportPlan& plan) noexcept
@@ -189,6 +189,50 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
 }
 
 // Empties the output folder, when it is missing, empty or a previous export.
+// The page, the program and the WebAssembly of the web player, and the licenses of what it carries, beside the
+// package; the page takes the name of the game.
+[[nodiscard]] core::Result<void> copyWebPlayer(const std::filesystem::path& player, const std::filesystem::path& output,
+                                               const std::string& gameName)
+{
+    std::error_code error;
+    for (const char* file : {"devex-player.js", "devex-player.wasm"})
+    {
+        std::filesystem::copy_file(player / file, output / file, std::filesystem::copy_options::overwrite_existing, error);
+        if (error)
+        {
+            return core::makeError(core::ErrorCode::Io, "cannot copy {}: {}", file, error.message());
+        }
+    }
+    core::Result<std::string> page = core::readTextFile(player / "index.html");
+    if (!page)
+    {
+        return std::unexpected(page.error());
+    }
+    std::string escaped;
+    for (const char c : gameName)
+    {
+        escaped += c == '<' ? std::string("&lt;") : c == '>' ? std::string("&gt;") : c == '&' ? std::string("&amp;") : std::string(1, c);
+    }
+    if (const std::size_t title = page->find("<title>Devex game</title>"); title != std::string::npos)
+    {
+        page->replace(title, std::string_view("<title>Devex game</title>").size(), std::format("<title>{}</title>", escaped));
+    }
+    if (core::Result<void> written = core::writeTextFile(output / "index.html", *page); !written)
+    {
+        return written;
+    }
+    if (std::filesystem::is_directory(player / "licenses", error))
+    {
+        std::filesystem::copy(player / "licenses", output / "licenses",
+                              std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, error);
+        if (error)
+        {
+            return core::makeError(core::ErrorCode::Io, "cannot copy the licenses of the web player: {}", error.message());
+        }
+    }
+    return {};
+}
+
 [[nodiscard]] core::Result<void> prepareOutput(const std::filesystem::path& output)
 {
     std::error_code error;
@@ -539,6 +583,67 @@ core::Result<EngineBuild> findOtherDesktopEngine(const std::filesystem::path& bi
                                label, version, core::version());
     }
     return *build;
+}
+
+core::Result<std::filesystem::path> findWebPlayer(const std::filesystem::path& binDirectory)
+{
+    // The bin/ of the editor, given with or without its last separator.
+    std::filesystem::path bin = binDirectory.lexically_normal();
+    if (!bin.has_filename())
+    {
+        bin = bin.parent_path();
+    }
+    const std::filesystem::path folder = (bin.parent_path() / "platforms" / "web").lexically_normal();
+    for (const char* file : {"index.html", "devex-player.js", "devex-player.wasm"})
+    {
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(folder / file, error))
+        {
+            return core::makeError(core::ErrorCode::NotFound,
+                                   "the web player is not next to the editor: it comes with the installer, in {}",
+                                   core::toUtf8(folder));
+        }
+    }
+    return folder;
+}
+
+std::string webExportProblem(const asset::Project& project)
+{
+    if (project.renderingMethod != asset::RenderingMethod::Compatibility)
+    {
+        return "The web draws with the Compatibility renderer: choose it in Project > Project Settings > Rendering";
+    }
+    if (!detail::GameCodeBuilder::moduleRegistersNothing(project))
+    {
+        return "This game has C++ code, which does not build for the web yet";
+    }
+    return {};
+}
+
+core::Result<void> prepareWebExport(ExportPlan& plan, const std::filesystem::path& binDirectory,
+                                    const std::optional<std::filesystem::path>& output)
+{
+    const asset::Project& project = plan.project;
+    if (const std::string problem = webExportProblem(project); !problem.empty())
+    {
+        return core::makeError(core::ErrorCode::Unsupported, "{}", problem);
+    }
+    core::Result<std::filesystem::path> player = findWebPlayer(binDirectory);
+    if (!player)
+    {
+        return std::unexpected(player.error());
+    }
+    plan.webPlayer = std::move(*player);
+    plan.platform = ExportPlatform::Web;
+    // C# does not run in a browser yet: its components do nothing.
+    plan.managed = false;
+    const std::filesystem::path configured = core::pathFromUtf8(project.exportSettings.webOutput);
+    const std::filesystem::path chosen = output ? *output : configured.is_absolute() ? configured : project.root / configured;
+    plan.output = chosen.lexically_normal();
+    // The ZIP beside the folder, ready for itch.io.
+    const std::filesystem::path folder = plan.output.has_filename() ? plan.output : plan.output.parent_path();
+    plan.webArchive = folder.parent_path() / core::pathFromUtf8(executableName(project.name) + "-web.zip");
+    return {};
 }
 
 core::Result<void> prepareOtherDesktopExport(ExportPlan& plan, const std::filesystem::path& binDirectory,
@@ -955,7 +1060,8 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
 
     std::optional<std::filesystem::path> library;
     // On the other system, the C++ of the game cannot build, and it was checked that it does nothing.
-    if (!plan.packageOnly && plan.platform != ExportPlatform::OtherDesktop && detail::GameCodeBuilder::hasCode(project))
+    if (!plan.packageOnly && plan.platform != ExportPlatform::OtherDesktop && plan.platform != ExportPlatform::Web &&
+        detail::GameCodeBuilder::hasCode(project))
     {
         report(std::format("Building the game code ({})", plan.engine.configuration), 0.02f);
         detail::GameCodeBuilder builder(project, plan.engine.cmakeDirectory(), plan.engine.configuration);
@@ -1069,7 +1175,7 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
         return std::unexpected(prepared.error());
     }
 
-    std::filesystem::path packagePath = plan.output / core::pathFromUtf8(name);
+    std::filesystem::path packagePath = plan.output / core::pathFromUtf8(plan.platform == ExportPlatform::Web ? std::string("game") : name);
     packagePath += asset::packageExtension;
     core::Result<asset::PackageWriter> writer = asset::PackageWriter::create(packagePath);
     if (!writer)
@@ -1136,7 +1242,15 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
     }
 
     ExportResult result{.output = plan.output, .assets = statistics->assets, .packageBytes = statistics->fileBytes};
-    if (!plan.packageOnly)
+    if (!plan.packageOnly && plan.platform == ExportPlatform::Web)
+    {
+        report("Copying the web player", 0.88f);
+        if (core::Result<void> copied = copyWebPlayer(plan.webPlayer, plan.output, project.name); !copied)
+        {
+            return std::unexpected(copied.error());
+        }
+    }
+    else if (!plan.packageOnly)
     {
         report("Copying the engine", 0.88f);
         core::Result<std::filesystem::path> executable = copyEngine(plan, name, library);
@@ -1177,6 +1291,15 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
     {
         return std::unexpected(marked.error());
     }
+    if (!plan.webArchive.empty() && !plan.packageOnly)
+    {
+        report("Packing the game", 0.96f);
+        if (core::Result<void> zipped = detail::writeZip(plan.output, plan.webArchive); !zipped)
+        {
+            return std::unexpected(zipped.error());
+        }
+        result.archive = plan.webArchive;
+    }
     if (!plan.archive.empty() && !plan.packageOnly)
     {
         report("Packing the game", 0.96f);
@@ -1197,7 +1320,7 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
 int exportFromCommandLine(std::span<const std::string_view> arguments, const std::filesystem::path& binDirectory)
 {
     constexpr std::string_view usage = "usage: devex-editor --export <project.dvxproj> [--output <folder>] "
-                                       "[--configuration <Release|Debug>] [--platform <desktop|windows|linux|android>] "
+                                       "[--configuration <Release|Debug>] [--platform <desktop|windows|linux|android|web>] "
                                        "[--abi <arm64-v8a|x86_64>]... [--format <apk|aab>] [--release] [--install] [--package-only]";
     if (arguments.size() < 2 || arguments.front() != "--export")
     {
@@ -1248,6 +1371,10 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
             if (chosen == "android")
             {
                 platform = ExportPlatform::Android;
+            }
+            else if (chosen == "web")
+            {
+                platform = ExportPlatform::Web;
             }
             else if (!asset::otherDesktopSystem().empty() && chosen == asset::otherDesktopSystem())
             {
@@ -1314,6 +1441,14 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
     if (platform == ExportPlatform::OtherDesktop)
     {
         if (core::Result<void> prepared = prepareOtherDesktopExport(*plan, binDirectory, plan->packageOnly ? plan->output : output); !prepared)
+        {
+            DEVEX_LOG_ERROR("Cannot export {}: {}", project->name, prepared.error());
+            return 1;
+        }
+    }
+    if (platform == ExportPlatform::Web && !plan->packageOnly)
+    {
+        if (core::Result<void> prepared = prepareWebExport(*plan, binDirectory, output); !prepared)
         {
             DEVEX_LOG_ERROR("Cannot export {}: {}", project->name, prepared.error());
             return 1;

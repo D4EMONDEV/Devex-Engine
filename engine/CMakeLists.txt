@@ -1059,6 +1059,7 @@ target_sources(devex_tools
         src/tools/Theme.hpp
         src/tools/ViewportSettings.cpp
         src/tools/ViewportSettings.hpp
+        src/tools/WebServer.cpp
         src/tools/ToolsOverlay.cpp
         src/tools/ToolsState.hpp
         src/tools/TwoDScreen.cpp
@@ -1074,6 +1075,7 @@ target_sources(devex_tools
             include/devex/tools/LogBuffer.hpp
             include/devex/tools/SceneCommands.hpp
             include/devex/tools/ReleaseCheck.hpp
+            include/devex/tools/WebServer.hpp
             include/devex/tools/ToolsOverlay.hpp
 )
 
@@ -1095,6 +1097,10 @@ target_link_libraries(devex_tools
     PRIVATE
         plutosvg::plutosvg
 )
+if(WIN32)
+    # The server of Run in Browser.
+    target_link_libraries(devex_tools PRIVATE ws2_32)
+endif()
 # The fonts and icons of the tools, loaded at runtime from resources/ next to the executables.
 add_dependencies(devex_tools devex_resources)
 set_target_properties(devex_tools PROPERTIES

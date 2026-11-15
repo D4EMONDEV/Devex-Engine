@@ -4000,3 +4000,11 @@ public:
 - Le TAA de WebGPU tourne le saut de `temporalJitter` (Y vers le bas de Vulkan) vers son Y, et reconstruit le mouvement
   par la profondeur (`m_previousViewProjection`) : il n'y a pas de pré-passe. Ce que la tonemapping lit est l'image
   résolue (`resolve()`) ; le bloom lit la même et écrit son halo dans le niveau 0 de la chaîne.
+
+## Export Web (étape 4 du web)
+
+- Le lecteur web vient de `platforms/web` à côté du `bin/` de l'éditeur (`findWebPlayer`) : la release l'y met depuis
+  l'artefact `devex-web` du job Web. Pour essayer depuis un build : copier `index.html`, `devex-player.js`, `.wasm` et
+  `licenses/` du build web dans `out/build/<dossier>/platforms/web`.
+- Un navigateur refuse ce que Dawn sur le bureau accepte : un `float` non fini dans un descripteur (la valeur d'effacement
+  d'une passe dont la profondeur est en lecture seule). Essayer chaque changement du renderer dans le navigateur aussi.

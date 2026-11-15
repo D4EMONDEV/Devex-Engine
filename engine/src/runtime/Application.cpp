@@ -647,6 +647,9 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
         services.tools->setAndroidExport(std::move(androidAbis), findAndroidTools().problem(false));
         const core::Result<EngineBuild> otherEngine = findOtherDesktopEngine(services.platform.baseDirectory());
         services.tools->setOtherDesktopExport(otherEngine ? std::string{} : otherEngine.error().message);
+        const core::Result<std::filesystem::path> webPlayer = findWebPlayer(services.platform.baseDirectory());
+        services.tools->setWebExport(webPlayer ? std::string{} : webPlayer.error().message,
+                                     [](const asset::Project& project) { return webExportProblem(project); });
     }
 }
 
@@ -1540,6 +1543,10 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
         if (!findAndroidBuilds(m_services.platform.baseDirectory()).empty() && findAndroidTools().problem(false).empty())
         {
             m_exportQueue.emplace_back("android");
+        }
+        if (findWebPlayer(m_services.platform.baseDirectory()) && webExportProblem(project).empty())
+        {
+            m_exportQueue.emplace_back("web");
         }
         m_exportedFolders.clear();
     }
@@ -3541,10 +3548,11 @@ void ApplicationRunner::startExport()
     // The one chosen, or the next of an Export All.
     const std::string platform = m_exportQueue.empty() ? project.exportSettings.platform : m_exportQueue.front();
     const bool android = platform == "android";
+    const bool web = platform == "web";
     const bool otherDesktop = !asset::otherDesktopSystem().empty() && platform == asset::otherDesktopSystem();
-    // A plan for Android or the other system starts from any build, and takes the ones it needs afterwards.
+    // A plan for Android, the web or the other system starts from any build, and takes what it needs afterwards.
     const std::optional<EngineBuild> engine =
-        android || otherDesktop ? EngineBuild{} : findEngineBuild(builds, project.exportSettings.configuration);
+        android || web || otherDesktop ? EngineBuild{} : findEngineBuild(builds, project.exportSettings.configuration);
     if (!engine)
     {
         const std::string message =
@@ -3563,6 +3571,15 @@ void ApplicationRunner::startExport()
     if (otherDesktop)
     {
         if (core::Result<void> prepared = prepareOtherDesktopExport(*plan, m_services.platform.baseDirectory()); !prepared)
+        {
+            DEVEX_LOG_ERROR("Cannot export {}: {}", project.name, prepared.error());
+            m_services.tools->setExportStatus({.state = tools::ExportStatus::State::Failed, .message = prepared.error().message});
+            return;
+        }
+    }
+    if (web)
+    {
+        if (core::Result<void> prepared = prepareWebExport(*plan, m_services.platform.baseDirectory()); !prepared)
         {
             DEVEX_LOG_ERROR("Cannot export {}: {}", project.name, prepared.error());
             m_services.tools->setExportStatus({.state = tools::ExportStatus::State::Failed, .message = prepared.error().message});

@@ -391,6 +391,9 @@ public:
     void setAndroidExport(std::vector<std::string> abis, std::string problem);
     // What stands in the way of exporting for the other desktop system; empty when nothing does.
     void setOtherDesktopExport(std::string problem);
+    // What stands in the way of exporting for the web: the player missing next to the editor, and what a project asks
+    // that the web does not do; empty when nothing does.
+    void setWebExport(std::string problem, std::function<std::string(const asset::Project&)> projectProblem);
     void setExportStatus(ExportStatus status);
     // Opens the window of the export, as Project > Export Game does.
     void showExportWindow() noexcept;

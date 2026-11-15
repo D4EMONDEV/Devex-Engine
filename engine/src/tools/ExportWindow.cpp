@@ -47,7 +47,7 @@ constexpr const char* otherPlatform = "Windows";
 constexpr bool desktopIsWindows = false;
 #endif
 
-// The list of platforms: the system of the editor, the other one where there is one, and Android, last.
+// The list of platforms: the system of the editor, the other one where there is one, Android, and the web, last.
 [[nodiscard]] std::vector<std::string> platformChoices()
 {
     std::vector<std::string> choices{desktopPlatform};
@@ -56,7 +56,21 @@ constexpr bool desktopIsWindows = false;
         choices.emplace_back(otherPlatform);
     }
     choices.emplace_back("Android");
+    choices.emplace_back("Web");
     return choices;
+}
+
+// What each row of the list sets the platform of the export settings to.
+[[nodiscard]] std::vector<std::string> platformIds()
+{
+    std::vector<std::string> ids{"desktop"};
+    if (otherPlatform != nullptr)
+    {
+        ids.emplace_back(asset::otherDesktopSystem());
+    }
+    ids.emplace_back("android");
+    ids.emplace_back("web");
+    return ids;
 }
 
 inline constexpr const char* exportWindow = "Export Game";
@@ -272,11 +286,13 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
     const float tool = line - 6.0f;
 
     const bool android = settings.platform == "android";
+    const bool web = settings.platform == "web";
     const bool other = settings.targetsOtherDesktop();
     Section& game = card(kit, "");
     makePlain(game);
     game.page = 0;
-    const FormRow executableRow = formRow(game, android ? "File" : other && desktopIsWindows ? "Archive" : "Executable");
+    const FormRow executableRow =
+        formRow(game, android ? "File" : web ? "Files" : other && desktopIsWindows ? "Archive" : "Executable");
     executable = text(executableRow.editor, whole(math::Vec4{font * 0.3f, 0.0f, 0.0f, 0.0f}), "", "text");
     tooltip(executableRow.row, "Named after the game: rename it in Project > Project Settings");
     const FormRow outputRow = formRow(game, "Export Path");
@@ -286,11 +302,11 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
     browse = toolButton(kit, outputRow.editor, Icon::FolderOpen, rightButton(tool, 0.0f));
     tooltip(browse.entity, "Choose the folder");
     // The engine of the other system comes in one configuration.
-    configuration = android || other ? Entity{} : choice(formRow(game, "Configuration").editor, {"Release", "Debug"});
+    configuration = android || other || web ? Entity{} : choice(formRow(game, "Configuration").editor, {"Release", "Debug"});
     terminal = Entity{};
     // The rows of the release key are only there with it on: what they were goes with the cards.
     androidKeystore = androidAlias = androidStorePassword = androidKeyPassword = Entity{};
-    if (!android && (desktopIsWindows != other))
+    if (!android && !web && (desktopIsWindows != other))
     {
         const FormRow terminalRow = formRow(game, "Terminal");
         terminal = choice(terminalRow.editor, {"Hidden", "Shown"});
@@ -391,9 +407,12 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
     const ThemeColors& colors = themeColors();
     const asset::Project& project = state.database->project();
     const bool android = settings.platform == "android";
+    const bool web = settings.platform == "web";
     const bool other = settings.targetsOtherDesktop();
     const std::string gameFile = asset::gameFileName(project.name);
-    const std::size_t chosenRow = android ? platformRows.size() - 1 : other ? 1 : 0;
+    const std::vector<std::string> ids = platformIds();
+    const auto chosen = std::ranges::find(ids, settings.platform);
+    const std::size_t chosenRow = chosen != ids.end() ? static_cast<std::size_t>(chosen - ids.begin()) : 0;
     for (std::size_t row = 0; row < platformRows.size(); ++row)
     {
         scene().get<UiRect>(platformRows[row].entity).style = row == chosenRow ? "row_selected" : "row";
@@ -405,14 +424,15 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
         section.hidden = section.page != static_cast<int>(tab);
     }
     scene().get<scene::UiText>(executable).text =
-        gameFile + (android ? (settings.android.format == "aab" ? ".aab" : ".apk")
-                    : other ? (desktopIsWindows ? "-linux-x64.tar.gz" : ".exe")
-                            : desktopSuffix);
+        web ? std::format("index.html, with {}-web.zip beside the folder", gameFile)
+            : gameFile + (android ? (settings.android.format == "aab" ? ".aab" : ".apk")
+                          : other ? (desktopIsWindows ? "-linux-x64.tar.gz" : ".exe")
+                                  : desktopSuffix);
     if (terminal.isValid())
     {
         setChoice(terminal, {"Hidden", "Shown"}, settings.showTerminal ? 1 : 0);
     }
-    setText(output, android ? settings.android.output : other ? settings.otherOutput : settings.output);
+    setText(output, android ? settings.android.output : web ? settings.webOutput : other ? settings.otherOutput : settings.output);
     if (configuration.isValid())
     {
         setChoice(configuration, {"Release", "Debug"}, settings.configuration == "Debug" ? 1 : 0);
@@ -472,6 +492,18 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
         buildText.text = !problem.empty() ? problem : "The first export downloads Gradle and what it needs, which takes some minutes.";
         scene().get<UiRect>(buildNote).style = !problem.empty() ? "error" : "dim";
     }
+    else if (web)
+    {
+        // The player missing next to the editor, or what the project asks that a browser does not do.
+        const std::string problem =
+            !state.webProblem.empty() ? state.webProblem : state.webProjectProblem ? state.webProjectProblem(project) : std::string{};
+        exportable = problem.empty();
+        const bool csharp = hasCSharp(project);
+        buildText.text = !problem.empty() ? problem + "."
+                         : csharp ? "This project has C# code, which does not run in a browser yet: its components will do nothing."
+                                  : "Plays in Chrome, Edge, Firefox and Safari, with WebGPU. The ZIP beside the folder goes to itch.io as it is.";
+        scene().get<UiRect>(buildNote).style = !problem.empty() ? "error" : csharp ? "warning" : "dim";
+    }
     else if (other)
     {
         const bool ready = state.otherDesktopProblem.empty();
@@ -497,7 +529,7 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
         scene().get<UiRect>(buildNote).style = "dim";
     }
 
-    if (exportable && !android && (other ? settings.otherOutput : settings.output).empty())
+    if (exportable && !android && (web ? settings.webOutput : other ? settings.otherOutput : settings.output).empty())
     {
         exportable = false;
         buildText.text = "Choose where to export the game.";
@@ -540,8 +572,10 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
     const bool succeeded = status.state == ExportStatus::State::Succeeded;
     const bool failed = status.state == ExportStatus::State::Failed;
     scene().get<UiRect>(openFolder.entity).visible = succeeded;
-    // An Export All leaves no game to run: it made several.
-    scene().get<UiRect>(runGame.entity).visible = succeeded && !android && !other && !status.executable.empty();
+    // An Export All leaves no game to run: it made several. A game for the web runs in the browser, from a server.
+    scene().get<UiRect>(runGame.entity).visible =
+        succeeded && ((web && !status.output.empty()) || (!android && !other && !web && !status.executable.empty()));
+    relabel(kit, runGame, web ? "Run in Browser" : "Run Game");
     scene().get<UiRect>(progressLine).visible = running;
     scene().get<UiRect>(statusLine).visible = succeeded || failed;
     scene().get<UiRect>(buildNote).visible = !running && !succeeded && !failed;
@@ -559,19 +593,19 @@ void ExportUi::answer(ToolsState& state)
 {
     const ui::UiWorld& world = panel.world();
     const bool android = settings.platform == "android";
+    const bool web = settings.platform == "web";
     const bool other = settings.targetsOtherDesktop();
     const auto typed = [&](Entity field) -> const std::string& { return scene().get<scene::UiText>(field).text; };
     if (endedField.isValid() && endedField == output)
     {
-        (android ? settings.android.output : other ? settings.otherOutput : settings.output) = typed(output);
+        (android ? settings.android.output : web ? settings.webOutput : other ? settings.otherOutput : settings.output) = typed(output);
     }
-    for (std::size_t row = 0; row < platformRows.size(); ++row)
+    const std::vector<std::string> ids = platformIds();
+    for (std::size_t row = 0; row < platformRows.size() && row < ids.size(); ++row)
     {
         if (world.wasClicked(platformRows[row].entity))
         {
-            const std::string chosen = row + 1 == platformRows.size() ? std::string("android")
-                                       : row == 1                     ? std::string(asset::otherDesktopSystem())
-                                                                      : std::string("desktop");
+            const std::string& chosen = ids[row];
             // What the last export said was of another platform.
             if (chosen != settings.platform && state.exportStatus.state != ExportStatus::State::Running)
             {
@@ -723,7 +757,31 @@ void ExportUi::answer(ToolsState& state)
             DEVEX_LOG_WARNING("{}", opened.error());
         }
     }
-    if (world.wasClicked(runGame.entity) && !status.executable.empty())
+    if (world.wasClicked(runGame.entity) && web && !status.output.empty())
+    {
+        // A browser plays a game for the web from a server: one on this computer serves the folder of the export.
+        if (!state.webServer || state.webServer->folder() != status.output)
+        {
+            state.webServer.reset();
+            core::Result<std::unique_ptr<WebServer>> started = WebServer::start(status.output);
+            if (!started)
+            {
+                DEVEX_LOG_ERROR("Cannot serve the game: {}", started.error());
+            }
+            else
+            {
+                state.webServer = std::move(*started);
+            }
+        }
+        if (state.webServer)
+        {
+            if (core::Result<void> opened = platform::Platform::openUrl(state.webServer->url()); !opened)
+            {
+                DEVEX_LOG_ERROR("Cannot open the browser: {}", opened.error());
+            }
+        }
+    }
+    else if (world.wasClicked(runGame.entity) && !status.executable.empty())
     {
         std::vector<std::string> arguments{core::toUtf8(status.executable)};
 #ifdef _WIN32
@@ -803,8 +861,10 @@ void ExportUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
     {
         // Folders inside the project are kept relative to it, so that the project can move.
         const std::string resource = project.resourcePath(*folder);
-        (settings.platform == "android" ? settings.android.output : settings.targetsOtherDesktop() ? settings.otherOutput : settings.output) =
-            resource.empty() ? core::toUtf8(*folder) : resource.substr(asset::resourceScheme.size());
+        (settings.platform == "android" ? settings.android.output
+         : settings.platform == "web"   ? settings.webOutput
+         : settings.targetsOtherDesktop() ? settings.otherOutput
+                                          : settings.output) = resource.empty() ? core::toUtf8(*folder) : resource.substr(asset::resourceScheme.size());
         dirty = true;
     }
     std::string wanted = std::format("{}|{}|{}|{}|", font, settings.includeFolders.size(), settings.platform, settings.android.release);

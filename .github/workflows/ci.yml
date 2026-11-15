@@ -258,6 +258,21 @@ jobs:
           source "$EMSDK/emsdk_env.sh" > /dev/null
           ctest --test-dir out/build/web --label-exclude "gpu|noweb" --output-on-failure --no-tests=error --timeout 600 2>&1 | tee "$RUNNER_TEMP/test.log"
 
+      # The web player that the editors export games for the web with, from platforms/web: its page, its program, its
+      # WebAssembly and the licenses of what it carries.
+      - name: Pack the web player
+        run: |
+          player="$RUNNER_TEMP/devex-web"
+          mkdir -p "$player"
+          cp out/build/web/bin/index.html out/build/web/bin/devex-player.js out/build/web/bin/devex-player.wasm "$player/"
+          cp -r out/build/web/bin/licenses "$player/"
+
+      - name: Keep the web player
+        uses: actions/upload-artifact@v7
+        with:
+          name: devex-web
+          path: ${{ runner.temp }}/devex-web
+
   linux:
     name: Linux ${{ matrix.preset }}
     # Ubuntu 24.04 with GCC 14, the compiler of the distributions.
@@ -576,7 +591,7 @@ jobs:
   release:
     name: Draft the release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux, android]
+    needs: [windows, linux, android, web]
     runs-on: windows-2025
     timeout-minutes: 30
     permissions:
@@ -591,6 +606,12 @@ jobs:
           path: ${{ runner.temp }}/engines
           pattern: devex-*-x64
 
+      - name: Get the web player
+        uses: actions/download-artifact@v8
+        with:
+          name: devex-web
+          path: ${{ runner.temp }}/engines/devex-web
+
       - name: Install Inno Setup
         run: choco install innosetup --version=6.7.1 --no-progress -y
 
@@ -602,6 +623,7 @@ jobs:
           scripts/prepare_release.ps1 -Version $version `
             -Windows "$env:RUNNER_TEMP/engines/devex-windows-x64" `
             -Linux "$env:RUNNER_TEMP/engines/devex-linux-x64/devex-linux-x64.tar.gz" `
+            -Web "$env:RUNNER_TEMP/engines/devex-web" `
             -Output "$env:RUNNER_TEMP/release" `
             -Iscc "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" `
             -Draft

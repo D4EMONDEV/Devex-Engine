@@ -163,7 +163,7 @@ struct DEVEX_API AndroidSigning
 
 struct DEVEX_API ExportSettings
 {
-    // The system the Export window exports for: "desktop" for the one the editor runs on, "android", or the
+    // The system the Export window exports for: "desktop" for the one the editor runs on, "android", "web", or the
     // other desktop system by its name.
     std::string platform = "desktop";
     AndroidExportSettings android;
@@ -187,6 +187,8 @@ struct DEVEX_API ExportSettings
 #else
     std::string otherOutput = "export/windows";
 #endif
+    // The folder a game for the web is exported to, with a ZIP of it beside it.
+    std::string webOutput = "export/web";
     // The configuration of the engine build the game is exported with: "Release" or "Debug".
     std::string configuration = "Release";
     // Windows: a terminal opens with the game and shows its log, which is kept in a file either way.

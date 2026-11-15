@@ -941,6 +941,12 @@ void ToolsOverlay::setOtherDesktopExport(std::string problem)
     m_state->otherDesktopProblem = std::move(problem);
 }
 
+void ToolsOverlay::setWebExport(std::string problem, std::function<std::string(const asset::Project&)> projectProblem)
+{
+    m_state->webProblem = std::move(problem);
+    m_state->webProjectProblem = std::move(projectProblem);
+}
+
 void ToolsOverlay::setAndroidExport(std::vector<std::string> abis, std::string problem)
 {
     m_state->androidAbis = std::move(abis);

@@ -11,6 +11,8 @@
 #include <cstring>
 #include <ctime>
 #include <fstream>
+#include <iterator>
+#include <span>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -90,6 +92,137 @@ void writeOctal(char* field, std::size_t size, std::uint64_t value)
 }
 
 } // namespace
+
+namespace {
+
+// The CRC-32 of ZIP, of IEEE 802.3.
+[[nodiscard]] std::uint32_t crc32(std::span<const char> bytes) noexcept
+{
+    static const std::array<std::uint32_t, 256> table = [] {
+        std::array<std::uint32_t, 256> values{};
+        for (std::uint32_t index = 0; index < values.size(); ++index)
+        {
+            std::uint32_t value = index;
+            for (int bit = 0; bit < 8; ++bit)
+            {
+                value = (value & 1U) != 0 ? 0xEDB88320U ^ (value >> 1) : value >> 1;
+            }
+            values[index] = value;
+        }
+        return values;
+    }();
+    std::uint32_t crc = 0xFFFFFFFFU;
+    for (const char byte : bytes)
+    {
+        crc = table[(crc ^ static_cast<std::uint8_t>(byte)) & 0xFFU] ^ (crc >> 8);
+    }
+    return crc ^ 0xFFFFFFFFU;
+}
+
+void put16(std::string& out, std::uint32_t value)
+{
+    out.push_back(static_cast<char>(value & 0xFFU));
+    out.push_back(static_cast<char>((value >> 8) & 0xFFU));
+}
+
+void put32(std::string& out, std::uint32_t value)
+{
+    put16(out, value & 0xFFFFU);
+    put16(out, value >> 16);
+}
+
+} // namespace
+
+core::Result<void> writeZip(const std::filesystem::path& folder, const std::filesystem::path& zipFile)
+{
+    std::error_code error;
+    std::vector<std::filesystem::path> files;
+    for (std::filesystem::recursive_directory_iterator entry(folder, error), end; !error && entry != end; entry.increment(error))
+    {
+        if (entry->is_regular_file(error))
+        {
+            files.push_back(entry->path());
+        }
+    }
+    if (error)
+    {
+        return core::makeError(core::ErrorCode::Io, "cannot read '{}': {}", core::toUtf8(folder), error.message());
+    }
+    std::ranges::sort(files);
+    std::filesystem::create_directories(zipFile.parent_path(), error);
+    std::ofstream out(zipFile, std::ios::binary | std::ios::trunc);
+    if (!out)
+    {
+        return core::makeError(core::ErrorCode::Io, "cannot write '{}'", core::toUtf8(zipFile));
+    }
+    // Every entry stored as it is, dated 1 January 1980, the first day ZIP knows: its own header, then its bytes, and
+    // the directory at the end that names them all.
+    std::string directory;
+    std::uint32_t offset = 0;
+    for (const std::filesystem::path& file : files)
+    {
+        // Names use forward slashes, whatever the system.
+        std::string name = core::toUtf8(file.lexically_relative(folder));
+        std::ranges::replace(name, '\\', '/');
+        std::ifstream in(file, std::ios::binary);
+        const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (bytes.size() > 0xFFFFFFFFULL || offset > 0xFFFFFFFFU - bytes.size() - name.size() - 64)
+        {
+            return core::makeError(core::ErrorCode::Unsupported, "'{}' is too large for a ZIP without its 64-bit extension", name);
+        }
+        const std::uint32_t crc = crc32(bytes);
+        const auto size = static_cast<std::uint32_t>(bytes.size());
+        const auto header = [&](std::string& into, bool central) {
+            put32(into, central ? 0x02014B50U : 0x04034B50U);
+            if (central)
+            {
+                put16(into, 20);
+            }
+            put16(into, 20);
+            // UTF-8 names.
+            put16(into, 0x0800);
+            put16(into, 0);
+            put16(into, 0);
+            put16(into, (1 << 5) | 1);
+            put32(into, crc);
+            put32(into, size);
+            put32(into, size);
+            put16(into, static_cast<std::uint32_t>(name.size()));
+            put16(into, 0);
+            if (central)
+            {
+                put16(into, 0);
+                put16(into, 0);
+                put16(into, 0);
+                put32(into, 0);
+                put32(into, offset);
+            }
+            into += name;
+        };
+        std::string local;
+        header(local, false);
+        header(directory, true);
+        out.write(local.data(), static_cast<std::streamsize>(local.size()));
+        out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        offset += static_cast<std::uint32_t>(local.size()) + size;
+    }
+    std::string end;
+    put32(end, 0x06054B50U);
+    put16(end, 0);
+    put16(end, 0);
+    put16(end, static_cast<std::uint32_t>(files.size()));
+    put16(end, static_cast<std::uint32_t>(files.size()));
+    put32(end, static_cast<std::uint32_t>(directory.size()));
+    put32(end, offset);
+    put16(end, 0);
+    out.write(directory.data(), static_cast<std::streamsize>(directory.size()));
+    out.write(end.data(), static_cast<std::streamsize>(end.size()));
+    if (!out)
+    {
+        return core::makeError(core::ErrorCode::Io, "cannot write '{}'", core::toUtf8(zipFile));
+    }
+    return {};
+}
 
 core::Result<void> writeTar(const std::filesystem::path& folder, std::string_view root, const std::filesystem::path& tarFile)
 {

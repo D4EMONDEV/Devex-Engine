@@ -69,6 +69,8 @@ enum class ExportPlatform : std::uint8_t
     OtherDesktop,
     Desktop,
     Android,
+    // A page, the web player and the package, played by a browser with WebGPU. See prepareWebExport.
+    Web,
 };
 
 // A build of the engine for Android, found next to the editor. android/ in its folder holds the Gradle
@@ -133,6 +135,9 @@ struct DEVEX_API ExportPlan
     asset::AndroidSigning signing;
     // Whether a package for Android has its BC textures in ASTC.
     bool androidConvertsTextures = true;
+    // For the web: the folder of the web player that comes with the editor, and the ZIP made beside the game.
+    std::filesystem::path webPlayer;
+    std::filesystem::path webArchive;
 };
 
 // Fails when the project has no scene, when imports are still running or failed, or when an exported
@@ -178,7 +183,7 @@ struct DEVEX_API ExportResult
                                                                                   std::span<const std::byte> artifact);
 
 // devex-editor --export <project.dvxproj> [--output <folder>] [--configuration <Release|Debug>] [--platform <system>]
-// The system is desktop, the one of the editor, android, or the other desktop system by its name, windows or linux.
+// The system is desktop, the one of the editor, android, web, or the other desktop system by its name, windows or linux.
 // Imports the assets of the project, exports the game as its export settings say, and prints the
 // progress. Returns the exit code of the process.
 [[nodiscard]] DEVEX_API int exportFromCommandLine(std::span<const std::string_view> arguments,
@@ -192,6 +197,17 @@ struct DEVEX_API ExportResult
 // starts with registers nothing, and is left out.
 [[nodiscard]] DEVEX_API core::Result<void> prepareOtherDesktopExport(ExportPlan& plan, const std::filesystem::path& binDirectory,
                                                                      const std::optional<std::filesystem::path>& output = std::nullopt);
+
+// The web player that comes with the editor, in platforms/web next to its bin/, as the installer puts it: its page, its
+// program and its WebAssembly. Fails when it is not there, saying so.
+[[nodiscard]] DEVEX_API core::Result<std::filesystem::path> findWebPlayer(const std::filesystem::path& binDirectory);
+// What keeps a project from playing in a browser, empty when nothing does: a renderer other than Compatibility, which
+// is the one the web draws with, or C++ code that does something, which does not build for the web yet.
+[[nodiscard]] DEVEX_API std::string webExportProblem(const asset::Project& project);
+// Fills a plan for an export to the web: the player found next to the editor, the folder of the project settings or
+// `output`, and a ZIP of the game beside it, ready for itch.io. C# does not run in a browser: its components do nothing.
+[[nodiscard]] DEVEX_API core::Result<void> prepareWebExport(ExportPlan& plan, const std::filesystem::path& binDirectory,
+                                                            const std::optional<std::filesystem::path>& output = std::nullopt);
 
 // Fills a plan for an export to Android from the settings of its project.
 [[nodiscard]] DEVEX_API core::Result<void> prepareAndroidExport(ExportPlan& plan, const std::filesystem::path& binDirectory);

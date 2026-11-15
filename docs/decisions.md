@@ -5843,7 +5843,20 @@ Les étapes, chacune livrable et testée :
      chaque pixel : il le reconstruit à partir de la profondeur et des matrices de l'image d'avant, ce qui suit la caméra
      mais pas un objet qui bouge, que le voisinage borne. Un test compare une scène antialiasée et voilée de bloom à Vulkan.
      La 3D de Compatibility est faite, hors de ce qui vient après la 1.0.
-4. **Web** dans la liste de l'export, avec **Run in Browser** sur un petit serveur local, et les problèmes en rouge.
+4. ✅ **Web** dans la liste de l'export, avec **Run in Browser** sur un petit serveur local, et les problèmes en rouge.
+   L'export (`prepareWebExport`, `--platform web` en ligne de commande) met la page (titrée au nom du jeu), le lecteur, ses
+   licences et `game.dvxpak` dans `export/web`, et `<jeu>-web.zip` à côté, ses entrées stockées telles quelles. Il refuse en
+   rouge un projet qui n'est pas en Compatibility, ou dont le C++ fait quelque chose ; le C# est signalé, comme pour
+   Android. `WebServer` sert le dossier sur localhost, jamais au-delà, avec `application/wasm` pour le WebAssembly. Le job
+   Web de la CI garde le lecteur (`devex-web`), que la release met dans `platforms/web` des deux éditeurs. L'essai dans un
+   navigateur a trouvé ce que Dawn laissait passer : la valeur d'effacement de la profondeur d'une passe en lecture seule
+   doit être un nombre.
+   Décidé le 2026-11-15, avant le code : **un modèle livré**, comme les export templates de Godot : le lecteur web construit
+   (`devex-player.js`, `.wasm`, `index.html`) vient avec l'éditeur dans `platforms/web`, construit par la CI et mis dans
+   l'installateur ; un jeu de scènes s'exporte sans rien installer, Emscripten ne servira qu'aux jeux en C++ (étape 5).
+   **Un dossier et un ZIP** : le dossier avec la page, le lecteur et `game.dvxpak`, et à côté un ZIP prêt pour itch.io, la
+   page à sa racine. **Un petit serveur HTTP intégré** pour Run in Browser, comme Godot : il sert le dossier exporté sur
+   localhost et ouvre le navigateur par défaut, sans rien à installer.
 5. Le C++ des jeux compilé avec Emscripten.
 6. Saisie, plein écran, souris capturée, son et sauvegardes dans le navigateur.
 

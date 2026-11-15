@@ -2,11 +2,12 @@
 # GitHub as a draft, to read and publish by hand. The CI runs it for a tag v<version>; see docs/publier-une-version.md.
 #
 #   scripts/prepare_release.ps1 -Version 0.9.0 -Windows <installed folder> [-Linux <devex-linux-x64.tar.gz>]
-#                               -Output <folder> [-Iscc <ISCC.exe>] [-Draft]
+#                               [-Web <web player folder>] -Output <folder> [-Iscc <ISCC.exe>] [-Draft]
 param(
     [Parameter(Mandatory)] [string] $Version,
     [Parameter(Mandatory)] [string] $Windows,
     [string] $Linux,
+    [string] $Web,
     [Parameter(Mandatory)] [string] $Output,
     [string] $Iscc = "ISCC.exe",
     [switch] $Draft
@@ -72,6 +73,21 @@ function Copy-GameEngine([string] $From, [string] $To) {
         Copy-Item $library (Join-Path $To "lib")
     }
 }
+# Each editor exports games for the web with the web player, in platforms/web.
+function Copy-WebPlayer([string] $To) {
+    New-Item -ItemType Directory -Force $To | Out-Null
+    foreach ($file in "index.html", "devex-player.js", "devex-player.wasm") {
+        $source = Join-Path $Web $file
+        if (-not (Test-Path $source)) {
+            throw "$Web has no $file"
+        }
+        Copy-Item $source $To
+    }
+    $licenses = Join-Path $Web "licenses"
+    if (Test-Path $licenses) {
+        Copy-Item -Recurse -Force $licenses (Join-Path $To "licenses")
+    }
+}
 if ($Linux) {
     # The tar of the system, which reads a whole archive with @ and keeps what its entries say is executable.
     $tar = Join-Path $env:SystemRoot "System32/tar.exe"
@@ -80,6 +96,9 @@ if ($Linux) {
     $forLinux = Join-Path $work "windows"
     # First, while the Windows engine does not hold the one for Linux yet.
     Copy-GameEngine $Windows (Join-Path $forLinux "devex-linux-x64/platforms/windows-x64")
+    if ($Web) {
+        Copy-WebPlayer (Join-Path $forLinux "devex-linux-x64/platforms/web")
+    }
     $extracted = Join-Path $work "linux"
     New-Item -ItemType Directory -Force $extracted | Out-Null
     & $tar -xzf $Linux -C $extracted
@@ -101,6 +120,10 @@ if ($Linux) {
         throw "The Linux archive did not take the engine for Windows"
     }
     Remove-Item -Recurse -Force $work
+}
+
+if ($Web) {
+    Copy-WebPlayer (Join-Path $Windows "platforms/web")
 }
 
 $windowsZip = Join-Path $Output "devex-$Version-windows-x64.zip"

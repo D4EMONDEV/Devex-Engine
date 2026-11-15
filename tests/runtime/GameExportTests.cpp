@@ -186,6 +186,99 @@ prefab = asset("{}")
     CHECK(*fromModel == std::vector{mesh});
 }
 
+TEST_CASE("A game exported for the web takes the page, the web player, its package and a ZIP", "[runtime][export][noweb]")
+{
+    TemporaryDirectory directory;
+    devex::core::Result<devex::asset::Project> created = devex::asset::createProject(directory.path / "project", "Web & Co");
+    REQUIRE(created.has_value());
+    const AssetId main = writeAsset(created->assetsDirectory() / "scenes" / "main.dvxscene", "[scene format=1]\n", "scene");
+    devex::asset::Project settings = *created;
+    settings.startupScene = "res://assets/scenes/main.dvxscene";
+    REQUIRE(devex::asset::saveProject(settings));
+
+    // The web player next to the editor, as the installer puts it.
+    const std::filesystem::path bin = directory.path / "editor" / "bin";
+    const std::filesystem::path player = directory.path / "editor" / "platforms" / "web";
+    std::filesystem::create_directories(bin);
+    write(player / "index.html", "<!doctype html><title>Devex game</title><script src=\"devex-player.js\"></script>");
+    write(player / "devex-player.js", "// the player");
+    write(player / "devex-player.wasm", "wasm");
+    write(player / "licenses" / "devex.txt", "MIT");
+    REQUIRE(devex::runtime::findWebPlayer(bin).has_value());
+    CHECK_FALSE(devex::runtime::findWebPlayer(directory.path / "elsewhere" / "bin").has_value());
+
+    devex::core::JobSystem jobs(2);
+    const auto plan = [&]() {
+        const devex::core::Result<devex::asset::Project> project = devex::asset::loadProject(settings.file);
+        REQUIRE(project.has_value());
+        devex::core::Result<std::unique_ptr<devex::asset::AssetDatabase>> database =
+            devex::asset::AssetDatabase::open(*project, jobs, {.watchFiles = false});
+        REQUIRE(database.has_value());
+        (*database)->waitForImports();
+        static_cast<void>((*database)->update());
+        devex::core::Result<devex::runtime::ExportPlan> made =
+            devex::runtime::planExport(**database, EngineBuild{.name = "test", .configuration = "Release", .directory = directory.path});
+        REQUIRE(made.has_value());
+        return std::move(*made);
+    };
+
+    // The web draws with Compatibility: a project of Forward+ is told so.
+    devex::runtime::ExportPlan forward = plan();
+    const devex::core::Result<void> refused = devex::runtime::prepareWebExport(forward, bin);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().message.find("Compatibility") != std::string::npos);
+
+    settings.renderingMethod = devex::asset::RenderingMethod::Compatibility;
+    REQUIRE(devex::asset::saveProject(settings));
+    devex::runtime::ExportPlan web = plan();
+    REQUIRE(devex::runtime::prepareWebExport(web, bin).has_value());
+    CHECK(web.output == (created->root / "export" / "web").lexically_normal());
+    REQUIRE(devex::runtime::prepareWebExport(web, bin, directory.path / "out" / "web").has_value());
+    CHECK(web.webArchive == directory.path / "out" / "Web & Co-web.zip");
+    const devex::core::Result<devex::runtime::ExportResult> result = devex::runtime::exportGame(web);
+    REQUIRE(result.has_value());
+    CHECK(result->executable.empty());
+    CHECK(result->archive == web.webArchive);
+    const std::filesystem::path out = directory.path / "out" / "web";
+    for (const char* file : {"index.html", "devex-player.js", "devex-player.wasm", "game.dvxpak", "licenses/devex.txt"})
+    {
+        INFO(file);
+        CHECK(std::filesystem::is_regular_file(out / file));
+    }
+    // The page is named after the game, written as HTML writes it, and the package plays its startup scene.
+    const devex::core::Result<std::string> page = devex::core::readTextFile(out / "index.html");
+    REQUIRE(page.has_value());
+    CHECK(page->find("<title>Web &amp; Co</title>") != std::string::npos);
+    devex::core::Result<std::unique_ptr<devex::asset::PackageReader>> package = devex::asset::PackageReader::open(out / "game.dvxpak");
+    REQUIRE(package.has_value());
+    CHECK((*package)->findByPath("res://assets/scenes/main.dvxscene") == main);
+
+    // The ZIP holds every file of the folder at its root, stored as it is: its directory ends it.
+    const devex::core::Result<std::vector<std::byte>> zip = devex::core::readBinaryFile(web.webArchive);
+    REQUIRE(zip.has_value());
+    REQUIRE(zip->size() > 22);
+    const std::string bytes(reinterpret_cast<const char*>(zip->data()), zip->size());
+    CHECK(bytes.starts_with("PK\x03\x04"));
+    const std::size_t end = bytes.size() - 22;
+    CHECK(bytes.substr(end, 4) == "PK\x05\x06");
+    const auto entries = static_cast<std::uint16_t>(static_cast<unsigned char>(bytes[end + 10]) |
+                                                    (static_cast<unsigned char>(bytes[end + 11]) << 8));
+    std::size_t files = 0;
+    for (std::filesystem::recursive_directory_iterator entry(out), last; entry != last; ++entry)
+    {
+        files += entry->is_regular_file() ? 1 : 0;
+    }
+    CHECK(entries == files);
+    for (const char* name : {"index.html", "game.dvxpak", "licenses/devex.txt", "devex-export.txt"})
+    {
+        INFO(name);
+        CHECK(bytes.find(std::string("PK\x01\x02")) != std::string::npos);
+        CHECK(bytes.find(name) != std::string::npos);
+    }
+    // A stored entry keeps its bytes: the page lies whole in the ZIP.
+    CHECK(bytes.find(*page) != std::string::npos);
+}
+
 TEST_CASE("An export packages the scenes and every asset they need", "[runtime][export][noweb]")
 {
     TemporaryDirectory directory;

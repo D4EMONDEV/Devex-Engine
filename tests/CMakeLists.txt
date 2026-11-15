@@ -319,9 +319,14 @@ devex_add_tests(tools
         tools/ExportWindowTests.cpp
         tools/EditorBenchmark.cpp
         tools/TwoDScreenTests.cpp
+        tools/WebServerTests.cpp
     LIBRARIES
         Devex::Engine
 )
+if(WIN32 AND TARGET devex_tools_tests)
+    # The server of Run in Browser is reached through sockets.
+    target_link_libraries(devex_tools_tests PRIVATE ws2_32)
+endif()
 if(NOT EMSCRIPTEN)
 # The editor's internals are tested directly.
 target_include_directories(devex_tools_tests PRIVATE
