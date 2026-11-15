@@ -2,6 +2,7 @@
 // textures for a device without them as basisu does.
 #include "render/webgpu/BlockDecoding.hpp"
 
+#include <devex/asset/Primitives.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/platform/Platform.hpp>
@@ -9,11 +10,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <format>
+#include <utility>
 #include <random>
 #include <string>
 #include <vector>
@@ -147,6 +150,141 @@ private:
     return std::move(captured.front());
 }
 
+
+// The window of a 3D scene drawn by one API: a rough sphere and a metallic one, a textured box on a plane and a
+// skinned box, lit by the sun, a point light, a spot and the environment baked from a sky texture, without shadows.
+[[nodiscard]] devex::render::CapturedImage drawMeshes(devex::render::RenderApi api)
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform.has_value());
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window.has_value());
+    // The geometry as it is given, and every instance drawn as the CPU sends it.
+    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true, .meshLodError = 0.0f, .api = api});
+    if (!renderer)
+    {
+        FAIL(std::format("{}", renderer.error()));
+    }
+    devex::asset::TextureData checker{.format = devex::asset::TextureFormat::Rgba8Srgb, .filter = devex::asset::TextureFilter::Nearest};
+    checker.mips.push_back({.width = 2,
+                            .height = 2,
+                            .bytes = {std::byte{230}, std::byte{230}, std::byte{230}, std::byte{255}, std::byte{40}, std::byte{90},
+                                      std::byte{200}, std::byte{255}, std::byte{40}, std::byte{90}, std::byte{200}, std::byte{255},
+                                      std::byte{230}, std::byte{230}, std::byte{230}, std::byte{255}}});
+    const auto texture = renderer->createTexture(checker);
+    REQUIRE(texture.has_value());
+    // A sky of 16 by 8 pixels: blue above, brown below, brighter towards one side, which the environment is baked from.
+    devex::asset::TextureData skyPixels{.format = devex::asset::TextureFormat::Rgba8Unorm};
+    skyPixels.mips.push_back({.width = 16, .height = 8});
+    for (std::uint32_t y = 0; y < 8; ++y)
+    {
+        for (std::uint32_t x = 0; x < 16; ++x)
+        {
+            const auto shade = static_cast<std::uint8_t>(120 + x * 8);
+            const std::array<std::uint8_t, 4> pixel = y < 4 ? std::array<std::uint8_t, 4>{60, 110, shade, 255}
+                                                            : std::array<std::uint8_t, 4>{shade, 90, 50, 255};
+            for (const std::uint8_t channel : pixel)
+            {
+                skyPixels.mips.back().bytes.push_back(std::byte{channel});
+            }
+        }
+    }
+    const auto skyTexture = renderer->createTexture(skyPixels);
+    REQUIRE(skyTexture.has_value());
+    const auto sphere = renderer->createMesh(devex::asset::makeUvSphere(0.5f));
+    const auto cube = renderer->createMesh(devex::asset::makeCube());
+    const auto plane = renderer->createMesh(devex::asset::makePlane(8.0f));
+    // A box whose vertices all follow one bone.
+    devex::asset::MeshData skinnedBox = devex::asset::makeCube(0.6f);
+    skinnedBox.skin.assign(skinnedBox.vertices.size(), devex::asset::VertexSkin{.joints = {0, 0, 0, 0}, .weights = {1.0f, 0.0f, 0.0f, 0.0f}});
+    skinnedBox.inverseBind.assign(1, devex::math::Mat4(1.0f));
+    const auto skinned = renderer->createMesh(skinnedBox);
+    REQUIRE((sphere && cube && plane && skinned));
+    const devex::render::MaterialHandle rough = renderer->createMaterial({.baseColorFactor = {0.8f, 0.2f, 0.1f, 1.0f}, .roughnessFactor = 0.7f});
+    const devex::render::MaterialHandle metal =
+        renderer->createMaterial({.baseColorFactor = {0.9f, 0.8f, 0.5f, 1.0f}, .metallicFactor = 1.0f, .roughnessFactor = 0.3f});
+    const devex::render::MaterialHandle textured = renderer->createMaterial({.baseColorTexture = *texture, .roughnessFactor = 0.5f});
+    const devex::render::MaterialHandle ground = renderer->createMaterial({.baseColorFactor = {0.4f, 0.45f, 0.4f, 1.0f}});
+    const devex::render::MaterialHandle glass = renderer->createMaterial(
+        {.baseColorFactor = {0.2f, 0.6f, 1.0f, 0.5f}, .roughnessFactor = 0.2f, .alphaMode = devex::asset::AlphaMode::Blend});
+
+    std::vector<devex::render::CapturedImage> captured;
+    for (int frame = 0; frame < 12 && captured.empty(); ++frame)
+    {
+        devex::render::RenderWorld& world = renderer->beginFrame();
+        world.camera.view = devex::math::lookAt(devex::math::Vec3{0.0f, 2.0f, 5.0f}, devex::math::Vec3{0.0f, 0.3f, 0.0f},
+                                                devex::math::Vec3{0.0f, 1.0f, 0.0f});
+        world.camera.autoExposure = false;
+        world.camera.ev100 = 0.0f;
+        world.camera.antialiasing = devex::render::Antialiasing::None;
+        world.camera.bloom = 0.0f;
+        world.camera.ambientOcclusion = 0.0f;
+        world.camera.screenReflections = 0.0f;
+        world.environment.sky = *skyTexture;
+        world.environment.color = {0.9f, 1.0f, 1.0f};
+        world.environment.intensity = 1.2f;
+        world.environment.rotation = 0.5f;
+        world.sun.direction = {-0.4f, -1.0f, -0.5f};
+        world.sun.illuminance = {2.5f, 2.4f, 2.2f};
+        world.sun.castShadows = false;
+        world.lights.push_back({.position = {1.5f, 1.0f, 1.0f}, .intensity = {3.0f, 1.0f, 0.5f}, .range = 5.0f});
+        world.lights.push_back({.type = devex::render::LightType::Spot,
+                                .position = {-1.5f, 2.5f, 1.0f},
+                                .direction = {0.3f, -1.0f, -0.2f},
+                                .intensity = {0.5f, 1.0f, 4.0f},
+                                .range = 6.0f,
+                                .innerAngle = 0.3f,
+                                .outerAngle = 0.6f});
+        world.meshes.push_back({.mesh = *plane, .material = ground});
+        world.meshes.push_back({.mesh = *sphere, .material = rough, .transform = at(-1.2f, 0.5f, 0.0f)});
+        world.meshes.push_back({.mesh = *sphere, .material = metal, .transform = at(0.0f, 0.5f, -0.5f)});
+        world.meshes.push_back({.mesh = *cube, .material = textured, .transform = at(1.3f, 0.5f, 0.0f)});
+        world.meshes.push_back({.mesh = *cube, .material = glass, .transform = at(0.2f, 0.5f, 1.2f)});
+        // The skinned box, moved by its bone.
+        world.boneMatrices.push_back(at(-0.6f, 0.3f, 1.4f));
+        world.meshes.push_back({.mesh = *skinned, .material = rough, .firstBone = 0, .boneCount = 1});
+        if (frame == 4)
+        {
+            static_cast<void>(renderer->requestWindowCapture());
+        }
+        const devex::core::Result<void> presented = renderer->endFrame();
+        if (!presented)
+        {
+            FAIL(std::format("frame {}: {}", frame, presented.error()));
+        }
+        for (devex::render::CapturedImage& image : renderer->takeCaptures())
+        {
+            captured.push_back(std::move(image));
+        }
+    }
+    REQUIRE(captured.size() == 1);
+    return std::move(captured.front());
+}
+
+// How far two images of the same scene are: the channels further apart than `tolerance`, and the mean difference.
+struct Difference
+{
+    std::size_t channels = 0;
+    double mean = 0.0;
+};
+
+[[nodiscard]] Difference compare(const devex::render::CapturedImage& first, const devex::render::CapturedImage& second,
+                                 int tolerance)
+{
+    Difference difference;
+    std::size_t total = 0;
+    for (std::size_t at = 0; at < first.rgba.size(); ++at)
+    {
+        const int apart = std::abs(static_cast<int>(first.rgba[at]) - static_cast<int>(second.rgba[at]));
+        total += static_cast<std::size_t>(apart);
+        if (apart > tolerance)
+        {
+            ++difference.channels;
+        }
+    }
+    difference.mean = static_cast<double>(total) / static_cast<double>(std::max<std::size_t>(first.rgba.size(), 1));
+    return difference;
+}
 } // namespace
 
 TEST_CASE("WebGPU draws a 2D scene and its interface as Vulkan does", "[render][gpu][webgpu]")
@@ -175,6 +313,25 @@ TEST_CASE("WebGPU draws a 2D scene and its interface as Vulkan does", "[render][
     // The environment shows through in a corner, exposed and encoded as the display shows it.
     const std::size_t corner = (std::size_t{230} * vulkan.width + 310) * 4;
     CHECK(webgpu.rgba[corner + 2] > webgpu.rgba[corner]);
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("WebGPU draws lit meshes as Vulkan does", "[render][gpu][webgpu]")
+{
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan);
+    const devex::render::CapturedImage webgpu = drawMeshes(devex::render::RenderApi::WebGpu);
+    REQUIRE(webgpu.rgba.size() == vulkan.rgba.size());
+    // The same pixels but for a few along the edges, where the two may round a coverage differently.
+    const Difference difference = compare(vulkan, webgpu, 8);
+    INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));
+    CHECK(difference.channels < vulkan.rgba.size() / 100);
+    CHECK(difference.mean < 1.5);
 
     for (const std::string& error : capture.errors())
     {

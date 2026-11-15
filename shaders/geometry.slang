@@ -259,17 +259,8 @@ public float4 surfaceFragment(SceneData* scene, uint materialIndex, SurfaceVerte
     // Which way the surface itself faces, before its normal map: decals fade by it.
     const float3 facing = normal;
 
-    // Tangent-space normal maps store X and Y; Z is reconstructed.
-    const float2 encoded = sampleTexture(material.normalTexture, input.uv).rg * 2.0 - 1.0;
-    const float2 tilt = encoded * material.normalScale;
-    const float lengthSquared = dot(tangent, tangent);
-    if (lengthSquared > 1e-10)
-    {
-        tangent *= rsqrt(lengthSquared);
-        const float3 bitangent = cross(normal, tangent) * (input.tangent.w < 0.0 ? -1.0 : 1.0);
-        const float z = sqrt(saturate(1.0 - dot(encoded, encoded)));
-        normal = normalize(tangent * tilt.x + bitangent * tilt.y + normal * z);
-    }
+    normal = normalMapped(normal, tangent, input.tangent.w, sampleTexture(material.normalTexture, input.uv).rg,
+                          material.normalScale);
 
     const float4 metallicRoughness = sampleTexture(material.metallicRoughnessTexture, input.uv);
     const float3 toCamera = scene->cameraPosition - input.worldPosition;

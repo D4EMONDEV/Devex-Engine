@@ -1,16 +1,20 @@
 #pragma once
 
 // The renderer of WebGPU, with Dawn: in a browser, and on a computer built with DEVEX_WEBGPU, where the tests compare
-// its images with Vulkan's. It draws what a 2D game shows (web step 2): sprites, tilemaps, text and the interface,
-// over the colour of the environment, exposed and tonemapped as Vulkan does. Meshes, lights, particles and the
-// shaders of projects come with step 3: until then they are kept and not drawn.
+// its images with Vulkan's. It draws what the Compatibility method shows, step by step: sprites, tilemaps, text and the
+// interface (web step 2), then meshes lit by the sun, the local lights and the environment, skinned or not (step
+// 3a), over the sky, exposed and tonemapped as Vulkan does. Shadows, particles, fog and the shaders of projects come
+// with the next steps: until then they are kept and not drawn.
 #include "../FramePreparation.hpp"
+#include "../GpuTypes.hpp"
 #include "../RenderBackend.hpp"
 
 #include <devex/core/SlotMap.hpp>
+#include <devex/render/Culling.hpp>
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <map>
@@ -82,10 +86,46 @@ private:
         bool decoded = false;
         // A texture that cannot be filtered, such as heights in floats, is never bound.
         bool bindable = true;
+        // Read at its nearest pixel, for pixel art.
+        bool nearest = false;
     };
-    struct MeshRecord
+    struct GpuMesh
     {
-        std::uint32_t submeshes = 0;
+        wgpu::Buffer vertices;
+        wgpu::Buffer indices;
+        // The joints and weights of a skinned mesh; null for a rigid one.
+        wgpu::Buffer skin;
+        std::vector<asset::Submesh> submeshes;
+        math::Aabb bounds;
+    };
+    struct GpuMaterial
+    {
+        MaterialDesc description;
+        wgpu::Buffer uniform;
+        // Its uniforms and textures; made again when a texture it reads goes.
+        wgpu::BindGroup group;
+        std::uint64_t textureEpoch = 0;
+    };
+    // The meshes of the frame that share a mesh, a submesh, a material and a way to be drawn, at once; a blended one
+    // alone, in its order from the farthest.
+    struct MeshBatch
+    {
+        const GpuMesh* mesh = nullptr;
+        std::uint32_t submesh = 0;
+        MaterialHandle material;
+        std::uint32_t pipeline = 0;
+        std::uint32_t firstInstance = 0;
+        std::uint32_t instanceCount = 0;
+        float distance = 0.0f;
+    };
+    // The light of the environment: its maps, baked from the sky texture as Vulkan bakes them, or white for a sky of
+    // one colour, which the colour then tints.
+    struct Environment
+    {
+        TextureHandle sky;
+        wgpu::Texture irradiance;
+        wgpu::Texture specular;
+        std::uint32_t specularMips = 1;
     };
     struct Empty
     {
@@ -142,6 +182,17 @@ private:
     void queueReadback(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture, math::Extent2D size,
                        std::uint64_t request);
     void collectReadbacks();
+
+    // The 3D, in WebGpuScene.cpp.
+    [[nodiscard]] core::Result<void> createScenePipelines();
+    [[nodiscard]] wgpu::BindGroup materialGroup(GpuMaterial& material);
+    [[nodiscard]] wgpu::Texture whiteCube() const;
+    void bakeBrdfTable();
+    void bakeEnvironment(TextureHandle sky);
+    // The meshes of the frame by batches, and the data the scene pass reads of them.
+    void prepareMeshes(const ViewMatrices& matrices, const Frustum& frustum);
+    void drawSky(const wgpu::RenderPassEncoder& pass);
+    void drawMeshes(const wgpu::RenderPassEncoder& pass, bool blended);
 
     platform::Window& m_window;
     RendererConfig m_config;
@@ -207,8 +258,40 @@ private:
     wgpu::Buffer m_luminanceBuffer;
 
     core::SlotMap<GpuTexture, TextureTag> m_textures;
-    core::SlotMap<MeshRecord, MeshTag> m_meshes;
-    core::SlotMap<MaterialDesc, MaterialTag> m_materials;
+    core::SlotMap<GpuMesh, MeshTag> m_meshes;
+    core::SlotMap<GpuMaterial, MaterialTag> m_materials;
+    // Counts the textures destroyed: a material made before reads one that went.
+    std::uint64_t m_textureEpoch = 1;
+
+    wgpu::Texture m_depthTarget;
+    wgpu::TextureView m_depthView;
+    wgpu::Texture m_flatNormal;
+    wgpu::BindGroupLayout m_sceneLayout;
+    wgpu::BindGroupLayout m_materialLayout;
+    wgpu::BindGroupLayout m_meshDrawLayout;
+    wgpu::BindGroupLayout m_skyLayout;
+    // Rigid or skinned, one side or both, opaque or blended: the index is 1 skinned + 2 both sides + 4 blended.
+    std::array<wgpu::RenderPipeline, 8> m_meshPipelines;
+    wgpu::RenderPipeline m_skyPipeline;
+    wgpu::Buffer m_sceneBuffer;
+    wgpu::Buffer m_skyBuffer;
+    wgpu::Buffer m_lightBuffer;
+    std::uint64_t m_lightCapacity = 0;
+    wgpu::Buffer m_instanceBuffer;
+    std::uint64_t m_instanceCapacity = 0;
+    wgpu::Buffer m_boneBuffer;
+    std::uint64_t m_boneCapacity = 0;
+    wgpu::Buffer m_meshDrawBuffer;
+    std::uint64_t m_meshDrawCapacity = 0;
+    wgpu::BindGroup m_sceneGroup;
+    wgpu::BindGroup m_meshDrawGroup;
+    wgpu::BindGroup m_skyGroup;
+    wgpu::Texture m_brdfTable;
+    Environment m_environment;
+    // The default material, for an instance whose material is gone.
+    MaterialHandle m_defaultMaterial;
+    std::vector<MeshBatch> m_meshBatches;
+    std::vector<GpuLight> m_lights;
     core::SlotMap<Empty, ShaderTag> m_shaders;
     core::SlotMap<Empty, ReflectionProbeTag> m_probes;
     core::SlotMap<Empty, IrradianceVolumeTag> m_volumes;

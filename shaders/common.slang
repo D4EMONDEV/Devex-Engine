@@ -2,6 +2,8 @@
 // and bindings engine/src/render/vulkan/DescriptorSets.hpp.
 module common;
 
+__exported import surface_shading;
+
 public static const float pi = 3.14159265358979;
 public static const uint cascadeCount = 4;
 public static const uint alphaModeMask = 1;
@@ -371,23 +373,6 @@ public struct DrawData
     public uint padding2;
 };
 
-// Normals transform with the cofactor matrix, which stays correct under non-uniform scales. Its
-// sign follows the determinant so that mirrored transforms keep outward normals.
-public float3 transformNormal(float4x4 world, float3 normal)
-{
-    const float3x3 columns = transpose(float3x3(world));
-    const float3 transformed = cross(columns[1], columns[2]) * normal.x + cross(columns[2], columns[0]) * normal.y +
-                               cross(columns[0], columns[1]) * normal.z;
-    return dot(columns[0], cross(columns[1], columns[2])) < 0.0 ? -transformed : transformed;
-}
-
-// -1 for a transform that mirrors, which turns the bitangents of tangents around.
-public float handedness(float4x4 world)
-{
-    const float3x3 columns = transpose(float3x3(world));
-    return sign(dot(columns[0], cross(columns[1], columns[2])) + 1e-12);
-}
-
 // The transform a vertex follows: the world matrix of the instance, or the blend of the bones of a
 // skinned mesh, which already reach the world.
 public float4x4 vertexTransform(DrawData draw, uint vertexIndex)
@@ -508,22 +493,6 @@ public float4 sampleTextureGrad(uint index, float2 uv, float2 slopeX, float2 slo
 {
     return textures[NonUniformResourceIndex(index)].SampleGrad(textureSamplers[NonUniformResourceIndex(index)], uv,
                                                                slopeX, slopeY);
-}
-
-// Rotates a direction around the vertical axis, to turn the environment.
-public float3 rotateAroundY(float3 direction, float angle)
-{
-    const float c = cos(angle);
-    const float s = sin(angle);
-    return float3(c * direction.x + s * direction.z, direction.y, -s * direction.x + c * direction.z);
-}
-
-// Equirectangular coordinates of a direction: the image center looks along -Z, the top up.
-public float2 equirectangularUv(float3 direction)
-{
-    const float u = 0.5 + atan2(direction.x, -direction.z) / (2.0 * pi);
-    const float v = acos(clamp(direction.y, -1.0, 1.0)) / pi;
-    return float2(u, v);
 }
 
 // A triangle covering the screen, from vertex indices 0 to 2.

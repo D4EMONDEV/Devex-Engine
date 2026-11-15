@@ -1,6 +1,7 @@
 #include "WebGpuRenderer.hpp"
 
 #include "BlockDecoding.hpp"
+#include "WebGpuHelpers.hpp"
 #include "WebGpuShaders.hpp"
 
 #include <devex/asset/MeshData.hpp>
@@ -237,90 +238,6 @@ struct FormatLayout
     return wgpu::PresentMode::Fifo;
 }
 
-[[nodiscard]] wgpu::BindGroupLayoutEntry uniformEntry(std::uint32_t binding, wgpu::ShaderStage visibility, bool dynamic,
-                                                      std::uint64_t size)
-{
-    wgpu::BindGroupLayoutEntry entry;
-    entry.binding = binding;
-    entry.visibility = visibility;
-    entry.buffer.type = wgpu::BufferBindingType::Uniform;
-    entry.buffer.hasDynamicOffset = dynamic;
-    entry.buffer.minBindingSize = size;
-    return entry;
-}
-
-[[nodiscard]] wgpu::BindGroupLayoutEntry textureEntry(std::uint32_t binding, wgpu::ShaderStage visibility)
-{
-    wgpu::BindGroupLayoutEntry entry;
-    entry.binding = binding;
-    entry.visibility = visibility;
-    entry.texture.sampleType = wgpu::TextureSampleType::Float;
-    entry.texture.viewDimension = wgpu::TextureViewDimension::e2D;
-    return entry;
-}
-
-[[nodiscard]] wgpu::BindGroupLayoutEntry samplerEntry(std::uint32_t binding, wgpu::ShaderStage visibility)
-{
-    wgpu::BindGroupLayoutEntry entry;
-    entry.binding = binding;
-    entry.visibility = visibility;
-    entry.sampler.type = wgpu::SamplerBindingType::Filtering;
-    return entry;
-}
-
-[[nodiscard]] wgpu::BindGroupLayout bindGroupLayout(const wgpu::Device& device, const char* label,
-                                                    std::span<const wgpu::BindGroupLayoutEntry> entries)
-{
-    wgpu::BindGroupLayoutDescriptor descriptor;
-    descriptor.label = label;
-    descriptor.entryCount = entries.size();
-    descriptor.entries = entries.data();
-    return device.CreateBindGroupLayout(&descriptor);
-}
-
-[[nodiscard]] wgpu::PipelineLayout pipelineLayout(const wgpu::Device& device, std::span<const wgpu::BindGroupLayout> groups)
-{
-    wgpu::PipelineLayoutDescriptor descriptor;
-    descriptor.bindGroupLayoutCount = groups.size();
-    descriptor.bindGroupLayouts = groups.data();
-    return device.CreatePipelineLayout(&descriptor);
-}
-
-[[nodiscard]] wgpu::BindGroupEntry bufferBinding(std::uint32_t binding, const wgpu::Buffer& buffer, std::uint64_t size)
-{
-    wgpu::BindGroupEntry entry;
-    entry.binding = binding;
-    entry.buffer = buffer;
-    entry.size = size;
-    return entry;
-}
-
-[[nodiscard]] wgpu::BindGroupEntry viewBinding(std::uint32_t binding, const wgpu::TextureView& view)
-{
-    wgpu::BindGroupEntry entry;
-    entry.binding = binding;
-    entry.textureView = view;
-    return entry;
-}
-
-[[nodiscard]] wgpu::BindGroupEntry samplerBinding(std::uint32_t binding, const wgpu::Sampler& sampler)
-{
-    wgpu::BindGroupEntry entry;
-    entry.binding = binding;
-    entry.sampler = sampler;
-    return entry;
-}
-
-[[nodiscard]] wgpu::BindGroup bindGroup(const wgpu::Device& device, const wgpu::BindGroupLayout& layout,
-                                        std::span<const wgpu::BindGroupEntry> entries)
-{
-    wgpu::BindGroupDescriptor descriptor;
-    descriptor.layout = layout;
-    descriptor.entryCount = entries.size();
-    descriptor.entries = entries.data();
-    return device.CreateBindGroup(&descriptor);
-}
-
 // The largest size of `size` that fits in `limit`, keeping its proportions.
 [[nodiscard]] math::Extent2D fitted(math::Extent2D size, math::Extent2D limit) noexcept
 {
@@ -539,6 +456,10 @@ core::Result<void> WebGpuRenderer::initialize()
     {
         return pipelines;
     }
+    if (core::Result<void> scene = createScenePipelines(); !scene)
+    {
+        return scene;
+    }
     return {};
 }
 
@@ -611,11 +532,17 @@ core::Result<void> WebGpuRenderer::createPipelines()
     spriteFragment.targetCount = 1;
     spriteFragment.targets = &spriteTarget;
     const std::array spriteGroups{m_spriteLayout, m_textureLayout};
+    // Sprites lie among the blended surfaces: behind what the meshes drew nearer, without hiding the others.
+    wgpu::DepthStencilState spriteDepth;
+    spriteDepth.format = wgpu::TextureFormat::Depth32Float;
+    spriteDepth.depthWriteEnabled = false;
+    spriteDepth.depthCompare = wgpu::CompareFunction::GreaterEqual;
     wgpu::RenderPipelineDescriptor sprite;
     sprite.label = "Sprites";
     sprite.layout = pipelineLayout(m_device, spriteGroups);
     sprite.vertex.module = spriteModule;
     sprite.vertex.entryPoint = "spriteVertex";
+    sprite.depthStencil = &spriteDepth;
     sprite.fragment = &spriteFragment;
     m_spritePipeline = m_device.CreateRenderPipeline(&sprite);
 
@@ -792,6 +719,13 @@ void WebGpuRenderer::ensureSceneTarget(math::Extent2D size)
     descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
     m_sceneTarget = m_device.CreateTexture(&descriptor);
     m_sceneView = m_sceneTarget.CreateView();
+    wgpu::TextureDescriptor depth;
+    depth.label = "Depth";
+    depth.size = {size.width, size.height, 1};
+    depth.format = wgpu::TextureFormat::Depth32Float;
+    depth.usage = wgpu::TextureUsage::RenderAttachment;
+    m_depthTarget = m_device.CreateTexture(&depth);
+    m_depthView = m_depthTarget.CreateView();
     m_sceneSize = size;
 }
 
@@ -832,8 +766,37 @@ core::Result<std::string> WebGpuRenderer::describeGraphics() const
 
 core::Result<MeshHandle> WebGpuRenderer::createMesh(const asset::MeshData& mesh)
 {
-    // Meshes are drawn from web step 3: until then the renderer keeps what it needs to answer.
-    return m_meshes.insert({.submeshes = static_cast<std::uint32_t>(std::max<std::size_t>(mesh.submeshes.size(), 1))});
+    if (mesh.vertices.empty() || mesh.indices.empty())
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "a mesh needs vertices and indices");
+    }
+    const auto upload = [this](const void* data, std::size_t size, wgpu::BufferUsage usage, const char* label) {
+        // Writes go by four bytes.
+        const std::size_t padded = (size + 3) / 4 * 4;
+        wgpu::BufferDescriptor descriptor;
+        descriptor.label = label;
+        descriptor.size = padded;
+        descriptor.usage = usage | wgpu::BufferUsage::CopyDst;
+        const wgpu::Buffer buffer = m_device.CreateBuffer(&descriptor);
+        std::vector<std::byte> bytes(padded);
+        std::memcpy(bytes.data(), data, size);
+        m_queue.WriteBuffer(buffer, 0, bytes.data(), bytes.size());
+        return buffer;
+    };
+    GpuMesh gpu;
+    gpu.vertices = upload(mesh.vertices.data(), mesh.vertices.size() * sizeof(asset::Vertex), wgpu::BufferUsage::Vertex, "Vertices");
+    gpu.indices = upload(mesh.indices.data(), mesh.indices.size() * sizeof(std::uint32_t), wgpu::BufferUsage::Index, "Indices");
+    if (!mesh.skin.empty())
+    {
+        gpu.skin = upload(mesh.skin.data(), mesh.skin.size() * sizeof(asset::VertexSkin), wgpu::BufferUsage::Vertex, "Skin");
+    }
+    gpu.submeshes = mesh.submeshes;
+    if (gpu.submeshes.empty())
+    {
+        gpu.submeshes.push_back({.firstIndex = 0, .indexCount = static_cast<std::uint32_t>(mesh.indices.size())});
+    }
+    gpu.bounds = mesh.bounds;
+    return m_meshes.insert(std::move(gpu));
 }
 
 bool WebGpuRenderer::isReady(MeshHandle mesh) const noexcept
@@ -853,8 +816,8 @@ void WebGpuRenderer::destroyMesh(MeshHandle mesh)
 
 std::uint32_t WebGpuRenderer::submeshCount(MeshHandle mesh) const noexcept
 {
-    const MeshRecord* const record = m_meshes.find(mesh);
-    return record != nullptr ? record->submeshes : 0;
+    const GpuMesh* const record = m_meshes.find(mesh);
+    return record != nullptr ? static_cast<std::uint32_t>(record->submeshes.size()) : 0;
 }
 
 core::Result<TextureHandle> WebGpuRenderer::createTexture(const asset::TextureData& texture)
@@ -891,6 +854,7 @@ core::Result<TextureHandle> WebGpuRenderer::createTexture(const asset::TextureDa
     gpu.size = {base.width, base.height};
     gpu.decoded = decode;
     gpu.bindable = texture.format != asset::TextureFormat::R32Float;
+    gpu.nearest = texture.filter == asset::TextureFilter::Nearest;
 
     for (std::uint32_t level = 0; level < texture.mips.size(); ++level)
     {
@@ -929,7 +893,11 @@ core::Result<TextureHandle> WebGpuRenderer::createTexture(const asset::TextureDa
 
 void WebGpuRenderer::destroyTexture(TextureHandle texture)
 {
-    static_cast<void>(m_textures.remove(texture));
+    if (m_textures.remove(texture))
+    {
+        // The materials that read it sample white from now on.
+        ++m_textureEpoch;
+    }
 }
 
 core::Result<void> WebGpuRenderer::updateTexture(TextureHandle texture, std::uint32_t top, std::uint32_t height,
@@ -984,14 +952,16 @@ void WebGpuRenderer::destroyIrradianceVolume(IrradianceVolumeHandle volume)
 
 MaterialHandle WebGpuRenderer::createMaterial(const MaterialDesc& material)
 {
-    return m_materials.insert(material);
+    return m_materials.insert({.description = material});
 }
 
 void WebGpuRenderer::updateMaterial(MaterialHandle handle, const MaterialDesc& material)
 {
-    if (MaterialDesc* const stored = m_materials.find(handle))
+    if (GpuMaterial* const stored = m_materials.find(handle))
     {
-        *stored = material;
+        stored->description = material;
+        // Its group is made again when it is drawn.
+        stored->textureEpoch = 0;
     }
 }
 
@@ -1254,7 +1224,9 @@ core::Result<void> WebGpuRenderer::endFrame()
                 return math::dot(toCamera, toCamera);
             },
     };
-    gatherSprites(m_world, frustumOf(matrices.unjitteredViewProjection), resources, m_spriteFrame);
+    const Frustum frustum = frustumOf(matrices.unjitteredViewProjection);
+    prepareMeshes(matrices, frustum);
+    gatherSprites(m_world, frustum, resources, m_spriteFrame);
     m_spriteRuns.clear();
     for (std::uint32_t index = 0; index < m_spriteFrame.sprites.size(); ++index)
     {
@@ -1356,19 +1328,27 @@ core::Result<void> WebGpuRenderer::endFrame()
 
     const wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
     {
-        // The environment behind everything, as light, exposed: its colour, until the sky and the air of step 3.
-        const math::Vec3 background =
-            math::min(m_world.environment.color * m_world.environment.intensity * m_exposure, math::Vec3{60000.0f});
+        // The sky covers the image, then the opaque meshes, the blended ones from the farthest, and the sprites.
         wgpu::RenderPassColorAttachment color;
         color.view = m_sceneView;
         color.loadOp = wgpu::LoadOp::Clear;
         color.storeOp = wgpu::StoreOp::Store;
-        color.clearValue = {background.x, background.y, background.z, 1.0};
+        color.clearValue = {0.0, 0.0, 0.0, 1.0};
+        // Reversed depth: 0 is infinitely far.
+        wgpu::RenderPassDepthStencilAttachment depth;
+        depth.view = m_depthView;
+        depth.depthLoadOp = wgpu::LoadOp::Clear;
+        depth.depthStoreOp = wgpu::StoreOp::Discard;
+        depth.depthClearValue = 0.0f;
         wgpu::RenderPassDescriptor descriptor;
         descriptor.label = "Scene";
         descriptor.colorAttachmentCount = 1;
         descriptor.colorAttachments = &color;
+        descriptor.depthStencilAttachment = &depth;
         const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+        drawSky(pass);
+        drawMeshes(pass, false);
+        drawMeshes(pass, true);
         if (!m_spriteRuns.empty())
         {
             pass.SetPipeline(m_spritePipeline);

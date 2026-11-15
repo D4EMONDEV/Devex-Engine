@@ -4,62 +4,6 @@ module pbr;
 
 import common;
 
-public struct Surface
-{
-    public float3 position;
-    public float3 normal;
-    // Towards the viewer.
-    public float3 view;
-    public float3 diffuseColor;
-    public float3 f0;
-    // Perceptual roughness, and its square used by the distribution.
-    public float roughness;
-    public float alpha;
-    public float occlusion;
-    public float viewDistance;
-    public float2 fragmentCoordinate;
-};
-
-float distributionGgx(float NoH, float alpha)
-{
-    const float a2 = alpha * alpha;
-    const float f = (NoH * a2 - NoH) * NoH + 1.0;
-    return a2 / (pi * f * f);
-}
-
-float visibilitySmithGgxCorrelated(float NoV, float NoL, float alpha)
-{
-    const float a2 = alpha * alpha;
-    const float lambdaV = NoL * sqrt((NoV - NoV * a2) * NoV + a2);
-    const float lambdaL = NoV * sqrt((NoL - NoL * a2) * NoL + a2);
-    return 0.5 / max(lambdaV + lambdaL, 1e-5);
-}
-
-float3 fresnelSchlick(float3 f0, float VoH)
-{
-    return f0 + (1.0 - f0) * pow(1.0 - VoH, 5.0);
-}
-
-// Reflected luminance for light arriving from `toLight` with an illuminance at normal incidence.
-float3 shadeLight(Surface surface, float3 toLight, float3 illuminance)
-{
-    const float NoL = saturate(dot(surface.normal, toLight));
-    if (NoL <= 0.0)
-    {
-        return float3(0.0);
-    }
-    const float3 halfway = normalize(surface.view + toLight);
-    const float NoV = abs(dot(surface.normal, surface.view)) + 1e-5;
-    const float NoH = saturate(dot(surface.normal, halfway));
-    const float VoH = saturate(dot(surface.view, halfway));
-
-    const float3 fresnel = fresnelSchlick(surface.f0, VoH);
-    const float3 specular = distributionGgx(NoH, surface.alpha) *
-                            visibilitySmithGgxCorrelated(NoV, NoL, surface.alpha) * fresnel;
-    const float3 diffuse = surface.diffuseColor / pi;
-    return (diffuse + specular) * illuminance * NoL;
-}
-
 float cascadeShadow(SceneData* scene, Surface surface, uint cascade)
 {
     // Moving the point along its normal by a texel keeps surfaces from shadowing themselves.
@@ -213,15 +157,8 @@ float3 localLights<Model : ILightModel>(SceneData* scene, Surface surface, Model
     {
         const Light light = scene.lights[scene.clusterLights[cluster.offset + entry]];
         const float3 toLight = light.position - surface.position;
-        const float distanceSquared = dot(toLight, toLight);
-        const float3 direction = toLight * rsqrt(max(distanceSquared, 1e-8));
-
-        // Inverse square falloff, windowed so that the light ends exactly at its range.
-        const float ratio = distanceSquared / (light.range * light.range);
-        const float window = saturate(1.0 - ratio * ratio);
-        float attenuation = window * window / max(distanceSquared, 1e-4);
-        const float spot = saturate(dot(light.direction, -direction) * light.spotScale + light.spotOffset);
-        attenuation *= spot * spot;
+        const float3 direction = toLight * rsqrt(max(dot(toLight, toLight), 1e-8));
+        float attenuation = localAttenuation(toLight, light.range, light.direction, light.spotScale, light.spotOffset);
 
         if (attenuation <= 0.0)
         {
@@ -490,9 +427,7 @@ public float3 environmentLight(SceneData* scene, Surface surface, float4 screen)
     prefiltered = lerp(prefiltered, screen.rgb, screen.a);
     const float2 brdf = brdfLut.SampleLevel(clampSampler, float2(NoV, surface.roughness), 0.0).rg;
 
-    const float3 diffuse = surface.diffuseColor * irradiance;
-    const float3 specular = prefiltered * (surface.f0 * brdf.x + brdf.y);
-    return (diffuse + specular) * surface.occlusion;
+    return ambientLight(surface, irradiance, prefiltered, brdf);
 }
 
 // The light around a surface, with what the screen reflects there.

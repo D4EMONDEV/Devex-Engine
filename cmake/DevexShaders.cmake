@@ -139,6 +139,8 @@ function(devex_embed_wgsl)
             COMMAND "${DEVEX_SLANGC}" "${source_path}"
                 -target wgsl
                 -matrix-layout-column-major
+                # Shaders shared with Vulkan say there what WebGPU binds otherwise.
+                -DDEVEX_WEBGPU=1
                 -depfile "${output}.d"
                 -o "${output}"
             DEPENDS "${source_path}"

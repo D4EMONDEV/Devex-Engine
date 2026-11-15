@@ -5,14 +5,44 @@
 Texture2D equirectangular;
 [[vk::binding(1, 0)]]
 TextureCube radiance;
+// WebGPU writes half floats to storage textures only without reading them.
+#if defined(DEVEX_WEBGPU)
 [[vk::binding(2, 0)]]
+[format("rgba16f")]
+WTexture2DArray<float4> outputFaces;
+[[vk::binding(3, 0)]]
+[format("rgba16f")]
+WTexture2D<float4> outputTable;
+#else
+[[vk::binding(2, 0)]]
+[format("rgba16f")]
 RWTexture2DArray<float4> outputFaces;
 [[vk::binding(3, 0)]]
+[format("rgba16f")]
 RWTexture2D<float4> outputTable;
+#endif
 [[vk::binding(4, 0)]]
 SamplerState equirectangularSampler;
 [[vk::binding(5, 0)]]
 SamplerState cubeSampler;
+
+void writeFace(uint3 texel, float4 value)
+{
+#if defined(DEVEX_WEBGPU)
+    outputFaces.Store(texel, value);
+#else
+    outputFaces[texel] = value;
+#endif
+}
+
+void writeTable(uint2 texel, float4 value)
+{
+#if defined(DEVEX_WEBGPU)
+    outputTable.Store(texel, value);
+#else
+    outputTable[texel] = value;
+#endif
+}
 
 struct BakeParameters
 {
@@ -27,8 +57,14 @@ struct BakeParameters
     float padding;
 };
 
+// WebGPU has no push constants: its bakes read them from a uniform buffer.
+#if defined(DEVEX_WEBGPU)
+[[vk::binding(6, 0)]]
+ConstantBuffer<BakeParameters> parameters;
+#else
 [[vk::push_constant]]
 ConstantBuffer<BakeParameters> parameters;
+#endif
 
 static const float pi = 3.14159265358979;
 
@@ -121,7 +157,7 @@ void equirectangularToCube(uint3 id : SV_DispatchThreadID)
     const float3 color = equirectangular.SampleLevel(equirectangularSampler,
                                                      equirectangularUv(direction),
                                                      parameters.sourceLod).rgb;
-    outputFaces[id] = float4(color, 1.0);
+    writeFace(id, float4(color, 1.0));
 }
 
 [shader("compute")]
@@ -135,7 +171,7 @@ void prefilterSpecular(uint3 id : SV_DispatchThreadID)
     const float3 normal = cubeDirection(id.z, id.xy, parameters.size);
     if (parameters.roughness <= 0.0)
     {
-        outputFaces[id] = float4(radiance.SampleLevel(cubeSampler, normal, 0.0).rgb, 1.0);
+        writeFace(id, float4(radiance.SampleLevel(cubeSampler, normal, 0.0).rgb, 1.0));
         return;
     }
 
@@ -158,7 +194,7 @@ void prefilterSpecular(uint3 id : SV_DispatchThreadID)
         sum += radiance.SampleLevel(cubeSampler, light, sampleLod(pdf)).rgb * NoL;
         weight += NoL;
     }
-    outputFaces[id] = float4(sum / max(weight, 1e-6), 1.0);
+    writeFace(id, float4(sum / max(weight, 1e-6), 1.0));
 }
 
 [shader("compute")]
@@ -185,7 +221,7 @@ void irradiance(uint3 id : SV_DispatchThreadID)
         const float3 light = mul(local, frame);
         sum += radiance.SampleLevel(cubeSampler, light, sampleLod(cosTheta / pi)).rgb;
     }
-    outputFaces[id] = float4(sum / float(parameters.sampleCount), 1.0);
+    writeFace(id, float4(sum / float(parameters.sampleCount), 1.0));
 }
 
 float visibilitySmithGgxCorrelated(float NoV, float NoL, float alpha)
@@ -229,5 +265,5 @@ void brdfTable(uint3 id : SV_DispatchThreadID)
         scale += (1.0 - fresnel) * visibility;
         bias += fresnel * visibility;
     }
-    outputTable[id.xy] = float4(scale, bias, 0.0, 1.0) / float(parameters.sampleCount);
+    writeTable(id.xy, float4(scale, bias, 0.0, 1.0) / float(parameters.sampleCount));
 }

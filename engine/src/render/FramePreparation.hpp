@@ -49,6 +49,10 @@ struct PackedAtmosphere
 };
 [[nodiscard]] DEVEX_API PackedAtmosphere packAtmosphere(const RenderWorld& world, float cameraHeight);
 
+// The local lights of the world as the shaders read them, in its order, without their shadows: the backend gives them
+// their views.
+DEVEX_API void packLights(const RenderWorld& world, std::vector<GpuLight>& lights);
+
 // The interface of the frame in one list of vertices and one of indices: that of the scene, then each surface, then the
 // layer of the tools, which only the tools draw. A surface counts its indices from its own first vertex, placed after what
 // came before; where each surface and the tools start among the indices.

@@ -3340,25 +3340,7 @@ core::Result<void> VulkanRenderer::uploadShadowViews(FrameContext& frame) const
 
 core::Result<void> VulkanRenderer::uploadLights(FrameContext& frame, float aspectRatio)
 {
-    m_gpuLights.clear();
-    for (const RenderLight& light : m_world.lights)
-    {
-        GpuLight gpuLight{
-            .position = light.position,
-            .range = std::max(light.range, 1e-3f),
-            .direction = math::length(light.direction) > 0.0f ? math::normalize(light.direction)
-                                                              : math::Vec3{0.0f, 0.0f, -1.0f},
-            .intensity = light.intensity,
-        };
-        if (light.type == LightType::Spot)
-        {
-            const float cosOuter = std::cos(std::max(light.outerAngle, 1e-3f));
-            const float cosInner = std::cos(std::clamp(light.innerAngle, 0.0f, light.outerAngle));
-            gpuLight.spotScale = 1.0f / std::max(cosInner - cosOuter, 1e-4f);
-            gpuLight.spotOffset = -cosOuter * gpuLight.spotScale;
-        }
-        m_gpuLights.push_back(gpuLight);
-    }
+    packLights(m_world, m_gpuLights);
 
     const ClusterGrid grid{
         .nearPlane = m_world.camera.nearPlane,

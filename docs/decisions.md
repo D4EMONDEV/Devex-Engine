@@ -5803,6 +5803,20 @@ Les étapes, chacune livrable et testée :
      bureau les enchaîne comme avant ; le navigateur appelle une image à chaque rafraîchissement, après avoir donné son GPU, qu'il
      ne donne qu'en rendant la main. JSPI aurait gardé la boucle telle quelle, mais seuls Chrome et Edge l'ont.
 3. La 3D de Compatibility : PBR, ombres, particules, skinning.
+   Décidé le 2026-11-15, avant le code : **l'essentiel avant la 1.0**, par sous-étapes commitées une à une : 3a les maillages PBR, les
+   matériaux, les lumières, le ciel et l'IBL, le skinning ; 3b les ombres ; 3c les particules, les lumières 2D, le brouillard et
+   l'air ; 3d le bloom et le TAA. Après la 1.0 : les terrains et l'herbe, les décalques, les effets d'objectif, la table de
+   couleurs et les shaders du projet. **Un groupe de liaison par matériau**, avec ses textures, et les maillages dessinés par
+   matériau : WebGPU n'a pas le bindless de Vulkan. **Le CPU et le vertex shader** : le CPU écarte ce que la caméra ne voit pas et
+   regroupe les instances, le skinning se fait dans le vertex shader, sans fonction optionnelle de WebGPU, comme le Compatibility
+   de Godot.
+   - 3a ✅ les maillages, rigides ou skinnés, par lots d'un maillage, d'un sous-maillage et d'un matériau (un par un et du plus
+     loin pour les transparents), éclairés par le soleil, toutes les lumières locales (sans clusters) et l'environnement, sur le
+     ciel. L'environnement est cuit par le même `ibl.slang` que Vulkan (ses sorties passent en écriture seule pour WebGPU), ou
+     blanc pour un ciel d'une couleur, comme Vulkan cuit une texture blanche. Le calcul de la lumière d'une surface (BRDF,
+     atténuation, carte de normales, environnement) est partagé avec Vulkan dans `surface_shading.slang`, l'empaquetage des
+     lumières dans `packLights`. Un test compare à Vulkan une scène de sphères, de boîtes texturée, transparente et skinnée,
+     éclairée par un soleil, une lumière ponctuelle, un spot et un ciel texturé.
 4. **Web** dans la liste de l'export, avec **Run in Browser** sur un petit serveur local, et les problèmes en rouge.
 5. Le C++ des jeux compilé avec Emscripten.
 6. Saisie, plein écran, souris capturée, son et sauvegardes dans le navigateur.

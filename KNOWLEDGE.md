@@ -3985,3 +3985,9 @@ public:
   `start()`, `frame()` et `finish()` dans `execute()`. Rien ne doit dormir dans une image (la limite d'images est sautée sur le web).
 - Essai : exporter un projet pour Windows (`devex-editor-console --export ... --platform windows`), copier son `.dvxpak` en
   `game.dvxpak` à côté de `devex-player.js`, `.wasm` et `index.html` du build web, et servir le dossier en local.
+- La 3D WebGPU est dans `webgpu/WebGpuScene.cpp` : groupes 0 la scène (uniforme, lumières, instances, os, cubes de
+  l'environnement, table BRDF), 1 le matériau (uniforme, 5 textures et leurs samplers, refait quand une texture part :
+  `m_textureEpoch`), 2 le début du lot (décalage dynamique). Les pipelines sont indexés par 1 skinné + 2 deux faces + 4
+  transparent. Un uniforme WGSL est arrondi à 16 octets : la structure C++ doit l'être aussi, sinon le binding est trop petit.
+- `ibl.slang` se compile pour WebGPU avec `-DDEVEX_WEBGPU=1` (que `devex_embed_wgsl` passe à tous) : paramètres dans un
+  uniforme, sorties `WTexture` en écriture seule (rgba16float ne s'écrit pas en lecture-écriture en WGSL).

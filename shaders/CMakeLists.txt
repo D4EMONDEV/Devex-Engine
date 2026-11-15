@@ -34,9 +34,12 @@ devex_add_shaders(devex_shaders
         particles.slang
         pbr.slang
         sprite_shape.slang
+        surface_shading.slang
         tonemapping.slang
         ui_shape.slang
         webgpu_luminance.slang
+        webgpu_mesh.slang
+        webgpu_sky.slang
         webgpu_sprite.slang
         webgpu_tonemap.slang
         webgpu_ui.slang
@@ -52,5 +55,6 @@ devex_ship_shader_modules(devex_shader_modules
         particles.slang
         pbr.slang
         sprite_shape.slang
+        surface_shading.slang
 )
 devex_ship_slangc(devex_slangc OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slang")

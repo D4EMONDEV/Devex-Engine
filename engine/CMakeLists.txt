@@ -475,7 +475,10 @@ if(DEVEX_WEBGPU)
     set(devex_wgsl_source "${CMAKE_CURRENT_BINARY_DIR}/generated/WebGpuShaders.cpp")
     devex_embed_wgsl(OUTPUT "${devex_wgsl_source}"
         SOURCES
+            ibl.slang
             webgpu_luminance.slang
+            webgpu_mesh.slang
+            webgpu_sky.slang
             webgpu_sprite.slang
             webgpu_tonemap.slang
             webgpu_ui.slang
@@ -484,8 +487,10 @@ if(DEVEX_WEBGPU)
         PRIVATE
             src/render/webgpu/BlockDecoding.cpp
             src/render/webgpu/BlockDecoding.hpp
+            src/render/webgpu/WebGpuHelpers.hpp
             src/render/webgpu/WebGpuRenderer.cpp
             src/render/webgpu/WebGpuRenderer.hpp
+            src/render/webgpu/WebGpuScene.cpp
             src/render/webgpu/WebGpuShaders.hpp
             "${devex_wgsl_source}"
     )
