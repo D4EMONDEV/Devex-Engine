@@ -5857,10 +5857,40 @@ Les étapes, chacune livrable et testée :
    **Un dossier et un ZIP** : le dossier avec la page, le lecteur et `game.dvxpak`, et à côté un ZIP prêt pour itch.io, la
    page à sa racine. **Un petit serveur HTTP intégré** pour Run in Browser, comme Godot : il sert le dossier exporté sur
    localhost et ouvre le navigateur par défaut, sans rien à installer.
-5. Le C++ des jeux compilé avec Emscripten.
-6. Saisie, plein écran, souris capturée, son et sauvegardes dans le navigateur.
+5. ✅ Le C++ des jeux compilé avec Emscripten.
+   Décidé le 2026-11-15, avant le code : **un lecteur reconstruit pour chaque jeu en C++**. Le modèle web livre aussi le
+   moteur en bibliothèques statiques (environ 72 Mo, bien moins compressés) ; à l'export, Emscripten compile le C++ du jeu
+   et le lie au moteur dans un `devex-player.wasm` propre au jeu, le plus petit et le plus rapide, sans chargement
+   dynamique ; le jeu s'enregistre par sa fonction liée au lecteur plutôt que par une bibliothèque chargée. **Emscripten
+   installé par l'utilisateur**, comme le NDK pour Android : l'éditeur le trouve par `EMSDK` ou dans les dossiers habituels d'emsdk,
+   exige la version avec laquelle le modèle a été construit (7.0.0), et le dit en rouge sinon, avec la commande qui
+   l'installe.
+6. ✅ Saisie, plein écran, souris capturée, son et sauvegardes dans le navigateur.
+   Décidé le 2026-11-15, avant le code : **IndexedDB** pour ce que le joueur garde, ses sauvegardes, ses réglages et ses
+   touches : le dossier du jeu est monté sur l'IDBFS d'Emscripten, chargé avant que le jeu ne le lise, puis réécrit après
+   chaque changement et quand la page se cache, comme Godot. Chaque jeu a sa base, nommée par son dossier, même quand
+   itch.io les sert tous depuis le même domaine. OPFS attendra les threads. **Le jeu démarre tout de suite** : le son
+   part au premier clic ou à la première touche, le plein écran et la souris capturée attendent le clic ou la touche
+   suivants, comme le font déjà miniaudio et SDL. **Quitter arrête le jeu**, et la page dit « The game has ended » à la
+   place du canvas noir.
 
 Ensuite : les threads, le C#, le multijoueur sur le web.
+
+Le multijoueur web, décidé le 2026-11-15, avant le code : **WebSocket**, celui du navigateur, comme le
+WebSocketMultiplayerPeer de Godot : tout y arrive dans l'ordre et à coup sûr, les envois non fiables compris ; WebRTC
+pourra venir après. **L'hôte écoute ENet et WebSocket ensemble** : `host(port)` ouvre aussi un serveur WebSocket en TCP
+sur le même numéro, et les joueurs du bureau et ceux du navigateur jouent dans la même partie sans que le jeu change de
+code ; un jeu dans un navigateur ne fait que rejoindre. **Un proxy documenté chiffre** : l'hôte parle ws, et la doc
+montre Caddy devant un serveur dédié pour le wss qu'exige une page en https. **Notre propre code** pour le serveur
+WebSocket, poignée de main, SHA-1 et trames, sans dépendance ; le navigateur utilise son propre WebSocket.
+
+Les threads sur le web, décidé le 2026-11-15, avant le code : **une case Thread Support** dans le réglage d'export Web,
+décochée par défaut, comme Godot. Un second lecteur est construit avec pthreads (préréglage `web-threads`, triplet
+`wasm32-emscripten-threads`), avec **son propre kit**, pour que le C++ d'un jeu ait les threads lui aussi. Cochée,
+l'export met **les deux lecteurs**, et la page choisit au chargement : celui avec threads quand le navigateur le permet
+(`crossOriginIsolated`, que donnent les en-têtes COOP/COEP), celui sur un thread sinon ; le jeu marche ainsi chez
+n'importe quel hébergeur. Le serveur de Run in Browser envoie ces en-têtes. Le son reste en ScriptProcessorNode :
+l'AudioWorklet de miniaudio demande ASYNCIFY, bien trop lourd.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

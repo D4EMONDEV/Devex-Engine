@@ -16,6 +16,8 @@
 <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
 <div id="status">Loading…</div>
 <script>
+    // Thread Support, which the export turns on: the player with threads, where the host sent the headers COOP and COEP.
+    const devexThreads = false;
     const status = document.getElementById('status');
     var Module = {
         canvas: document.getElementById('canvas'),
@@ -41,8 +43,20 @@
         }],
         print: (text) => console.log(text),
         printErr: (text) => console.error(text),
+        // The game has quit: the page says so in place of its last picture.
+        devexEnded: () => {
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            }
+            document.exitPointerLock();
+            Module.canvas.style.display = 'none';
+            status.textContent = 'The game has ended.';
+            document.body.appendChild(status);
+        },
     };
+    const player = document.createElement('script');
+    player.src = devexThreads && self.crossOriginIsolated ? 'devex-player-threads.js' : 'devex-player.js';
+    document.body.appendChild(player);
 </script>
-<script src="devex-player.js"></script>
 </body>
 </html>

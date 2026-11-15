@@ -78,7 +78,35 @@ void early(SystemContext&)
     order.emplace_back("early");
 }
 
+// The entry points of a game linked into the program, as the web player made for a game has them.
+std::uint32_t linkedApiVersion()
+{
+    return devex::runtime::gameApiVersion;
+}
+
+std::uint32_t olderApiVersion()
+{
+    return devex::runtime::gameApiVersion - 1;
+}
+
+void registerLinkedGame(GameRegistry* game)
+{
+    game->system("Linked", devex::runtime::SystemPhase::Update, &first);
+}
+
 } // namespace
+
+TEST_CASE("A game linked into the program registers through its entry points", "[runtime][game]")
+{
+    const auto module = GameModule::linked(&linkedApiVersion, &registerLinkedGame);
+    REQUIRE(module.has_value());
+    REQUIRE((*module)->registry().systems().size() == 1);
+    CHECK((*module)->registry().systems()[0].name == "Linked");
+    // Built against other headers, it is refused before it registers anything.
+    const auto older = GameModule::linked(&olderApiVersion, &registerLinkedGame);
+    REQUIRE_FALSE(older.has_value());
+    CHECK(older.error().code == devex::core::ErrorCode::Unsupported);
+}
 
 TEST_CASE("Systems run by phase, order and registration", "[runtime][game]")
 {

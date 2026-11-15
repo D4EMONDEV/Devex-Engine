@@ -713,8 +713,15 @@ target_link_libraries(devex_net
         unofficial::enet::enet
 )
 if(WIN32)
-    # What ENet uses of the system, which its package does not say.
+    # What ENet and the WebSockets of the host use of the system, which the package of ENet does not say.
     target_link_libraries(devex_net PRIVATE ws2_32 winmm)
+endif()
+if(EMSCRIPTEN)
+    # The WebSocket of the browser, through which a game in a browser joins.
+    target_link_options(devex_net PUBLIC -lwebsocket.js)
+else()
+    # The WebSockets of the host, for the players in a browser.
+    target_sources(devex_net PRIVATE src/net/WebSocketServer.cpp src/net/WebSocketServer.hpp)
 endif()
 set_target_properties(devex_net PROPERTIES
     EXPORT_NAME Net

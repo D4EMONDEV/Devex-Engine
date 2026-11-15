@@ -5,15 +5,32 @@
 
 #include <enet/enet.h>
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#include <emscripten/websocket.h>
+#else
+#include "WebSocketServer.hpp"
+#endif
+
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstring>
+#include <format>
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
+
+#if defined(__EMSCRIPTEN__)
+// Whether the page came over https, whose WebSockets must then be encrypted too.
+EM_JS(int, devexPageIsSecure, (), {
+    return typeof location !== 'undefined' && location.protocol === 'https:' ? 1 : 0;
+});
+#endif
 
 namespace devex::net {
 
@@ -23,10 +40,16 @@ namespace {
 constexpr std::uint32_t protocolVersion = 3;
 constexpr std::size_t reliableChannel = 0;
 constexpr std::size_t unreliableChannel = 1;
-constexpr std::size_t channelCount = 2;
+// Only ENet has channels, which a browser does without.
+[[maybe_unused]] constexpr std::size_t channelCount = 2;
 // How long a host that does not answer is waited for when joining, in milliseconds.
 constexpr enet_uint32 joinTimeoutMinimum = 5000;
 constexpr enet_uint32 joinTimeoutMaximum = 10000;
+// A game in a browser waits as long as the most a game over ENet does.
+static_assert(joinTimeoutMinimum <= joinTimeoutMaximum);
+// What a WebSocket asks the host for: the version of the protocol is in its name.
+constexpr const char* webSocketProtocol = "devex.3";
+static_assert(protocolVersion == 3, "the protocol of WebSockets names the version");
 
 // The first byte of every packet.
 enum class Packet : std::uint8_t
@@ -85,6 +108,23 @@ void writeNumber(std::vector<std::byte>& bytes, std::uint32_t value)
     return {};
 }
 
+#if defined(__EMSCRIPTEN__)
+// The URL of a host for the WebSocket of the browser: ws:// or wss:// as the address says, or else as the page came.
+[[nodiscard]] std::string webSocketUrl(std::string_view address, std::uint16_t port)
+{
+    std::string_view scheme = devexPageIsSecure() != 0 ? "wss://" : "ws://";
+    for (const std::string_view given : {std::string_view("ws://"), std::string_view("wss://")})
+    {
+        if (address.starts_with(given))
+        {
+            scheme = given;
+            address.remove_prefix(given.size());
+        }
+    }
+    return std::format("{}{}:{}/", scheme, address, port);
+}
+#endif
+
 } // namespace
 
 struct Multiplayer::Impl
@@ -92,10 +132,23 @@ struct Multiplayer::Impl
     struct Client
     {
         ENetPeer* connection = nullptr;
+        // A player in a browser, by its WebSocket, in place of a connection of ENet.
+        std::uint32_t webSocket = 0;
         PeerId id = 0;
     };
 
     ENetHost* enet = nullptr;
+#if defined(__EMSCRIPTEN__)
+    // A game in a browser, which has no UDP, joins over WebSocket: the connection, and what came through it, a message
+    // or nothing once it closed.
+    EMSCRIPTEN_WEBSOCKET_T browserSocket = 0;
+    std::vector<std::optional<std::vector<std::byte>>> browserEvents;
+    std::chrono::steady_clock::time_point joinStarted;
+#else
+    // The players in a browser, on the host.
+    std::unique_ptr<detail::WebSocketServer> webSockets;
+    std::vector<detail::WebSocketServer::Event> webSocketEvents;
+#endif
     MultiplayerState state = MultiplayerState::Offline;
     bool hosting = false;
     PeerId local = 0;
@@ -182,6 +235,15 @@ struct Multiplayer::Impl
         return true;
     }
 
+    [[nodiscard]] bool connected() const noexcept
+    {
+#if defined(__EMSCRIPTEN__)
+        return enet != nullptr || browserSocket != 0;
+#else
+        return enet != nullptr;
+#endif
+    }
+
     void close()
     {
         if (enet != nullptr)
@@ -189,6 +251,18 @@ struct Multiplayer::Impl
             enet_host_destroy(enet);
         }
         enet = nullptr;
+#if defined(__EMSCRIPTEN__)
+        if (browserSocket != 0)
+        {
+            emscripten_websocket_close(browserSocket, 1000, "");
+            emscripten_websocket_delete(browserSocket);
+        }
+        browserSocket = 0;
+        browserEvents.clear();
+#else
+        webSockets.reset();
+        webSocketEvents.clear();
+#endif
         server = nullptr;
         clients.clear();
         peers.clear();
@@ -208,6 +282,34 @@ struct Multiplayer::Impl
         }
     }
 
+    // A client over ENet, or over WebSocket, where everything arrives, in order.
+    void sendTo(const Client& client, std::span<const std::byte> bytes, Delivery delivery)
+    {
+#if !defined(__EMSCRIPTEN__)
+        if (client.webSocket != 0)
+        {
+            if (webSockets)
+            {
+                webSockets->send(client.webSocket, bytes);
+            }
+            return;
+        }
+#endif
+        sendTo(client.connection, bytes, delivery);
+    }
+
+    void sendToHost(std::span<const std::byte> bytes, Delivery delivery)
+    {
+#if defined(__EMSCRIPTEN__)
+        if (browserSocket != 0)
+        {
+            emscripten_websocket_send_binary(browserSocket, const_cast<std::byte*>(bytes.data()), static_cast<std::uint32_t>(bytes.size()));
+            return;
+        }
+#endif
+        sendTo(server, bytes, delivery);
+    }
+
     void tellClients(Packet kind, PeerId peer, PeerId except)
     {
         std::vector<std::byte> bytes{static_cast<std::byte>(kind)};
@@ -216,7 +318,7 @@ struct Multiplayer::Impl
         {
             if (client.id != except)
             {
-                sendTo(client.connection, bytes, Delivery::Reliable);
+                sendTo(client, bytes, Delivery::Reliable);
             }
         }
     }
@@ -228,21 +330,28 @@ struct Multiplayer::Impl
             enet_peer_disconnect_now(event.peer, 0);
             return;
         }
+        enet_peer_timeout(event.peer, 0, silenceLimit, silenceLimit);
+        admit({.connection = event.peer});
+    }
+
+    // A new player, over ENet or WebSocket: its number and those of the others, who decides what, then the others are told.
+    void admit(Client client)
+    {
         const PeerId id = nextPeer++;
+        client.id = id;
         std::vector<std::byte> welcome{static_cast<std::byte>(Packet::Welcome)};
         writeNumber(welcome, id);
         for (const PeerId other : peers)
         {
             writeNumber(welcome, other);
         }
-        enet_peer_timeout(event.peer, 0, silenceLimit, silenceLimit);
-        sendTo(event.peer, welcome, Delivery::Reliable);
+        sendTo(client, welcome, Delivery::Reliable);
         for (const auto& [entity, peer] : authorities)
         {
-            sendTo(event.peer, authorityPacket(entity, peer), Delivery::Reliable);
+            sendTo(client, authorityPacket(entity, peer), Delivery::Reliable);
         }
         tellClients(Packet::PeerJoined, id, id);
-        clients.push_back({.connection = event.peer, .id = id});
+        clients.push_back(client);
         peers.push_back(id);
         events.push_back({.kind = NetworkEvent::Kind::PeerJoined, .peer = id});
     }
@@ -250,10 +359,14 @@ struct Multiplayer::Impl
     void clientLeft(const ENetEvent& event)
     {
         const auto found = std::ranges::find(clients, event.peer, &Client::connection);
-        if (found == clients.end())
+        if (found != clients.end())
         {
-            return;
+            removeClient(found);
         }
+    }
+
+    void removeClient(std::vector<Client>::iterator found)
+    {
         const PeerId id = found->id;
         clients.erase(found);
         std::erase(peers, id);
@@ -264,14 +377,13 @@ struct Multiplayer::Impl
 
     // A message or a call from a client: for the host, for another client, or for everyone. The host says
     // who sent it, whatever the packet claims, and passes on no call it refuses.
-    void relay(const ENetEvent& event, Packet kind, std::span<const std::byte> bytes, Delivery delivery)
+    void relay(const Client& sender, Packet kind, std::span<const std::byte> bytes, Delivery delivery)
     {
-        const auto sender = std::ranges::find(clients, event.peer, &Client::connection);
-        if (sender == clients.end() || bytes.size() < dataHeader)
+        if (bytes.size() < dataHeader)
         {
             return;
         }
-        const PeerId from = sender->id;
+        const PeerId from = sender.id;
         const PeerId to = readNumber(bytes.data() + 1 + sizeof(PeerId));
         const std::span<const std::byte> message = bytes.subspan(dataHeader);
         if (kind == Packet::Rpc && !accepts(message, from))
@@ -299,7 +411,7 @@ struct Multiplayer::Impl
         {
             if (client.id != from && (to == everyone || client.id == to))
             {
-                sendTo(client.connection, passed, delivery);
+                sendTo(client, passed, delivery);
             }
         }
     }
@@ -314,14 +426,14 @@ struct Multiplayer::Impl
         packet.insert(packet.end(), bytes.begin(), bytes.end());
         if (!hosting)
         {
-            sendTo(server, packet, delivery);
+            sendToHost(packet, delivery);
             return;
         }
         for (const Client& client : clients)
         {
             if (to == everyone || client.id == to)
             {
-                sendTo(client.connection, packet, delivery);
+                sendTo(client, packet, delivery);
             }
         }
     }
@@ -339,7 +451,10 @@ struct Multiplayer::Impl
             peers.assign(1, hostPeer);
             // The host decides from now on: it tells what it has decided so far next.
             authorities.clear();
-            enet_peer_timeout(server, 0, silenceLimit, silenceLimit);
+            if (server != nullptr)
+            {
+                enet_peer_timeout(server, 0, silenceLimit, silenceLimit);
+            }
             for (std::size_t at = 1 + sizeof(PeerId); at + sizeof(PeerId) <= bytes.size(); at += sizeof(PeerId))
             {
                 peers.push_back(readNumber(bytes.data() + at));
@@ -381,6 +496,100 @@ struct Multiplayer::Impl
             }
         }
     }
+
+#if defined(__EMSCRIPTEN__)
+    // What the WebSocket of the browser says, between two frames of the game.
+    static EM_BOOL onBrowserMessage(int, const EmscriptenWebSocketMessageEvent* event, void* user)
+    {
+        if (event->isText == 0)
+        {
+            const auto* const bytes = reinterpret_cast<const std::byte*>(event->data);
+            static_cast<Impl*>(user)->browserEvents.emplace_back(std::vector<std::byte>(bytes, bytes + event->numBytes));
+        }
+        return EM_TRUE;
+    }
+
+    static EM_BOOL onBrowserClosed(int, const EmscriptenWebSocketCloseEvent*, void* user)
+    {
+        static_cast<Impl*>(user)->browserEvents.emplace_back(std::nullopt);
+        return EM_TRUE;
+    }
+
+    static EM_BOOL onBrowserError(int, const EmscriptenWebSocketErrorEvent*, void* user)
+    {
+        static_cast<Impl*>(user)->browserEvents.emplace_back(std::nullopt);
+        return EM_TRUE;
+    }
+
+    void serviceBrowser()
+    {
+        if (browserSocket == 0)
+        {
+            return;
+        }
+        std::vector<std::optional<std::vector<std::byte>>> arrived = std::exchange(browserEvents, {});
+        for (const std::optional<std::vector<std::byte>>& bytes : arrived)
+        {
+            if (!bytes)
+            {
+                const bool online = state == MultiplayerState::Online;
+                close();
+                events.push_back({.kind = online ? NetworkEvent::Kind::Disconnected : NetworkEvent::Kind::ConnectionFailed});
+                return;
+            }
+            received(*bytes, Delivery::Reliable);
+        }
+        if (state == MultiplayerState::Connecting &&
+            std::chrono::steady_clock::now() - joinStarted > std::chrono::milliseconds(joinTimeoutMaximum))
+        {
+            close();
+            events.push_back({.kind = NetworkEvent::Kind::ConnectionFailed});
+        }
+    }
+#else
+    // The players in a browser: those who finished their handshake come in, as a player over ENet does.
+    void serviceWebSockets()
+    {
+        if (!webSockets)
+        {
+            return;
+        }
+        webSocketEvents.clear();
+        webSockets->service(webSocketEvents, std::chrono::milliseconds(silenceLimit));
+        for (const detail::WebSocketServer::Event& event : webSocketEvents)
+        {
+            if (event.kind == detail::WebSocketServer::Event::Kind::Opened)
+            {
+                if (clients.size() >= maxClients)
+                {
+                    webSockets->close(event.connection);
+                }
+                else
+                {
+                    admit({.webSocket = event.connection});
+                }
+                continue;
+            }
+            const auto found = std::ranges::find(clients, event.connection, &Client::webSocket);
+            if (found == clients.end())
+            {
+                continue;
+            }
+            if (event.kind == detail::WebSocketServer::Event::Kind::Closed)
+            {
+                removeClient(found);
+            }
+            else if (!event.bytes.empty())
+            {
+                const auto kind = static_cast<Packet>(std::to_integer<std::uint8_t>(event.bytes[0]));
+                if (kind == Packet::Data || kind == Packet::Rpc || kind == Packet::Replication)
+                {
+                    relay(*found, kind, event.bytes, Delivery::Reliable);
+                }
+            }
+        }
+    }
+#endif
 };
 
 Multiplayer::Multiplayer()
@@ -403,6 +612,11 @@ core::Result<void> Multiplayer::host(std::uint16_t port, std::uint32_t maxClient
     {
         return core::makeError(core::ErrorCode::InvalidState, "This game is already in a session");
     }
+#if defined(__EMSCRIPTEN__)
+    static_cast<void>(port);
+    static_cast<void>(maxClients);
+    return core::makeError(core::ErrorCode::Unsupported, "A game in a browser cannot host: it joins a game hosted on a computer");
+#else
     if (core::Result<void> started = initializeEnet(); !started)
     {
         return started;
@@ -414,12 +628,22 @@ core::Result<void> Multiplayer::host(std::uint16_t port, std::uint32_t maxClient
     {
         return core::makeError(core::ErrorCode::Platform, "Cannot host on port {}: it may be taken", port);
     }
+    // Players in a browser join over WebSocket, on the same port number over TCP.
+    if (core::Result<std::unique_ptr<detail::WebSocketServer>> webSockets = detail::WebSocketServer::listen(port, webSocketProtocol))
+    {
+        m_impl->webSockets = std::move(*webSockets);
+    }
+    else
+    {
+        DEVEX_LOG_WARNING("Players in a browser cannot join this game: {}", webSockets.error());
+    }
     m_impl->hosting = true;
     m_impl->state = MultiplayerState::Online;
     m_impl->local = hostPeer;
     m_impl->nextPeer = hostPeer + 1;
     m_impl->maxClients = maxClients;
     return {};
+#endif
 }
 
 core::Result<void> Multiplayer::join(std::string_view address, std::uint16_t port)
@@ -432,6 +656,27 @@ core::Result<void> Multiplayer::join(std::string_view address, std::uint16_t por
     {
         return core::makeError(core::ErrorCode::InvalidState, "This game is already in a session");
     }
+#if defined(__EMSCRIPTEN__)
+    // A browser has no UDP: it joins over WebSocket, which the host listens to on the same port number.
+    const std::string url = webSocketUrl(address, port);
+    EmscriptenWebSocketCreateAttributes attributes;
+    emscripten_websocket_init_create_attributes(&attributes);
+    attributes.url = url.c_str();
+    attributes.protocols = webSocketProtocol;
+    attributes.createOnMainThread = EM_TRUE;
+    const EMSCRIPTEN_WEBSOCKET_T socket = emscripten_websocket_new(&attributes);
+    if (socket <= 0)
+    {
+        return core::makeError(core::ErrorCode::Platform, "Cannot connect to {}", url);
+    }
+    emscripten_websocket_set_onmessage_callback(socket, m_impl.get(), &Impl::onBrowserMessage);
+    emscripten_websocket_set_onclose_callback(socket, m_impl.get(), &Impl::onBrowserClosed);
+    emscripten_websocket_set_onerror_callback(socket, m_impl.get(), &Impl::onBrowserError);
+    m_impl->browserSocket = socket;
+    m_impl->joinStarted = std::chrono::steady_clock::now();
+    m_impl->state = MultiplayerState::Connecting;
+    return {};
+#else
     if (core::Result<void> started = initializeEnet(); !started)
     {
         return started;
@@ -455,24 +700,32 @@ core::Result<void> Multiplayer::join(std::string_view address, std::uint16_t por
     enet_peer_timeout(m_impl->server, 0, joinTimeoutMinimum, joinTimeoutMaximum);
     m_impl->state = MultiplayerState::Connecting;
     return {};
+#endif
 }
 
 void Multiplayer::leave()
 {
-    if (m_impl->enet == nullptr)
+    if (!m_impl->connected())
     {
         return;
     }
-    // At once rather than waiting for an answer: the others find out from the packet this sends.
-    if (m_impl->server != nullptr)
+    // At once rather than waiting for an answer: the others find out from the packet this sends. Players in a browser,
+    // from their connection closing.
+    if (m_impl->enet != nullptr)
     {
-        enet_peer_disconnect_now(m_impl->server, 0);
+        if (m_impl->server != nullptr)
+        {
+            enet_peer_disconnect_now(m_impl->server, 0);
+        }
+        for (const Impl::Client& client : m_impl->clients)
+        {
+            if (client.connection != nullptr)
+            {
+                enet_peer_disconnect_now(client.connection, 0);
+            }
+        }
+        enet_host_flush(m_impl->enet);
     }
-    for (const Impl::Client& client : m_impl->clients)
-    {
-        enet_peer_disconnect_now(client.connection, 0);
-    }
-    enet_host_flush(m_impl->enet);
     m_impl->close();
 }
 
@@ -500,6 +753,9 @@ void Multiplayer::keepAlive()
 void Multiplayer::service()
 {
     Impl& impl = *m_impl;
+#if defined(__EMSCRIPTEN__)
+    impl.serviceBrowser();
+#endif
     if (impl.enet == nullptr)
     {
         return;
@@ -520,9 +776,10 @@ void Multiplayer::service()
             if (impl.hosting)
             {
                 const auto kind = bytes.empty() ? Packet::Welcome : static_cast<Packet>(std::to_integer<std::uint8_t>(bytes[0]));
-                if (kind == Packet::Data || kind == Packet::Rpc || kind == Packet::Replication)
+                const auto sender = std::ranges::find(impl.clients, event.peer, &Impl::Client::connection);
+                if (sender != impl.clients.end() && (kind == Packet::Data || kind == Packet::Rpc || kind == Packet::Replication))
                 {
-                    impl.relay(event, kind, bytes, event.channelID == unreliableChannel ? Delivery::Unreliable : Delivery::Reliable);
+                    impl.relay(*sender, kind, bytes, event.channelID == unreliableChannel ? Delivery::Unreliable : Delivery::Reliable);
                 }
             }
             else
@@ -548,6 +805,9 @@ void Multiplayer::service()
             break;
         }
     }
+#if !defined(__EMSCRIPTEN__)
+    impl.serviceWebSockets();
+#endif
     flush();
 }
 
@@ -657,7 +917,7 @@ void Multiplayer::setAuthority(const core::Uuid& entity, PeerId peer)
     impl.remember(entity, peer);
     for (const Impl::Client& client : impl.clients)
     {
-        impl.sendTo(client.connection, Impl::authorityPacket(entity, peer), Delivery::Reliable);
+        impl.sendTo(client, Impl::authorityPacket(entity, peer), Delivery::Reliable);
     }
 }
 

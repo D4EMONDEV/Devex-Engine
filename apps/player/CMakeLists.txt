@@ -51,17 +51,51 @@ endif()
 if(EMSCRIPTEN)
     # The game of a browser: devex-player.js and .wasm, and the page that loads the package beside them into the files
     # of the program before it starts. The memory grows with what the game loads.
-    target_link_options(devex_player PRIVATE
+    set(DEVEX_WEB_KIT_LINK_OPTIONS
         -sALLOW_MEMORY_GROWTH=1
         -sSTACK_SIZE=8MB
         -sFORCE_FILESYSTEM=1
+        -lidbfs.js
         "-sEXPORTED_RUNTIME_METHODS=['FS','addRunDependency','removeRunDependency']"
     )
+    target_link_options(devex_player PRIVATE ${DEVEX_WEB_KIT_LINK_OPTIONS})
+    # The player with threads goes beside the other in an export of Thread Support, under its own name, which its
+    # program, its workers and its WebAssembly know each other by.
+    set(DEVEX_WEB_KIT_COMPILE_OPTIONS -fwasm-exceptions)
+    set(DEVEX_WEB_PLAYER_NAME "devex-player")
+    if(DEVEX_WEB_THREADS)
+        set(DEVEX_WEB_PLAYER_NAME "devex-player-threads")
+        list(APPEND DEVEX_WEB_KIT_COMPILE_OPTIONS -pthread)
+        list(APPEND DEVEX_WEB_KIT_LINK_OPTIONS -pthread "${DEVEX_WEB_THREAD_POOL}" -Wno-pthreads-mem-growth)
+    endif()
+    set_target_properties(devex_player PROPERTIES OUTPUT_NAME "${DEVEX_WEB_PLAYER_NAME}")
     add_custom_command(TARGET devex_player POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html"
                 "$<TARGET_FILE_DIR:devex_player>/index.html"
         VERBATIM
     )
+
+    # The kit with which an export for the web links the C++ of a game to the engine, in bin/kit: the link of this
+    # player, written down as it is made, done again with the code of the game (DevexWebKit.cmake). A player that does
+    # not draw with WebGPU has none.
+    if(DEVEX_WEBGPU)
+        set(_devex_link_record "${CMAKE_BINARY_DIR}/devex-player-link.cmake")
+        set_target_properties(devex_player PROPERTIES CXX_LINKER_LAUNCHER
+            "${CMAKE_COMMAND};-DRECORD=${_devex_link_record};-P;${PROJECT_SOURCE_DIR}/cmake/DevexWebKit.cmake;--")
+        configure_file("${PROJECT_SOURCE_DIR}/cmake/DevexWebKitConfig.cmake.in"
+            "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/kit/cmake/DevexConfig.cmake" @ONLY)
+        find_package(glm CONFIG REQUIRED)
+        get_target_property(_devex_glm_include glm::glm-header-only INTERFACE_INCLUDE_DIRECTORIES)
+        add_custom_target(devex_web_kit ALL
+            COMMAND "${CMAKE_COMMAND}" "-DRECORD=${_devex_link_record}" "-DKIT=${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/kit"
+                    "-DSOURCE=${PROJECT_SOURCE_DIR}" "-DGLM=${_devex_glm_include}" "-DDAWN=${Dawn_DIR}"
+                    -P "${PROJECT_SOURCE_DIR}/cmake/DevexWebKit.cmake"
+            COMMENT "Putting together the web kit"
+            VERBATIM
+        )
+        add_dependencies(devex_web_kit devex_player)
+        set_target_properties(devex_web_kit PROPERTIES FOLDER "Applications")
+    endif()
 endif()
 devex_set_warnings(devex_player)
 devex_set_application_icon(devex_player)

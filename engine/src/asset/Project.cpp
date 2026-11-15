@@ -311,6 +311,10 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
             {
                 project.exportSettings.webOutput = *webOutput;
             }
+            if (const auto* const threads = section.findAttribute("web_threads"))
+            {
+                project.exportSettings.webThreads = serialization::asBool(*threads).value_or(false);
+            }
             if (const auto* const terminal = section.findAttribute("show_terminal"))
             {
                 project.exportSettings.showTerminal = serialization::asBool(*terminal).value_or(false);
@@ -928,7 +932,7 @@ std::string writeProjectText(const Project& project)
     const ExportSettings& exportSettings = project.exportSettings;
     if (exportSettings.output != exportDefaults.output || exportSettings.configuration != exportDefaults.configuration ||
         exportSettings.otherOutput != exportDefaults.otherOutput || exportSettings.showTerminal != exportDefaults.showTerminal ||
-        exportSettings.webOutput != exportDefaults.webOutput)
+        exportSettings.webOutput != exportDefaults.webOutput || exportSettings.webThreads != exportDefaults.webThreads)
     {
         serialization::TextSection& exportSection = document.sections.emplace_back();
         exportSection.type = "export";
@@ -941,6 +945,10 @@ std::string writeProjectText(const Project& project)
         if (exportSettings.webOutput != exportDefaults.webOutput)
         {
             exportSection.attributes.push_back({"web_output", serialization::TextValue(exportSettings.webOutput)});
+        }
+        if (exportSettings.webThreads)
+        {
+            exportSection.attributes.push_back({"web_threads", true});
         }
         if (exportSettings.showTerminal)
         {

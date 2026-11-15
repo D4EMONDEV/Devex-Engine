@@ -49,6 +49,12 @@ public:
                                                                              const std::filesystem::path& devexDirectory,
                                                                              const std::filesystem::path& ndk, std::string_view abi,
                                                                              const std::atomic<bool>* cancel);
+    // Builds the C++ of a game for the web with an Emscripten SDK, against a kit of the web player, into a web player of
+    // the game's own named as that of the kit, devex-player or devex-player-threads, and says where it went: the folder of
+    // its program and its WebAssembly.
+    [[nodiscard]] static core::Result<std::filesystem::path> buildForWeb(const asset::Project& project, const std::filesystem::path& kit,
+                                                                         const std::filesystem::path& emsdk, std::string_view player,
+                                                                         const std::atomic<bool>* cancel);
     [[nodiscard]] static bool hasCode(const asset::Project& project);
     // Creates missing native project files and refreshes Devex-owned ones without replacing a
     // custom CMakeLists or any existing C++ source. Also supplies IDEs with the engine location.

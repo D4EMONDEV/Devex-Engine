@@ -103,6 +103,9 @@ TEST_CASE("The server of Run in Browser serves its folder, and nothing outside i
     CHECK(page.starts_with("HTTP/1.1 200 OK"));
     CHECK(page.find("Content-Type: text/html") != std::string::npos);
     CHECK(page.ends_with("<!doctype html><title>Game</title>"));
+    // Isolated, as the player with threads needs.
+    CHECK(page.find("Cross-Origin-Opener-Policy: same-origin") != std::string::npos);
+    CHECK(page.find("Cross-Origin-Embedder-Policy: require-corp") != std::string::npos);
     // WebAssembly with the type a browser compiles it by, from a folder, a name written with %XX.
     const std::string wasm = fetch(port, "GET /data/game%2Ewasm?v=1 HTTP/1.1\r\n\r\n");
     CHECK(wasm.starts_with("HTTP/1.1 200 OK"));

@@ -1655,8 +1655,14 @@ core::Result<std::unique_ptr<PhysicsWorld>> PhysicsWorld::create(PhysicsWorldCon
         return core::makeError(core::ErrorCode::Unsupported, "Jolt Physics was built with incompatible settings");
     }
     const std::uint32_t hardware = std::max(std::thread::hardware_concurrency(), 2u);
+#if defined(__EMSCRIPTEN__)
+    // A page has the workers that its program made before starting, 8 at most, which the jobs of the engine share.
+    constexpr std::uint32_t threadLimit = 3;
+#else
+    constexpr std::uint32_t threadLimit = 8;
+#endif
     const std::uint32_t threads =
-        implementation->config.threads > 0 ? implementation->config.threads : std::min(hardware - 1, 8u);
+        implementation->config.threads > 0 ? implementation->config.threads : std::min(hardware - 1, threadLimit);
     implementation->temporaryAllocator = std::make_unique<JPH::TempAllocatorImpl>(temporaryMemory);
     implementation->jobs = std::make_unique<JPH::JobSystemThreadPool>(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers,
                                                                       static_cast<int>(threads));

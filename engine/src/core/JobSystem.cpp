@@ -48,6 +48,11 @@ JobSystem::JobSystem(std::uint32_t workerCount)
     if (workerCount == 0)
     {
         workerCount = std::max(std::thread::hardware_concurrency(), 2u) - 1;
+#if defined(__EMSCRIPTEN__)
+        // The workers of a page wait in the pool that its program made before starting, of 8 at most, which the
+        // physics shares (PhysicsWorld).
+        workerCount = std::min(workerCount, 4u);
+#endif
     }
     m_workers.reserve(workerCount);
     for (std::uint32_t worker = 0; worker < workerCount; ++worker)

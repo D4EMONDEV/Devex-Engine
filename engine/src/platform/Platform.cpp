@@ -26,12 +26,16 @@
 #include <android/asset_manager_jni.h>
 #include <jni.h>
 #endif
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdlib>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -970,6 +974,96 @@ core::Result<std::filesystem::path> userDataDirectory(std::string_view organizat
     std::filesystem::path directory = core::pathFromUtf8(path);
     SDL_free(path);
     return directory;
+}
+
+#if defined(__EMSCRIPTEN__)
+namespace {
+
+std::function<void()> userFilesReady;
+
+} // namespace
+
+} // namespace devex::platform
+
+// Called by the page once IndexedDB has given the files of the game.
+extern "C" EMSCRIPTEN_KEEPALIVE void devexUserFilesRestored()
+{
+    if (std::function<void()> ready = std::exchange(devex::platform::userFilesReady, {}))
+    {
+        ready();
+    }
+}
+
+// The folder on IDBFS, read from IndexedDB; then one write back at a time, another following when files changed during
+// it, and one when the page is hidden, as it is before it closes.
+EM_JS(void, devexRestoreUserFiles, (const char* folder), {
+    const path = UTF8ToString(folder);
+    if (typeof IDBFS === 'undefined') {
+        _devexUserFilesRestored();
+        return;
+    }
+    FS.mkdirTree(path);
+    FS.mount(IDBFS, {}, path);
+    const files = {syncing: false, again: false};
+    Module.devexPersistUserFiles = () => {
+        if (files.syncing) {
+            files.again = true;
+            return;
+        }
+        files.syncing = true;
+        FS.syncfs(false, (error) => {
+            files.syncing = false;
+            if (error) {
+                console.warn('What the game keeps cannot be written to IndexedDB: ' + error);
+            }
+            if (files.again) {
+                files.again = false;
+                Module.devexPersistUserFiles();
+            }
+        });
+    };
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            Module.devexPersistUserFiles();
+        }
+    });
+    FS.syncfs(true, (error) => {
+        if (error) {
+            console.warn('What the game kept cannot be read from IndexedDB: ' + error);
+        }
+        _devexUserFilesRestored();
+    });
+});
+
+EM_JS(void, devexPersistUserFiles, (), {
+    if (Module.devexPersistUserFiles) {
+        Module.devexPersistUserFiles();
+    }
+});
+
+namespace devex::platform {
+#endif
+
+void restoreUserFiles(const std::filesystem::path& folder, std::function<void()> ready)
+{
+#if defined(__EMSCRIPTEN__)
+    if (!folder.empty())
+    {
+        userFilesReady = std::move(ready);
+        devexRestoreUserFiles(core::toUtf8(folder.lexically_normal()).c_str());
+        return;
+    }
+#else
+    static_cast<void>(folder);
+#endif
+    ready();
+}
+
+void persistUserFiles()
+{
+#if defined(__EMSCRIPTEN__)
+    devexPersistUserFiles();
+#endif
 }
 
 core::Result<std::filesystem::path> userDataLocation(std::string_view organization, std::string_view application)

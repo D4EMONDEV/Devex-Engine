@@ -4,6 +4,7 @@
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/platform/Platform.hpp>
 #include <devex/runtime/AssetManager.hpp>
 #include <devex/scene/FieldValue.hpp>
 #include <devex/scene/SceneSerializer.hpp>
@@ -248,6 +249,7 @@ core::Result<void> SaveGames::save(std::string_view slot, const reflection::Type
     {
         std::filesystem::remove(picture, error);
     }
+    platform::persistUserFiles();
     DEVEX_LOG_INFO("Saved '{}'", slot);
     return {};
 }
@@ -376,6 +378,7 @@ core::Result<void> SaveGames::remove(std::string_view slot)
         }
     }
     m_thumbnails.erase(std::string(slot));
+    platform::persistUserFiles();
     return {};
 }
 

@@ -65,6 +65,15 @@ if(EMSCRIPTEN)
     add_compile_options(-fwasm-exceptions)
     add_link_options(-fwasm-exceptions)
 endif()
+# The web with threads (preset web-threads): everything compiled with -pthread, and the workers made before the program
+# starts, since a page makes them only once it has its hand back, which a thread waiting for them never gives.
+option(DEVEX_WEB_THREADS "Build the web with threads: pthreads, which need the headers COOP and COEP" OFF)
+set(DEVEX_WEB_THREAD_POOL "-sPTHREAD_POOL_SIZE=Math.min(navigator.hardwareConcurrency,8)")
+if(EMSCRIPTEN AND DEVEX_WEB_THREADS)
+    add_compile_options(-pthread)
+    # Memory that grows is slower to read from JavaScript with threads, which the engine does little: no warning for it.
+    add_link_options(-pthread "${DEVEX_WEB_THREAD_POOL}" -Wno-pthreads-mem-growth)
+endif()
 
 include(DevexShaders)
 include(DevexWarnings)

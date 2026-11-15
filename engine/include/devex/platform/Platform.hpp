@@ -203,6 +203,13 @@ DEVEX_API void sleepPrecise(std::chrono::nanoseconds duration);
 [[nodiscard]] DEVEX_API core::Result<std::filesystem::path> userDataLocation(std::string_view organization,
                                                                              std::string_view application);
 
+// In a browser, what a game keeps lives in IndexedDB, in a base named after its folder: loads the files of folder from
+// it, then calls ready. Elsewhere, and for an empty folder, calls ready at once.
+DEVEX_API void restoreUserFiles(const std::filesystem::path& folder, std::function<void()> ready);
+// Tells that files of the folder of restoreUserFiles changed: a browser writes them back to IndexedDB, as it does when
+// the page is hidden. Does nothing elsewhere.
+DEVEX_API void persistUserFiles();
+
 // Whether this process was built or made a windowed application, which has no console to print
 // to: an exported game started from the file manager.
 [[nodiscard]] DEVEX_API bool isWindowedApplication() noexcept;

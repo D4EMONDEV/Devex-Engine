@@ -492,6 +492,73 @@ exec cmake --build {1}
     return library;
 }
 
+core::Result<std::filesystem::path> GameCodeBuilder::buildForWeb(const asset::Project& project, const std::filesystem::path& kit,
+                                                                  const std::filesystem::path& emsdk, std::string_view player,
+                                                                  const std::atomic<bool>* cancel)
+{
+    const std::filesystem::path build = project.cacheDirectory() / "web" / std::string(player);
+    std::error_code error;
+    std::filesystem::create_directories(build, error);
+    if (error)
+    {
+        return core::makeError(core::ErrorCode::Io, "Cannot create {}: {}", core::toUtf8(build), error.message());
+    }
+    const std::filesystem::path toolchain = emsdk / "upstream" / "emscripten" / "cmake" / "Modules" / "Platform" / "Emscripten.cmake";
+#ifdef _WIN32
+    // Visual Studio gives CMake and Ninja; the environment of the SDK, Emscripten with its Python and its Node.
+    const std::string script = std::format(R"({4}:build
+call "{5}" >nul 2>&1
+cmake -S "{0}" -B "{1}" -G Ninja -DCMAKE_BUILD_TYPE=Release "-DDevex_DIR={2}" "-DCMAKE_TOOLCHAIN_FILE={3}"
+if errorlevel 1 exit /b 1
+cmake --build "{1}"
+exit /b %errorlevel%
+:missing
+echo error: building game code needs Visual Studio with its C++ tools, for CMake and Ninja
+exit /b 1
+)",
+                                           core::toUtf8(project.codeDirectory()), core::toUtf8(build), core::toUtf8(kit / "cmake"),
+                                           core::toUtf8(toolchain), windowsBuildTools, core::toUtf8(emsdk / "emsdk_env.bat"));
+    const std::filesystem::path scriptPath = build / "devex-build.cmd";
+    const std::vector<std::string> arguments{"cmd.exe", "/d", "/c", core::toUtf8(scriptPath)};
+#else
+    const std::string script = std::format(R"(#!/bin/bash
+for tool in cmake ninja; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "error: building game code needs CMake and Ninja; $tool is missing"
+        exit 1
+    fi
+done
+source {4} >/dev/null 2>&1
+cmake -S {0} -B {1} -G Ninja -DCMAKE_BUILD_TYPE=Release {2} {3} || exit 1
+exec cmake --build {1}
+)",
+                                           shellWord(core::toUtf8(project.codeDirectory())), shellWord(core::toUtf8(build)),
+                                           shellWord("-DDevex_DIR=" + core::toUtf8(kit / "cmake")),
+                                           shellWord("-DCMAKE_TOOLCHAIN_FILE=" + core::toUtf8(toolchain)),
+                                           shellWord(core::toUtf8(emsdk / "emsdk_env.sh")));
+    const std::filesystem::path scriptPath = build / "devex-build.sh";
+    const std::vector<std::string> arguments{"/bin/bash", core::toUtf8(scriptPath)};
+#endif
+    if (core::Result<void> written = core::writeTextFile(scriptPath, script); !written)
+    {
+        return std::unexpected(written.error());
+    }
+    if (core::Result<void> built = platform::runAndLog(arguments, project.codeDirectory(), "The game code does not build for the web", cancel);
+        !built)
+    {
+        return std::unexpected(built.error());
+    }
+    for (const char* extension : {".js", ".wasm"})
+    {
+        const std::filesystem::path file = build / "bin" / (std::string(player) + extension);
+        if (!std::filesystem::is_regular_file(file, error))
+        {
+            return core::makeError(core::ErrorCode::NotFound, "The game code for the web built without {}", core::toUtf8(file));
+        }
+    }
+    return build / "bin";
+}
+
 std::filesystem::path GameCodeBuilder::libraryFileName()
 {
 #ifdef _WIN32

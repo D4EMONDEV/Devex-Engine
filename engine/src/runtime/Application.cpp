@@ -51,6 +51,18 @@
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
+
+// The entry points of the C++ of a game (DEVEX_GAME_MODULE), defined by the web player made for it, since a browser loads
+// no library. They stay null in a web player without game code.
+extern "C" __attribute__((weak)) std::uint32_t devexGameApiVersion();
+extern "C" __attribute__((weak)) void devexRegisterGameModule(devex::runtime::GameRegistry* registry);
+
+// Tells the page that the game has quit, for it to say so.
+EM_JS(void, devexGameEnded, (int code), {
+    if (Module.devexEnded) {
+        Module.devexEnded(code);
+    }
+});
 #endif
 
 #include <algorithm>
@@ -649,7 +661,9 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
         services.tools->setOtherDesktopExport(otherEngine ? std::string{} : otherEngine.error().message);
         const core::Result<std::filesystem::path> webPlayer = findWebPlayer(services.platform.baseDirectory());
         services.tools->setWebExport(webPlayer ? std::string{} : webPlayer.error().message,
-                                     [](const asset::Project& project) { return webExportProblem(project); });
+                                     [bin = services.platform.baseDirectory()](const asset::Project& project) {
+                                         return webExportProblem(project, bin);
+                                     });
     }
 }
 
@@ -1544,7 +1558,7 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
         {
             m_exportQueue.emplace_back("android");
         }
-        if (findWebPlayer(m_services.platform.baseDirectory()) && webExportProblem(project).empty())
+        if (findWebPlayer(m_services.platform.baseDirectory()) && webExportProblem(project, m_services.platform.baseDirectory()).empty())
         {
             m_exportQueue.emplace_back("web");
         }
@@ -2213,20 +2227,29 @@ void ApplicationRunner::loadGameModule()
 #endif
     const std::filesystem::path library = packaged ? gameDirectory / GameCodeBuilder::libraryFileName()
                                                    : GameCodeBuilder::libraryPath(project);
-    std::error_code error;
-    const std::filesystem::file_time_type built = std::filesystem::last_write_time(library, error);
-    if (error)
+    core::Result<std::unique_ptr<GameModule>> module = nullptr;
+#if defined(__EMSCRIPTEN__)
+    if (packaged && devexGameApiVersion != nullptr && devexRegisterGameModule != nullptr)
     {
-        if (!packaged && GameCodeBuilder::hasCode(project) && !isEditor())
-        {
-            DEVEX_LOG_WARNING("The game code of {} is not built: open the project in devex-editor to build it",
-                              project.name);
-        }
-        return;
+        module = GameModule::linked(devexGameApiVersion, devexRegisterGameModule);
     }
-    m_gameLibraryTime = built;
-    core::Result<std::unique_ptr<GameModule>> module =
-        GameModule::load(library, packaged ? std::filesystem::path() : project.cacheDirectory() / "code" / "modules");
+    else
+#endif
+    {
+        std::error_code error;
+        const std::filesystem::file_time_type built = std::filesystem::last_write_time(library, error);
+        if (error)
+        {
+            if (!packaged && GameCodeBuilder::hasCode(project) && !isEditor())
+            {
+                DEVEX_LOG_WARNING("The game code of {} is not built: open the project in devex-editor to build it",
+                                  project.name);
+            }
+            return;
+        }
+        m_gameLibraryTime = built;
+        module = GameModule::load(library, packaged ? std::filesystem::path() : project.cacheDirectory() / "code" / "modules");
+    }
     if (!module)
     {
         m_gameLoadError = module.error().message;
@@ -2802,6 +2825,7 @@ void ApplicationRunner::updateGameData()
             {
                 DEVEX_LOG_WARNING("Cannot save the settings of the player: {}", written.error());
             }
+            platform::persistUserFiles();
         }
     }
     if (!m_saves)
@@ -2869,6 +2893,7 @@ void ApplicationRunner::writeThumbnails()
         {
             DEVEX_LOG_WARNING("Cannot save the picture of a save: {}", written.error());
         }
+        platform::persistUserFiles();
         m_thumbnailCaptures.erase(found);
     }
 }
@@ -3018,6 +3043,7 @@ void ApplicationRunner::saveBindings()
     {
         DEVEX_LOG_WARNING("Cannot save the key bindings of the player: {}", written.error());
     }
+    platform::persistUserFiles();
 }
 
 void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
@@ -4170,6 +4196,9 @@ void browserFrame(void* argument)
         const int code = session->runner->finish();
         delete session;
         DEVEX_LOG_INFO("The game ended with code {}", code);
+        // What it kept last goes to IndexedDB, and the page says that the game is over.
+        platform::persistUserFiles();
+        devexGameEnded(code);
     }
 }
 #endif
@@ -4197,11 +4226,24 @@ int run(Application& application, const ApplicationConfig& config)
             return;
         }
         auto session = std::make_unique<Session>();
-        if (prepare(*session, application, config) || session->runner->start())
+        if (prepare(*session, application, config))
         {
             return;
         }
-        emscripten_set_main_loop_arg(&browserFrame, session.release(), 0, false);
+        // What the player keeps, which the browser holds in IndexedDB, is there before the game reads it.
+        std::filesystem::path user = config.userDirectory;
+        if (user.empty() && session->package)
+        {
+            user = platform::userDataLocation("", session->package->project().name).value_or(std::filesystem::path{});
+        }
+        platform::restoreUserFiles(user, [started = session.release()] {
+            if (started->runner->start())
+            {
+                delete started;
+                return;
+            }
+            emscripten_set_main_loop_arg(&browserFrame, started, 0, false);
+        });
     });
     return EXIT_SUCCESS;
 #else

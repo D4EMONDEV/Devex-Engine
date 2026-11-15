@@ -95,7 +95,20 @@ core::Result<std::unique_ptr<GameModule>> GameModule::loadLibrary(const std::fil
     return module;
 }
 
-GameModule::GameModule(std::filesystem::path source, platform::SharedLibrary library) noexcept
+core::Result<std::unique_ptr<GameModule>> GameModule::linked(ApiVersionFunction apiVersion, RegisterFunction registerGame)
+{
+    if (const std::uint32_t version = apiVersion(); version != gameApiVersion)
+    {
+        return core::makeError(core::ErrorCode::Unsupported,
+                               "the game code was built for game API version {}, this engine needs version {}", version,
+                               gameApiVersion);
+    }
+    std::unique_ptr<GameModule> module(new GameModule("devex-player.wasm", std::nullopt));
+    registerGame(&module->m_registry);
+    return module;
+}
+
+GameModule::GameModule(std::filesystem::path source, std::optional<platform::SharedLibrary> library) noexcept
     : m_source(std::move(source))
     , m_library(std::move(library))
 {
@@ -129,7 +142,7 @@ std::size_t GameModule::release(scene::Scene& scene) const
     for (std::size_t index = 0; index < scene.componentPoolCount(); ++index)
     {
         const scene::ComponentPoolBase* const pool = scene.componentPool(index);
-        if (pool != nullptr && m_library.contains(pool->moduleAnchor()))
+        if (pool != nullptr && m_library && m_library->contains(pool->moduleAnchor()))
         {
             preserved += scene::preserveComponentPool(scene, index);
         }

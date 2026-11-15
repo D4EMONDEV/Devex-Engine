@@ -189,6 +189,9 @@ struct DEVEX_API ExportSettings
 #endif
     // The folder a game for the web is exported to, with a ZIP of it beside it.
     std::string webOutput = "export/web";
+    // Thread Support: the player with threads goes beside the other, and the pages whose host sends the headers COOP
+    // and COEP play it.
+    bool webThreads = false;
     // The configuration of the engine build the game is exported with: "Release" or "Debug".
     std::string configuration = "Release";
     // Windows: a terminal opens with the game and shows its log, which is kept in a file either way.

@@ -27,6 +27,32 @@ Multiplayer.Leave();
 `ConnectionFailed`, `Disconnected`, `PeerJoined` et `PeerLeft` préviennent de ce qui change. Un joueur muet depuis
 30 secondes compte comme parti (`setSilenceLimit` en C++), ce qui laisse le temps de charger un niveau.
 
+## Jouer depuis un navigateur
+
+Un jeu exporté pour le web rejoint une partie comme un autre : `Join(adresse, port)`. Un navigateur n'a pas d'UDP, ni
+de quoi écouter : il passe par un WebSocket, et ne peut pas héberger. L'hôte, un jeu de bureau ou un serveur dédié,
+écoute ENet en UDP et WebSocket en TCP sur le même numéro de port : les joueurs du bureau et ceux du navigateur jouent
+dans la même partie, et le code du jeu ne change pas. Ouvrez donc ce port en TCP comme en UDP.
+
+Par WebSocket, tout arrive dans l'ordre et à coup sûr, ce qui est envoyé en `Unreliable` compris : un paquet perdu
+retarde ceux qui le suivent, ce qui se voit davantage sur un réseau lent.
+
+Une page en http, comme celle de **Run in Browser** sur `http://localhost`, ouvre un WebSocket simple (`ws://`). Une
+page en https, comme sur itch.io, ne peut ouvrir qu'un WebSocket chiffré (`wss://`), avec un certificat pour un nom de
+domaine. L'hôte ne chiffre pas : mettez devant lui un proxy qui le fait, comme [Caddy](https://caddyserver.com), qui
+obtient et renouvelle seul son certificat. Sur le serveur dédié, avec un nom de domaine qui pointe vers lui, ce
+`Caddyfile` suffit :
+
+```
+jeu.example.com {
+    reverse_proxy localhost:7777
+}
+```
+
+Le jeu web rejoint alors `jeu.example.com` sur le port 443, par `join("jeu.example.com", 443)` en C++ (le C# ne
+tourne pas encore dans un navigateur) : depuis une page en https, il passe de lui-même par `wss://`. Une adresse qui
+commence par `ws://` ou `wss://` choisit elle-même.
+
 ## Faire apparaître des objets chez tous
 
 Posez un composant **NetworkSpawner** sur une entité. Tout prefab instancié sous elle par son autorité apparaît

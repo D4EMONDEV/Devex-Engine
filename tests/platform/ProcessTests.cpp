@@ -139,3 +139,16 @@ TEST_CASE("The folder of the player is found without being made", "[platform][us
     REQUIRE(company.has_value());
     CHECK(company->parent_path().filename() == "Studio");
 }
+
+TEST_CASE("The files that a game keeps are there before it starts", "[platform][user]")
+{
+    // A browser loads them from IndexedDB first; a program run without its page, or a system, has them at once.
+    bool ready = false;
+    devex::platform::restoreUserFiles(std::filesystem::temp_directory_path() / "devex-user-files", [&ready] { ready = true; });
+    CHECK(ready);
+    ready = false;
+    devex::platform::restoreUserFiles({}, [&ready] { ready = true; });
+    CHECK(ready);
+    // Nothing to write back where nothing was restored.
+    devex::platform::persistUserFiles();
+}

@@ -123,7 +123,7 @@
         {
             "name": "web",
             "displayName": "Web (WebAssembly, Emscripten)",
-            "description": "The engine for the browser, built in Linux with the Emscripten of EMSDK: no Vulkan, no editor, no threads yet",
+            "description": "The engine for the browser, built in Linux with the Emscripten of EMSDK: no Vulkan, no editor, on one thread",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/out/build/${presetName}",
             "cacheVariables": {
@@ -133,6 +133,16 @@
                 "DEVEX_BUILD_EDITOR": "OFF",
                 "DEVEX_BUILD_PLAYER": "ON",
                 "DEVEX_WEBGPU": "ON"
+            }
+        },
+        {
+            "name": "web-threads",
+            "inherits": "web",
+            "displayName": "Web with threads (WebAssembly, Emscripten, pthreads)",
+            "description": "The web player of Thread Support: the engine and its ports compiled with -pthread, which pages that have the headers COOP and COEP run",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "wasm32-emscripten-threads",
+                "DEVEX_WEB_THREADS": "ON"
             }
         }
     ],

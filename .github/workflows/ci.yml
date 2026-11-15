@@ -182,10 +182,21 @@ jobs:
 
   # The engine for the browser, in WebAssembly with Emscripten, and the tests of what a game does, run by Node: no GPU,
   # no threads, nothing that only a computer has (the tests tagged [noweb]). See the web in docs/decisions.md.
+  # The web player on one thread, and the one with threads of Thread Support, whose ports are built apart.
   web:
-    name: Web
+    name: Web ${{ matrix.preset }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: web
+            cache: web
+            artifact: devex-web
+          - preset: web-threads
+            cache: webthreads
+            artifact: devex-web-threads
     env:
       VCPKG_DISABLE_METRICS: 1
     defaults:
@@ -233,45 +244,52 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/vcpkg-archives
-          key: vcpkg-web-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**', 'cmake/vcpkg-triplets/**') }}
-          restore-keys: vcpkg-web-
+          key: vcpkg-${{ matrix.cache }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**', 'cmake/vcpkg-triplets/**') }}
+          restore-keys: vcpkg-${{ matrix.cache }}-
 
       - name: Configure
         run: |
           source "$EMSDK/emsdk_env.sh" > /dev/null
-          cmake --preset web -DDEVEX_WARNINGS_AS_ERRORS=ON 2>&1 | tee "$RUNNER_TEMP/configure.log"
+          cmake --preset ${{ matrix.preset }} -DDEVEX_WARNINGS_AS_ERRORS=ON 2>&1 | tee "$RUNNER_TEMP/configure.log"
 
       - name: Keep the packages vcpkg built
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/vcpkg-archives
-          key: vcpkg-web-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**', 'cmake/vcpkg-triplets/**') }}
+          key: vcpkg-${{ matrix.cache }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**', 'cmake/vcpkg-triplets/**') }}
 
       - name: Build
         run: |
           source "$EMSDK/emsdk_env.sh" > /dev/null
-          cmake --build out/build/web 2>&1 | tee "$RUNNER_TEMP/build.log"
+          cmake --build out/build/${{ matrix.preset }} 2>&1 | tee "$RUNNER_TEMP/build.log"
 
       - name: Test
         run: |
           source "$EMSDK/emsdk_env.sh" > /dev/null
-          ctest --test-dir out/build/web --label-exclude "gpu|noweb" --output-on-failure --no-tests=error --timeout 600 2>&1 | tee "$RUNNER_TEMP/test.log"
+          ctest --test-dir out/build/${{ matrix.preset }} --label-exclude "gpu|noweb" --output-on-failure --no-tests=error --timeout 600 2>&1 | tee "$RUNNER_TEMP/test.log"
 
       # The web player that the editors export games for the web with, from platforms/web: its page, its program, its
-      # WebAssembly and the licenses of what it carries.
+      # WebAssembly, the licenses of what it carries, and the kit that links the C++ of a game with the engine. The one
+      # with threads goes into platforms/web/threads: its program, its WebAssembly and its kit.
       - name: Pack the web player
         run: |
-          player="$RUNNER_TEMP/devex-web"
+          player="$RUNNER_TEMP/${{ matrix.artifact }}"
+          bin="out/build/${{ matrix.preset }}/bin"
           mkdir -p "$player"
-          cp out/build/web/bin/index.html out/build/web/bin/devex-player.js out/build/web/bin/devex-player.wasm "$player/"
-          cp -r out/build/web/bin/licenses "$player/"
+          if [ "${{ matrix.preset }}" = web ]; then
+            cp "$bin/index.html" "$bin/devex-player.js" "$bin/devex-player.wasm" "$player/"
+            cp -r "$bin/licenses" "$player/"
+          else
+            cp "$bin/devex-player-threads.js" "$bin/devex-player-threads.wasm" "$player/"
+          fi
+          cp -r "$bin/kit" "$player/"
 
       - name: Keep the web player
         uses: actions/upload-artifact@v7
         with:
-          name: devex-web
-          path: ${{ runner.temp }}/devex-web
+          name: ${{ matrix.artifact }}
+          path: ${{ runner.temp }}/${{ matrix.artifact }}
 
   linux:
     name: Linux ${{ matrix.preset }}
@@ -611,6 +629,12 @@ jobs:
         with:
           name: devex-web
           path: ${{ runner.temp }}/engines/devex-web
+
+      - name: Get the web player with threads
+        uses: actions/download-artifact@v8
+        with:
+          name: devex-web-threads
+          path: ${{ runner.temp }}/engines/devex-web/threads
 
       - name: Install Inno Setup
         run: choco install innosetup --version=6.7.1 --no-progress -y

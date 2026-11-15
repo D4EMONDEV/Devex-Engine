@@ -178,6 +178,7 @@ struct ExportUi : FormUi
     Button browse;
     Entity configuration;
     Entity terminal;
+    Entity webThreads;
     Entity buildNote;
     std::vector<SceneRow> scenes;
     std::vector<FolderRow> folders;
@@ -312,6 +313,14 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
         terminal = choice(terminalRow.editor, {"Hidden", "Shown"});
         tooltip(terminalRow.row, "Shown, a terminal opens with the game and shows its log. The log is kept in a file either way.");
     }
+    webThreads = Entity{};
+    if (web)
+    {
+        const FormRow threadsRow = formRow(game, "Thread Support");
+        webThreads = toggle(threadsRow.editor);
+        tooltip(threadsRow.row, "Adds the player with threads, which loads in the background and shares the work. Its host must send the "
+                                "headers COOP and COEP, as itch.io does with SharedArrayBuffer support checked; elsewhere the game plays on one thread.");
+    }
 
     if (android)
     {
@@ -431,6 +440,10 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
     if (terminal.isValid())
     {
         setChoice(terminal, {"Hidden", "Shown"}, settings.showTerminal ? 1 : 0);
+    }
+    if (webThreads.isValid())
+    {
+        setToggle(webThreads, settings.webThreads);
     }
     setText(output, android ? settings.android.output : web ? settings.webOutput : other ? settings.otherOutput : settings.output);
     if (configuration.isValid())
@@ -634,6 +647,10 @@ void ExportUi::answer(ToolsState& state)
     if (terminal.isValid() && world.wasChanged(terminal))
     {
         settings.showTerminal = scene().get<scene::UiDropdown>(terminal).selected == 1;
+    }
+    if (webThreads.isValid() && world.wasChanged(webThreads))
+    {
+        settings.webThreads = scene().get<scene::UiToggle>(webThreads).value;
     }
     if (android)
     {

@@ -4001,6 +4001,55 @@ public:
   par la profondeur (`m_previousViewProjection`) : il n'y a pas de pré-passe. Ce que la tonemapping lit est l'image
   résolue (`resolve()`) ; le bloom lit la même et écrit son halo dans le niveau 0 de la chaîne.
 
+## Les threads sur le web
+
+- Le préréglage `web-threads` (`/root/build/web-threads` dans WSL) prend le triplet `wasm32-emscripten-threads`, qui
+  inclut `wasm32-emscripten` et ajoute `-pthread` ; `DEVEX_WASM_THREADS` y allume les threads de SDL (port en overlay).
+  WebAssembly refuse de lier du code compilé sans `-pthread` dans un programme qui en a.
+- Le lecteur s'y appelle `devex-player-threads`, son kit aussi (`DEVEX_WEB_PLAYER_NAME`), et il va dans
+  `platforms/web/threads`. Les workers sont faits avant `main` (`PTHREAD_POOL_SIZE`, 8 au plus) : un thread qui en attend
+  un autre ne rend jamais la main à la page, qui seule en crée. `JobSystem` en prend 4 au plus et Jolt 3, pour tenir
+  dans la réserve avec le thread principal.
+- La page choisit par `devexThreads` (que l'export met à `true`) et `self.crossOriginIsolated`. Le serveur de Run in
+  Browser envoie toujours COOP et COEP.
+
+## Le multijoueur dans le navigateur
+
+- L'hôte (`Multiplayer::host`) ouvre `detail::WebSocketServer` en TCP sur le port d'ENet ; un port TCP pris ne fait qu'un
+  avertissement. Un client WebSocket est un `Impl::Client` dont `webSocket` remplace la connexion ENet ; tout ce qui en
+  vient est fiable. Le protocole demandé, `devex.3`, porte la version de la session : il change avec `protocolVersion`.
+- Dans le navigateur, `join` passe par `emscripten/websocket.h` (`-lwebsocket.js`, lié par `devex_net`), et `host` est
+  refusé. Les rappels du WebSocket remplissent `browserEvents`, que `service` traite entre deux images.
+- Essayer pour de vrai : un hôte dans un programme de tests, sans fenêtre, sur le port 7777, et la page servie sur
+  `http://localhost`, qui ouvre `ws://`.
+
+## Le joueur dans le navigateur (étape 6 du web)
+
+- Ce que le joueur garde est dans `/home/web_user/.local/share/<jeu>` (le `userDataLocation` d'Emscripten), monté sur
+  IDBFS : la base IndexedDB porte ce nom. `platform::restoreUserFiles` la charge entre `prepare` et `start`, où sont lus
+  les sauvegardes, les réglages et les touches ; les réglages de fenêtre lus par `prepare` n'ont pas d'effet sur le web.
+- Chaque écriture du joueur appelle `platform::persistUserFiles` : sauvegardes, leurs images, réglages, touches. Un
+  `FS.syncfs` à la fois ; la page en fait un quand elle se cache. Le lecteur et le kit lient `-lidbfs.js`.
+- Quitter appelle `Module.devexEnded` de la page, qui remplace le canvas par « The game has ended. ».
+- Le son : miniaudio passe par un ScriptProcessorNode (d'où l'avertissement de Chrome) et reprend son AudioContext au
+  premier clic ou à la première touche. Le plein écran et la souris capturée passent par SDL, qui attend le geste suivant.
+- Le navigateur intégré masqué ne donne pas d'images à la page : une capture d'écran en fait avancer. Ne pas y essayer le
+  plein écran ni la souris capturée, qui prendraient l'écran ou la souris de l'utilisateur.
+
+## C++ des jeux pour le web (étape 5 du web)
+
+- Le kit est dans `platforms/web/kit` (`bin/kit` du build web) : `cmake/DevexConfig.cmake` (de
+  `cmake/DevexWebKitConfig.cmake.in`), `cmake/DevexWebLibraries.cmake`, `lib/` (`libdevex-engine.a` et ses dépendances),
+  `include/` (devex, glm, webgpu), `player/main.cpp`, compilé avec le jeu, et `share/dawn`, le port emdawnwebgpu.
+- Les bibliothèques viennent du lien réel de `devex_player` : son `CXX_LINKER_LAUNCHER` est `DevexWebKit.cmake`, qui note
+  la commande dans `devex-player-link.cmake` du build, puis la fait. L'API de fichiers de CMake ne répond qu'à la
+  configuration suivante : une construction propre de la CI n'aurait rien.
+- Le jeu s'enregistre par `devexGameApiVersion` et `devexRegisterGameModule`, déclarés faibles dans `Application.cpp`
+  sous Emscripten : nuls dans le lecteur sans code de jeu (`GameModule::linked`).
+- `GameCodeBuilder::buildForWeb` construit dans `<cache du projet>/web/code` : `emsdk_env`, puis CMake et Ninja (ceux de
+  Visual Studio sous Windows) avec `Emscripten.cmake`. Le kit refuse une autre version d'Emscripten que la sienne.
+- Le navigateur intégré : `read_console_messages` filtre par sous-chaîne, pas par expression régulière.
+
 ## Export Web (étape 4 du web)
 
 - Le lecteur web vient de `platforms/web` à côté du `bin/` de l'éditeur (`findWebPlayer`) : la release l'y met depuis

@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 
 namespace devex::runtime {
 
@@ -27,6 +28,10 @@ public:
     // copyDirectory loads the library in place, as exported games do.
     [[nodiscard]] static core::Result<std::unique_ptr<GameModule>> load(const std::filesystem::path& library,
                                                                         const std::filesystem::path& copyDirectory);
+    // The module linked into the program, as the C++ of a game is into the web player made for it: its entry points are
+    // functions of the program, which checks its API version and registers it. Nothing unloads it.
+    [[nodiscard]] static core::Result<std::unique_ptr<GameModule>> linked(std::uint32_t (*apiVersion)(),
+                                                                          void (*registerGame)(GameRegistry* registry));
 
     // Unregisters the module's component types and unloads it.
     ~GameModule();
@@ -44,14 +49,14 @@ public:
     std::size_t release(scene::Scene& scene) const;
 
 private:
-    GameModule(std::filesystem::path source, platform::SharedLibrary library) noexcept;
+    GameModule(std::filesystem::path source, std::optional<platform::SharedLibrary> library) noexcept;
     // Loads file, the library itself or its copy, as the module of library.
     [[nodiscard]] static core::Result<std::unique_ptr<GameModule>> loadLibrary(const std::filesystem::path& library,
                                                                                const std::filesystem::path& file);
 
     std::filesystem::path m_source;
-    // Unloaded last, once nothing refers to its code anymore.
-    platform::SharedLibrary m_library;
+    // Unloaded last, once nothing refers to its code anymore. None for a module linked into the program.
+    std::optional<platform::SharedLibrary> m_library;
     GameRegistry m_registry;
 };
 

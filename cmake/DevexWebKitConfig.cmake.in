@@ -1,0 +1,49 @@
+# The Devex engine for the C++ of a game built for the web, in the kit of the web player: find_package(Devex CONFIG) with
+# Devex_DIR set to this folder and the toolchain of Emscripten, as an export for the web does. The code is linked with the
+# engine and the main of the player into a web player of the game's own (DevexGameModule.cmake). The libraries of the kit
+# were compiled by Emscripten @EMSCRIPTEN_VERSION@ in Release, and the game code takes the same.
+cmake_minimum_required(VERSION 3.25)
+
+set(DEVEX_BUILD_TYPE "Release")
+set(DEVEX_ENGINE_VERSION "@PROJECT_VERSION@")
+set(DEVEX_EMSCRIPTEN_VERSION "@EMSCRIPTEN_VERSION@")
+# What the web player of the game is called: devex-player, or devex-player-threads in the kit with threads.
+set(DEVEX_WEB_PLAYER_NAME "@DEVEX_WEB_PLAYER_NAME@")
+if(NOT EMSCRIPTEN)
+    message(FATAL_ERROR "The web kit of Devex builds game code with the toolchain of Emscripten ${DEVEX_EMSCRIPTEN_VERSION}.")
+endif()
+if(NOT EMSCRIPTEN_VERSION STREQUAL DEVEX_EMSCRIPTEN_VERSION)
+    message(FATAL_ERROR "The web kit of Devex was built with Emscripten ${DEVEX_EMSCRIPTEN_VERSION}, not ${EMSCRIPTEN_VERSION}: "
+                        "run emsdk install ${DEVEX_EMSCRIPTEN_VERSION}, then emsdk activate ${DEVEX_EMSCRIPTEN_VERSION}.")
+endif()
+if(CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE STREQUAL DEVEX_BUILD_TYPE)
+    message(FATAL_ERROR "Game code for the web is built in ${DEVEX_BUILD_TYPE}, like the kit, not in ${CMAKE_BUILD_TYPE}.")
+endif()
+
+get_filename_component(_devex_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+# The main of the web player, compiled with the game code.
+set(DEVEX_WEB_PLAYER_MAIN "${_devex_root}/player/main.cpp")
+# DEVEX_WEB_LIBRARIES: what the web player links, the files of lib/ and the libraries of Emscripten.
+include("${CMAKE_CURRENT_LIST_DIR}/DevexWebLibraries.cmake")
+if(NOT TARGET Devex::Engine)
+    set(_devex_link "")
+    foreach(_devex_library IN LISTS DEVEX_WEB_LIBRARIES)
+        if(_devex_library MATCHES "^-")
+            list(APPEND _devex_link "${_devex_library}")
+        else()
+            list(APPEND _devex_link "${_devex_root}/lib/${_devex_library}")
+        endif()
+    endforeach()
+    add_library(Devex::Engine INTERFACE IMPORTED)
+    set_target_properties(Devex::Engine PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${_devex_root}/include"
+        INTERFACE_COMPILE_DEFINITIONS "GLM_FORCE_DEPTH_ZERO_TO_ONE"
+        INTERFACE_COMPILE_OPTIONS "@DEVEX_WEB_KIT_COMPILE_OPTIONS@"
+        INTERFACE_COMPILE_FEATURES "cxx_std_23"
+        # The options of the web player, and the WebGPU of Emscripten that Dawn gives, in share/dawn.
+        INTERFACE_LINK_OPTIONS "-fwasm-exceptions;@DEVEX_WEB_KIT_LINK_OPTIONS@;--use-port=${_devex_root}/share/dawn/emdawnwebgpu.port.py"
+        INTERFACE_LINK_LIBRARIES "${_devex_link}"
+    )
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/DevexGameModule.cmake")

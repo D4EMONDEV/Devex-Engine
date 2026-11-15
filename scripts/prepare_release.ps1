@@ -87,6 +87,20 @@ function Copy-WebPlayer([string] $To) {
     if (Test-Path $licenses) {
         Copy-Item -Recurse -Force $licenses (Join-Path $To "licenses")
     }
+    # The kit with which the editor links the C++ of a game with the engine, through Emscripten.
+    $kit = Join-Path $Web "kit"
+    if (-not (Test-Path (Join-Path $kit "cmake/DevexConfig.cmake"))) {
+        throw "$Web has no kit"
+    }
+    Copy-Item -Recurse -Force $kit (Join-Path $To "kit")
+    # The player with threads of Thread Support, with its own kit.
+    $threads = Join-Path $Web "threads"
+    foreach ($file in "devex-player-threads.js", "devex-player-threads.wasm", "kit/cmake/DevexConfig.cmake") {
+        if (-not (Test-Path (Join-Path $threads $file))) {
+            throw "$Web has no threads/$file"
+        }
+    }
+    Copy-Item -Recurse -Force $threads (Join-Path $To "threads")
 }
 if ($Linux) {
     # The tar of the system, which reads a whole archive with @ and keeps what its entries say is executable.

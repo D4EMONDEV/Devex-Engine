@@ -200,7 +200,7 @@ TEST_CASE("A game exported for the web takes the page, the web player, its packa
     const std::filesystem::path bin = directory.path / "editor" / "bin";
     const std::filesystem::path player = directory.path / "editor" / "platforms" / "web";
     std::filesystem::create_directories(bin);
-    write(player / "index.html", "<!doctype html><title>Devex game</title><script src=\"devex-player.js\"></script>");
+    write(player / "index.html", "<!doctype html><title>Devex game</title><script>const devexThreads = false;</script>");
     write(player / "devex-player.js", "// the player");
     write(player / "devex-player.wasm", "wasm");
     write(player / "licenses" / "devex.txt", "MIT");
@@ -277,6 +277,64 @@ TEST_CASE("A game exported for the web takes the page, the web player, its packa
     }
     // A stored entry keeps its bytes: the page lies whole in the ZIP.
     CHECK(bytes.find(*page) != std::string::npos);
+    CHECK(page->find("const devexThreads = false;") != std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(out / "devex-player-threads.wasm"));
+
+    // Thread Support takes the player with threads too, which the page plays where the browser allows it.
+    settings.exportSettings.webThreads = true;
+    REQUIRE(devex::asset::saveProject(settings));
+    devex::runtime::ExportPlan threads = plan();
+    const devex::core::Result<void> missing = devex::runtime::prepareWebExport(threads, bin, directory.path / "out" / "threads");
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().message.find("with threads") != std::string::npos);
+    write(player / "threads" / "devex-player-threads.js", "// the player with threads");
+    write(player / "threads" / "devex-player-threads.wasm", "wasm with threads");
+    REQUIRE(devex::runtime::prepareWebExport(threads, bin, directory.path / "out" / "threads").has_value());
+    REQUIRE(devex::runtime::exportGame(threads).has_value());
+    const std::filesystem::path both = directory.path / "out" / "threads";
+    for (const char* file : {"devex-player.js", "devex-player.wasm", "devex-player-threads.js", "devex-player-threads.wasm"})
+    {
+        INFO(file);
+        CHECK(std::filesystem::is_regular_file(both / file));
+    }
+    const devex::core::Result<std::string> threadsPage = devex::core::readTextFile(both / "index.html");
+    REQUIRE(threadsPage.has_value());
+    CHECK(threadsPage->find("const devexThreads = true;") != std::string::npos);
+}
+
+TEST_CASE("The C++ of a game builds for the web with the Emscripten its kit was built with", "[runtime][export][noweb]")
+{
+    TemporaryDirectory directory;
+    const std::filesystem::path player = directory.path / "platforms" / "web";
+    // An SDK as emsdk installs it: the toolchain of CMake, and the version with its quotes.
+    const auto makeSdk = [&](const std::string& name, std::string_view version) {
+        const std::filesystem::path sdk = directory.path / name;
+        write(sdk / "upstream" / "emscripten" / "cmake" / "Modules" / "Platform" / "Emscripten.cmake", "");
+        write(sdk / "upstream" / "emscripten" / "emscripten-version.txt", std::format("\"{}\"\n", version));
+        return sdk;
+    };
+    const std::filesystem::path older = makeSdk("emsdk-6", "6.0.1");
+    const std::filesystem::path needed = makeSdk("emsdk-7", "7.0.0");
+
+    // A web player without its kit cannot build C++.
+    CHECK(devex::runtime::findWebTools(player, {needed}).problem().find("no kit") != std::string::npos);
+
+    write(player / "kit" / "cmake" / "DevexConfig.cmake", "set(DEVEX_EMSCRIPTEN_VERSION \"7.0.0\")\n");
+    // The SDK of the version of the kit, wherever it comes in the list.
+    const devex::runtime::WebTools found = devex::runtime::findWebTools(player, {{}, older, needed});
+    CHECK(found.kit == player / "kit");
+    CHECK(found.emsdk == needed);
+    CHECK(found.neededVersion == "7.0.0");
+    CHECK(found.problem().empty());
+    // Another version is named, with the commands that install the right one.
+    const devex::runtime::WebTools other = devex::runtime::findWebTools(player, {older});
+    CHECK(other.emsdk == older);
+    CHECK(other.problem().find("6.0.1") != std::string::npos);
+    CHECK(other.problem().find("emsdk install 7.0.0 and emsdk activate 7.0.0") != std::string::npos);
+    // No SDK: how to install it.
+    const std::string missing = devex::runtime::findWebTools(player, {directory.path / "nothing"}).problem();
+    CHECK(missing.find("Emscripten 7.0.0, which is not found") != std::string::npos);
+    CHECK(missing.find("EMSDK") != std::string::npos);
 }
 
 TEST_CASE("An export packages the scenes and every asset they need", "[runtime][export][noweb]")

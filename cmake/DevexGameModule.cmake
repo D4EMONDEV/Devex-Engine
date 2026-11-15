@@ -2,9 +2,21 @@
 #
 # devex_add_game_module(SOURCES <files...>)
 # Builds the game module, Game.dll or libGame.so, into bin/ of the build folder, where the editor and
-# the player load it from.
+# the player load it from. With Emscripten, through the web kit, it builds a web player of the game's own.
 function(devex_add_game_module)
     cmake_parse_arguments(PARSE_ARGV 0 ARG "" "" "SOURCES")
+    if(EMSCRIPTEN)
+        # A browser loads no library: the code is linked with the engine and the main of the player into
+        # bin/devex-player.js and .wasm, which an export for the web takes instead of those of the kit.
+        add_executable(Game ${ARG_SOURCES} "${DEVEX_WEB_PLAYER_MAIN}")
+        target_link_libraries(Game PRIVATE Devex::Engine)
+        set_target_properties(Game PROPERTIES
+            CXX_EXTENSIONS OFF
+            OUTPUT_NAME "${DEVEX_WEB_PLAYER_NAME}"
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+        )
+        return()
+    endif()
     add_library(Game SHARED ${ARG_SOURCES})
     target_link_libraries(Game PRIVATE Devex::Engine)
     set_target_properties(Game PROPERTIES

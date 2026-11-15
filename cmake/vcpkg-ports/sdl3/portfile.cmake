@@ -38,6 +38,10 @@ if (VCPKG_TARGET_IS_EMSCRIPTEN)
             emscripten-pthreads     SDL_PTHREADS
     )
     vcpkg_list(APPEND FEATURE_OPTIONS "${EMSCRIPTEN_FEATURE_OPTIONS}")
+    # The ports of the web player with threads (triplet wasm32-emscripten-threads) give SDL its threads too.
+    if(DEVEX_WASM_THREADS)
+        vcpkg_list(APPEND FEATURE_OPTIONS "-DSDL_PTHREADS=ON")
+    endif()
 endif()
 
 if ("x11" IN_LIST FEATURES)

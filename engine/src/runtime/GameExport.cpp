@@ -13,6 +13,7 @@
 #include <devex/core/Path.hpp>
 #include <devex/platform/DesktopEntry.hpp>
 #include <devex/platform/Executable.hpp>
+#include <devex/platform/Process.hpp>
 #include <devex/runtime/GameExport.hpp>
 #include <devex/serialization/Text.hpp>
 
@@ -191,13 +192,22 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
 // Empties the output folder, when it is missing, empty or a previous export.
 // The page, the program and the WebAssembly of the web player, and the licenses of what it carries, beside the
 // package; the page takes the name of the game.
-[[nodiscard]] core::Result<void> copyWebPlayer(const std::filesystem::path& player, const std::filesystem::path& output,
+// The program and the WebAssembly come from program: the web player itself, or the one built for the C++ of the game.
+// With Thread Support, those of the player with threads come from threadsProgram, and the page plays them where it can.
+[[nodiscard]] core::Result<void> copyWebPlayer(const std::filesystem::path& player, const std::filesystem::path& program,
+                                               const std::filesystem::path& threadsProgram, const std::filesystem::path& output,
                                                const std::string& gameName)
 {
     std::error_code error;
-    for (const char* file : {"devex-player.js", "devex-player.wasm"})
+    std::vector<std::pair<std::filesystem::path, const char*>> files{{program, "devex-player.js"}, {program, "devex-player.wasm"}};
+    if (!threadsProgram.empty())
     {
-        std::filesystem::copy_file(player / file, output / file, std::filesystem::copy_options::overwrite_existing, error);
+        files.emplace_back(threadsProgram, "devex-player-threads.js");
+        files.emplace_back(threadsProgram, "devex-player-threads.wasm");
+    }
+    for (const auto& [folder, file] : files)
+    {
+        std::filesystem::copy_file(folder / file, output / file, std::filesystem::copy_options::overwrite_existing, error);
         if (error)
         {
             return core::makeError(core::ErrorCode::Io, "cannot copy {}: {}", file, error.message());
@@ -207,6 +217,11 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     if (!page)
     {
         return std::unexpected(page.error());
+    }
+    constexpr std::string_view oneThread = "const devexThreads = false;";
+    if (const std::size_t threads = page->find(oneThread); threads != std::string::npos && !threadsProgram.empty())
+    {
+        page->replace(threads, oneThread.size(), "const devexThreads = true;");
     }
     std::string escaped;
     for (const char c : gameName)
@@ -607,24 +622,105 @@ core::Result<std::filesystem::path> findWebPlayer(const std::filesystem::path& b
     return folder;
 }
 
-std::string webExportProblem(const asset::Project& project)
+std::string webExportProblem(const asset::Project& project, const std::filesystem::path& binDirectory)
 {
     if (project.renderingMethod != asset::RenderingMethod::Compatibility)
     {
         return "The web draws with the Compatibility renderer: choose it in Project > Project Settings > Rendering";
     }
-    if (!detail::GameCodeBuilder::moduleRegistersNothing(project))
+    const core::Result<std::filesystem::path> player = findWebPlayer(binDirectory);
+    if (!player)
     {
-        return "This game has C++ code, which does not build for the web yet";
+        // The editor says that the player is missing.
+        return {};
+    }
+    const bool code = !detail::GameCodeBuilder::moduleRegistersNothing(project);
+    if (project.exportSettings.webThreads)
+    {
+        std::error_code error;
+        const std::filesystem::path threads = *player / "threads";
+        if (!std::filesystem::is_regular_file(threads / "devex-player-threads.wasm", error) ||
+            (code && !std::filesystem::is_regular_file(threads / "kit" / "cmake" / "DevexConfig.cmake", error)))
+        {
+            return "The web player with threads is not next to the editor, for Thread Support: it comes with the installer";
+        }
+    }
+    // C++ that does something is built with Emscripten.
+    return code ? findWebTools(*player).problem() : std::string{};
+}
+
+std::string WebTools::problem() const
+{
+    if (kit.empty())
+    {
+        return "The web player next to the editor has no kit to build C++ code with: it comes with the installer";
+    }
+    if (emsdk.empty())
+    {
+        return std::format("The C++ of this game builds for the web with Emscripten {0}, which is not found: install emsdk, "
+                           "run emsdk install {0} and emsdk activate {0}, then set EMSDK to its folder",
+                           neededVersion);
+    }
+    if (foundVersion != neededVersion)
+    {
+        return std::format("The web player was built with Emscripten {0}, and {1} has {2}: run emsdk install {0} and emsdk activate {0}",
+                           neededVersion, core::toUtf8(emsdk), foundVersion.empty() ? std::string("another version") : foundVersion);
     }
     return {};
+}
+
+std::vector<std::filesystem::path> emsdkCandidates()
+{
+    const auto environmentPath = [](const char* name) { return core::pathFromUtf8(platform::environmentVariable(name)); };
+#ifdef _WIN32
+    return {environmentPath("EMSDK"), environmentPath("USERPROFILE") / "emsdk", "C:/emsdk"};
+#else
+    return {environmentPath("EMSDK"), environmentPath("HOME") / "emsdk", "/opt/emsdk"};
+#endif
+}
+
+WebTools findWebTools(const std::filesystem::path& webPlayer, const std::vector<std::filesystem::path>& candidates)
+{
+    WebTools tools;
+    // The version that the configuration of the kit asks for: set(DEVEX_EMSCRIPTEN_VERSION "7.0.0").
+    const std::filesystem::path kit = webPlayer / "kit";
+    const core::Result<std::string> config = core::readTextFile(kit / "cmake" / "DevexConfig.cmake");
+    constexpr std::string_view marker = "set(DEVEX_EMSCRIPTEN_VERSION \"";
+    const std::size_t start = config ? config->find(marker) : std::string::npos;
+    const std::size_t end = start != std::string::npos ? config->find('"', start + marker.size()) : std::string::npos;
+    if (end == std::string::npos)
+    {
+        return tools;
+    }
+    tools.kit = kit;
+    tools.neededVersion = config->substr(start + marker.size(), end - start - marker.size());
+
+    for (const std::filesystem::path& candidate : candidates)
+    {
+        std::error_code error;
+        const std::filesystem::path emscripten = candidate / "upstream" / "emscripten";
+        if (candidate.empty() ||
+            !std::filesystem::is_regular_file(emscripten / "cmake" / "Modules" / "Platform" / "Emscripten.cmake", error))
+        {
+            continue;
+        }
+        // "7.0.0", with its quotes.
+        std::string version = core::readTextFile(emscripten / "emscripten-version.txt").value_or(std::string{});
+        std::erase_if(version, [](char c) { return c == '"' || std::isspace(static_cast<unsigned char>(c)) != 0; });
+        if (tools.emsdk.empty() || (version == tools.neededVersion && tools.foundVersion != tools.neededVersion))
+        {
+            tools.emsdk = candidate.lexically_normal();
+            tools.foundVersion = version;
+        }
+    }
+    return tools;
 }
 
 core::Result<void> prepareWebExport(ExportPlan& plan, const std::filesystem::path& binDirectory,
                                     const std::optional<std::filesystem::path>& output)
 {
     const asset::Project& project = plan.project;
-    if (const std::string problem = webExportProblem(project); !problem.empty())
+    if (const std::string problem = webExportProblem(project, binDirectory); !problem.empty())
     {
         return core::makeError(core::ErrorCode::Unsupported, "{}", problem);
     }
@@ -634,6 +730,24 @@ core::Result<void> prepareWebExport(ExportPlan& plan, const std::filesystem::pat
         return std::unexpected(player.error());
     }
     plan.webPlayer = std::move(*player);
+    plan.webKit.clear();
+    plan.emsdk.clear();
+    plan.webThreadsPlayer.clear();
+    plan.webThreadsKit.clear();
+    if (project.exportSettings.webThreads)
+    {
+        plan.webThreadsPlayer = plan.webPlayer / "threads";
+    }
+    if (!detail::GameCodeBuilder::moduleRegistersNothing(project))
+    {
+        WebTools tools = findWebTools(plan.webPlayer);
+        plan.webKit = std::move(tools.kit);
+        plan.emsdk = std::move(tools.emsdk);
+        if (!plan.webThreadsPlayer.empty())
+        {
+            plan.webThreadsKit = plan.webThreadsPlayer / "kit";
+        }
+    }
     plan.platform = ExportPlatform::Web;
     // C# does not run in a browser yet: its components do nothing.
     plan.managed = false;
@@ -1071,6 +1185,31 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
         }
         library = detail::GameCodeBuilder::libraryPath(project, plan.engine.configuration);
     }
+    // The C++ of a game for the web is linked with the engine into a web player of its own, and into one with threads
+    // too for Thread Support.
+    std::filesystem::path webProgram = plan.webPlayer;
+    std::filesystem::path webThreadsProgram = plan.webThreadsPlayer;
+    if (!plan.packageOnly && plan.platform == ExportPlatform::Web && !plan.webKit.empty())
+    {
+        report("Building the game code for the web", 0.02f);
+        core::Result<std::filesystem::path> built =
+            detail::GameCodeBuilder::buildForWeb(project, plan.webKit, plan.emsdk, "devex-player", cancel);
+        if (!built)
+        {
+            return std::unexpected(built.error());
+        }
+        webProgram = std::move(*built);
+        if (!plan.webThreadsKit.empty())
+        {
+            report("Building the game code for the web, with threads", 0.2f);
+            built = detail::GameCodeBuilder::buildForWeb(project, plan.webThreadsKit, plan.emsdk, "devex-player-threads", cancel);
+            if (!built)
+            {
+                return std::unexpected(built.error());
+            }
+            webThreadsProgram = std::move(*built);
+        }
+    }
     std::optional<std::filesystem::path> scripts;
     if (!plan.packageOnly && plan.managed)
     {
@@ -1245,7 +1384,7 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
     if (!plan.packageOnly && plan.platform == ExportPlatform::Web)
     {
         report("Copying the web player", 0.88f);
-        if (core::Result<void> copied = copyWebPlayer(plan.webPlayer, plan.output, project.name); !copied)
+        if (core::Result<void> copied = copyWebPlayer(plan.webPlayer, webProgram, webThreadsProgram, plan.output, project.name); !copied)
         {
             return std::unexpected(copied.error());
         }

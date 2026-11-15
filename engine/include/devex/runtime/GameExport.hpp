@@ -138,6 +138,13 @@ struct DEVEX_API ExportPlan
     // For the web: the folder of the web player that comes with the editor, and the ZIP made beside the game.
     std::filesystem::path webPlayer;
     std::filesystem::path webArchive;
+    // For a game whose C++ does something: the kit beside the web player and the Emscripten SDK, which link the code
+    // and the engine into a web player of the game's own.
+    std::filesystem::path webKit;
+    std::filesystem::path emsdk;
+    // With Thread Support: the player with threads, in threads/ of the web player, and its kit for C++.
+    std::filesystem::path webThreadsPlayer;
+    std::filesystem::path webThreadsKit;
 };
 
 // Fails when the project has no scene, when imports are still running or failed, or when an exported
@@ -203,7 +210,28 @@ struct DEVEX_API ExportResult
 [[nodiscard]] DEVEX_API core::Result<std::filesystem::path> findWebPlayer(const std::filesystem::path& binDirectory);
 // What keeps a project from playing in a browser, empty when nothing does: a renderer other than Compatibility, which
 // is the one the web draws with, or C++ code that does something, which does not build for the web yet.
-[[nodiscard]] DEVEX_API std::string webExportProblem(const asset::Project& project);
+[[nodiscard]] DEVEX_API std::string webExportProblem(const asset::Project& project, const std::filesystem::path& binDirectory);
+
+// What building the C++ of a game for the web takes: the kit in the web player, and the Emscripten SDK that the user
+// installs, of the version the kit was built with, found through EMSDK or where emsdk usually is.
+struct DEVEX_API WebTools
+{
+    std::filesystem::path kit;
+    std::filesystem::path emsdk;
+    // The version of Emscripten that the kit was built with, and that of the SDK found.
+    std::string neededVersion;
+    std::string foundVersion;
+
+    // What is missing, with the commands that install it; empty when the code can build.
+    [[nodiscard]] std::string problem() const;
+};
+
+// Where an Emscripten SDK is looked for: EMSDK, then where emsdk is usually cloned.
+[[nodiscard]] DEVEX_API std::vector<std::filesystem::path> emsdkCandidates();
+// The tools for the web player in the folder webPlayer (findWebPlayer): the first SDK of candidates that has the version
+// of its kit, or else the first SDK, which the problem then names.
+[[nodiscard]] DEVEX_API WebTools findWebTools(const std::filesystem::path& webPlayer,
+                                              const std::vector<std::filesystem::path>& candidates = emsdkCandidates());
 // Fills a plan for an export to the web: the player found next to the editor, the folder of the project settings or
 // `output`, and a ZIP of the game beside it, ready for itch.io. C# does not run in a browser: its components do nothing.
 [[nodiscard]] DEVEX_API core::Result<void> prepareWebExport(ExportPlan& plan, const std::filesystem::path& binDirectory,

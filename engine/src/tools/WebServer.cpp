@@ -115,8 +115,10 @@ void answer(Socket client, const std::filesystem::path& folder)
         }
         request.append(buffer, static_cast<std::size_t>(received));
     }
+    // The headers that isolate the page, which a game of Thread Support needs to run its player with threads.
     const auto reply = [client](std::string_view status, std::string_view type, std::string_view body, bool head) {
         sendAll(client, std::format("HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\n"
+                                    "Cross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Embedder-Policy: require-corp\r\n"
                                     "Connection: close\r\n\r\n",
                                     status, type, body.size()));
         if (!head)

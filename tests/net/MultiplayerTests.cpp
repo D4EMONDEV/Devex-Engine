@@ -3,11 +3,29 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/interfaces/catch_interfaces_capture.hpp>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -80,6 +98,128 @@ void say(Player& player, PeerId to, std::string_view text, Delivery delivery = D
 {
     player.session.send(to, std::as_bytes(std::span(text.data(), text.size())), delivery);
     player.session.flush();
+}
+
+// A player in a browser, as its WebSocket speaks to the host: a TCP connection that asks for the protocol of the session,
+// then sends masked frames, and reads those of the host.
+class BrowserSocket
+{
+public:
+    explicit BrowserSocket(std::uint16_t port)
+        : m_socket(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))
+    {
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_port = htons(port);
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        REQUIRE(connect(m_socket, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0);
+#if defined(_WIN32)
+        u_long on = 1;
+        ioctlsocket(m_socket, FIONBIO, &on);
+#else
+        fcntl(m_socket, F_SETFL, fcntl(m_socket, F_GETFL, 0) | O_NONBLOCK);
+#endif
+    }
+    ~BrowserSocket()
+    {
+#if defined(_WIN32)
+        closesocket(m_socket);
+#else
+        close(m_socket);
+#endif
+    }
+    BrowserSocket(const BrowserSocket&) = delete;
+    BrowserSocket& operator=(const BrowserSocket&) = delete;
+
+    void handshake(std::string_view protocol)
+    {
+        write(std::string("GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n"
+                          "Sec-WebSocket-Protocol: ") +
+              std::string(protocol) + "\r\n\r\n");
+    }
+    // A binary frame as a browser sends it, masked.
+    void sendFrame(std::span<const std::byte> payload)
+    {
+        constexpr std::array<std::byte, 4> mask{std::byte{0x12}, std::byte{0x34}, std::byte{0x56}, std::byte{0x78}};
+        std::string frame{'\x82', static_cast<char>(0x80 | payload.size())};
+        frame.append(reinterpret_cast<const char*>(mask.data()), mask.size());
+        for (std::size_t index = 0; index < payload.size(); ++index)
+        {
+            frame.push_back(static_cast<char>(payload[index] ^ mask[index % 4]));
+        }
+        write(frame);
+    }
+    // What arrived so far.
+    [[nodiscard]] const std::string& text()
+    {
+        std::array<char, 4096> buffer{};
+        for (;;)
+        {
+            const auto received = recv(m_socket, buffer.data(), static_cast<int>(buffer.size()), 0);
+            if (received <= 0)
+            {
+                break;
+            }
+            m_input.append(buffer.data(), static_cast<std::size_t>(received));
+        }
+        return m_input;
+    }
+    void skipHandshake()
+    {
+        m_input.erase(0, text().find("\r\n\r\n") + 4);
+    }
+    // The next message of the host, its pings left out.
+    [[nodiscard]] std::optional<std::vector<std::byte>> message()
+    {
+        for (;;)
+        {
+            const std::string& input = text();
+            if (input.size() < 2 || static_cast<unsigned char>(input[1]) >= 126 ||
+                input.size() < 2 + static_cast<std::size_t>(static_cast<unsigned char>(input[1])))
+            {
+                return std::nullopt;
+            }
+            const auto opcode = static_cast<unsigned char>(input[0]) & 0x0Fu;
+            const std::size_t size = static_cast<unsigned char>(input[1]);
+            const auto* const bytes = reinterpret_cast<const std::byte*>(input.data() + 2);
+            std::vector<std::byte> payload(bytes, bytes + size);
+            m_input.erase(0, 2 + size);
+            if (opcode == 0x2)
+            {
+                return payload;
+            }
+        }
+    }
+
+private:
+    void write(std::string_view bytes)
+    {
+        send(m_socket, bytes.data(), static_cast<int>(bytes.size()), 0);
+    }
+
+#if defined(_WIN32)
+    SOCKET m_socket;
+#else
+    int m_socket;
+#endif
+    std::string m_input;
+};
+
+// A packet of the session: its kind, the sender, the receiver, then the message.
+[[nodiscard]] std::vector<std::byte> packet(std::uint8_t kind, PeerId from, PeerId to, std::string_view message)
+{
+    std::vector<std::byte> bytes{std::byte{kind}};
+    for (const PeerId number : {from, to})
+    {
+        for (int shift = 0; shift < 32; shift += 8)
+        {
+            bytes.push_back(static_cast<std::byte>(number >> shift));
+        }
+    }
+    const auto text = std::as_bytes(std::span(message.data(), message.size()));
+    bytes.insert(bytes.end(), text.begin(), text.end());
+    return bytes;
 }
 
 } // namespace
@@ -169,6 +309,61 @@ TEST_CASE("Messages reach their players, through the host between clients, with 
     say(first, firstId, "to myself");
     REQUIRE(until({&host, &first, &second}, [&] { return !first.events.empty(); }));
     CHECK(first.lastMessage(firstId).empty());
+}
+
+TEST_CASE("A player in a browser joins over WebSocket the game that a computer hosts", "[net]")
+{
+    const std::uint16_t port = nextPort();
+    Player host;
+    Player desktop;
+    REQUIRE(host.session.host(port));
+    REQUIRE(desktop.session.join("127.0.0.1", port));
+    REQUIRE(until({&host, &desktop}, [&] { return desktop.session.state() == MultiplayerState::Online; }));
+    const PeerId desktopId = desktop.session.localPeer();
+
+    // Another game, or another version of this one, is refused.
+    {
+        BrowserSocket stranger(port);
+        stranger.handshake("devex.2");
+        REQUIRE(until({&host}, [&] { return stranger.text().starts_with("HTTP/1.1 400"); }));
+    }
+
+    // The answer that RFC 6455 gives to its own example key, and the protocol asked for.
+    std::optional<BrowserSocket> browser;
+    browser.emplace(port);
+    browser->handshake("devex.3");
+    REQUIRE(until({&host, &desktop}, [&] { return browser->text().find("\r\n\r\n") != std::string::npos; }));
+    CHECK(browser->text().starts_with("HTTP/1.1 101"));
+    CHECK(browser->text().find("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n") != std::string::npos);
+    CHECK(browser->text().find("Sec-WebSocket-Protocol: devex.3\r\n") != std::string::npos);
+    browser->skipHandshake();
+
+    // Welcome: its number, then that of the player of the desktop. Everyone learns of it.
+    std::optional<std::vector<std::byte>> welcome;
+    REQUIRE(until({&host, &desktop}, [&] { return (welcome = browser->message()).has_value() && desktop.session.peers().size() == 2; }));
+    REQUIRE(welcome->size() == 9);
+    CHECK(welcome->at(0) == std::byte{0});
+    const auto browserId = std::to_integer<PeerId>(welcome->at(1));
+    CHECK(browserId != desktopId);
+    CHECK(std::to_integer<PeerId>(welcome->at(5)) == desktopId);
+    CHECK(host.saw(NetworkEvent::Kind::PeerJoined, browserId));
+    CHECK(desktop.saw(NetworkEvent::Kind::PeerJoined, browserId));
+
+    // A message to everyone reaches the host and, through it, the player over ENet, from the right sender.
+    browser->sendFrame(packet(3, 99, devex::net::everyone, "hello"));
+    REQUIRE(until({&host, &desktop}, [&] { return host.lastMessage(browserId) == "hello" && desktop.lastMessage(browserId) == "hello"; }));
+
+    // And the other way, from the player over ENet, through the host.
+    say(desktop, browserId, "hi");
+    std::optional<std::vector<std::byte>> hi;
+    REQUIRE(until({&host, &desktop}, [&] { return (hi = browser->message()).has_value(); }));
+    CHECK(*hi == packet(3, desktopId, browserId, "hi"));
+
+    // A browser closing its tab leaves the game.
+    browser.reset();
+    REQUIRE(until({&host, &desktop}, [&] { return host.session.peers().size() == 1 && desktop.session.peers().size() == 1; }));
+    CHECK(host.saw(NetworkEvent::Kind::PeerLeft, browserId));
+    CHECK(desktop.saw(NetworkEvent::Kind::PeerLeft, browserId));
 }
 
 TEST_CASE("A session refuses what it cannot do, and says when no one answers", "[net]")
