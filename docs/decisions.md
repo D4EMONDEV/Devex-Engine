@@ -5817,6 +5817,11 @@ Les étapes, chacune livrable et testée :
      atténuation, carte de normales, environnement) est partagé avec Vulkan dans `surface_shading.slang`, l'empaquetage des
      lumières dans `packLights`. Un test compare à Vulkan une scène de sphères, de boîtes texturée, transparente et skinnée,
      éclairée par un soleil, une lumière ponctuelle, un spot et un ciel texturé.
+   - 3b ✅ les ombres, comme Vulkan : les quatre cascades du soleil (`computeShadowCascades`) dans les couches d'une carte de
+     2048, celles des lumières locales dans les tuiles d'un atlas de 4096 (`assignShadowViews`), filtrées par 3x3 comparaisons
+     bilinéaires, avec le même biais de pente. Les matrices sont celles de Vulkan, Y vers le bas, pour lire les cartes avec les
+     mêmes calculs ; elles sont retournées vers le Y de WebGPU pour les dessiner. La profondeur est bornée plutôt que coupée là
+     où l'appareil le permet (`depth-clip-control`). Le test de la 3D compare maintenant aussi les ombres.
 4. **Web** dans la liste de l'export, avec **Run in Browser** sur un petit serveur local, et les problèmes en rouge.
 5. Le C++ des jeux compilé avec Emscripten.
 6. Saisie, plein écran, souris capturée, son et sauvegardes dans le navigateur.

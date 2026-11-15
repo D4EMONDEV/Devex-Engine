@@ -4,7 +4,10 @@
 #include "WebGpuHelpers.hpp"
 #include "WebGpuRenderer.hpp"
 
+#include "../Lighting.hpp"
+
 #include <devex/asset/MeshData.hpp>
+#include <devex/render/ShadowAtlas.hpp>
 
 #include <algorithm>
 #include <array>
@@ -12,6 +15,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <optional>
 #include <tuple>
 
 namespace devex::render::webgpu {
@@ -30,6 +34,11 @@ constexpr std::uint32_t brdfTableSize = 128;
 constexpr std::uint32_t prefilterSamples = 256;
 constexpr std::uint32_t irradianceSamples = 512;
 constexpr std::uint32_t brdfSamples = 1024;
+// The shadows of vulkan::VulkanRenderer: the cascades of the sun, and the atlas of the local lights.
+constexpr std::uint32_t shadowMapSize = 2048;
+constexpr std::uint32_t shadowAtlasSize = 4096;
+constexpr std::uint32_t shadowAtlasCell = 512;
+constexpr std::size_t largeShadowLights = 2;
 
 // What the shaders read, laid out as their WGSL does.
 struct SceneData
@@ -46,6 +55,12 @@ struct SceneData
     float environmentRotation = 0.0f;
     float specularMipCount = 1.0f;
     float padding[3]{};
+    std::array<math::Mat4, 4> cascadeViewProjections{};
+    math::Vec4 cascadeSplits{0.0f};
+    math::Vec4 cascadeTexelSizes{0.0f};
+    float shadowDistance = 0.0f;
+    std::uint32_t sunCastsShadows = 0;
+    float padding1[2]{};
 };
 struct InstanceData
 {
@@ -90,10 +105,11 @@ struct BakeParameters
     // A uniform buffer of WGSL rounds its structures to 16 bytes.
     float padding[3]{};
 };
-static_assert(sizeof(SceneData) == 208 && sizeof(InstanceData) == 80 && sizeof(MaterialData) == 64 &&
+static_assert(sizeof(SceneData) == 512 && sizeof(InstanceData) == 80 && sizeof(MaterialData) == 64 &&
               sizeof(SkyData) == 96 && sizeof(BakeParameters) == 32);
 
 constexpr std::uint32_t skinnedBit = 1;
+constexpr std::uint32_t atlasBit = 2;
 constexpr std::uint32_t bothSidesBit = 2;
 constexpr std::uint32_t blendedBit = 4;
 
@@ -111,6 +127,15 @@ constexpr std::uint32_t blendedBit = 4;
     wgpu::BindGroupLayoutEntry entry = textureEntry(binding, visibility);
     entry.texture.viewDimension = wgpu::TextureViewDimension::Cube;
     return entry;
+}
+
+// Vulkan's clip space points Y down: the shadows are read with its matrices, whose texture coordinates go down too, and
+// drawn with them turned to WebGPU's, which points Y up.
+[[nodiscard]] math::Mat4 flipY() noexcept
+{
+    math::Mat4 flip{1.0f};
+    flip[1][1] = -1.0f;
+    return flip;
 }
 
 [[nodiscard]] wgpu::TextureView cubeView(const wgpu::Texture& texture)
@@ -149,9 +174,17 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
 {
     const wgpu::ShaderStage both = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
     const wgpu::ShaderStage fragment = wgpu::ShaderStage::Fragment;
+    wgpu::BindGroupLayoutEntry cascades = textureEntry(9, fragment);
+    cascades.texture.sampleType = wgpu::TextureSampleType::Depth;
+    cascades.texture.viewDimension = wgpu::TextureViewDimension::e2DArray;
+    wgpu::BindGroupLayoutEntry atlas = textureEntry(10, fragment);
+    atlas.texture.sampleType = wgpu::TextureSampleType::Depth;
+    wgpu::BindGroupLayoutEntry comparison = samplerEntry(11, fragment);
+    comparison.sampler.type = wgpu::SamplerBindingType::Comparison;
     const std::array sceneEntries{uniformEntry(0, both, false, sizeof(SceneData)), storageEntry(1, fragment),
                                   storageEntry(2, wgpu::ShaderStage::Vertex), storageEntry(3, wgpu::ShaderStage::Vertex),
-                                  cubeEntry(4, fragment), cubeEntry(5, fragment), textureEntry(6, fragment), samplerEntry(7, fragment)};
+                                  cubeEntry(4, fragment), cubeEntry(5, fragment), textureEntry(6, fragment), samplerEntry(7, fragment),
+                                  storageEntry(8, fragment), cascades, atlas, comparison};
     m_sceneLayout = bindGroupLayout(m_device, "Scene", sceneEntries);
     std::array<wgpu::BindGroupLayoutEntry, 11> materialEntries{};
     materialEntries[0] = uniformEntry(0, fragment, false, sizeof(MaterialData));
@@ -223,6 +256,64 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
         descriptor.fragment = &fragmentState;
         m_meshPipelines[index] = m_device.CreateRenderPipeline(&descriptor);
     }
+
+    // The depth of the casters of shadows, through the matrix of their view, with the slope bias of Vulkan.
+    const std::array shadowEntries{storageEntry(0, wgpu::ShaderStage::Vertex), storageEntry(1, wgpu::ShaderStage::Vertex),
+                                   uniformEntry(2, wgpu::ShaderStage::Vertex, true, sizeof(math::Mat4))};
+    m_shadowLayout = bindGroupLayout(m_device, "Shadow", shadowEntries);
+    const std::array shadowGroups{m_shadowLayout, m_materialLayout, m_meshDrawLayout};
+    const wgpu::PipelineLayout shadowLayout = pipelineLayout(m_device, shadowGroups);
+    const wgpu::ShaderModule shadow = shaderModule("webgpu_shadow");
+    m_unclippedDepth = m_device.HasFeature(wgpu::FeatureName::DepthClipControl);
+    for (std::uint32_t index = 0; index < m_shadowPipelines.size(); ++index)
+    {
+        const bool skinned = (index & skinnedBit) != 0;
+        wgpu::FragmentState fragmentState;
+        fragmentState.module = shadow;
+        fragmentState.entryPoint = "shadowFragment";
+        wgpu::DepthStencilState depth;
+        depth.format = depthFormat;
+        depth.depthWriteEnabled = true;
+        depth.depthCompare = wgpu::CompareFunction::LessEqual;
+        // Steep surfaces need more bias than those facing the light.
+        depth.depthBiasSlopeScale = (index & atlasBit) != 0 ? 2.0f : 1.5f;
+        wgpu::RenderPipelineDescriptor descriptor;
+        descriptor.label = "Shadow";
+        descriptor.layout = shadowLayout;
+        descriptor.vertex.module = shadow;
+        descriptor.vertex.entryPoint = skinned ? "skinnedShadowVertex" : "shadowVertex";
+        descriptor.vertex.bufferCount = skinned ? 2 : 1;
+        descriptor.vertex.buffers = buffers.data();
+        descriptor.primitive.cullMode = wgpu::CullMode::None;
+        descriptor.primitive.unclippedDepth = m_unclippedDepth;
+        descriptor.depthStencil = &depth;
+        descriptor.fragment = &fragmentState;
+        m_shadowPipelines[index] = m_device.CreateRenderPipeline(&descriptor);
+    }
+    wgpu::TextureDescriptor cascadeMap;
+    cascadeMap.label = "Cascades";
+    cascadeMap.size = {shadowMapSize, shadowMapSize, 4};
+    cascadeMap.format = depthFormat;
+    cascadeMap.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+    m_cascadeMap = m_device.CreateTexture(&cascadeMap);
+    for (std::uint32_t layer = 0; layer < m_cascadeLayers.size(); ++layer)
+    {
+        wgpu::TextureViewDescriptor view;
+        view.dimension = wgpu::TextureViewDimension::e2D;
+        view.baseArrayLayer = layer;
+        view.arrayLayerCount = 1;
+        m_cascadeLayers[layer] = m_cascadeMap.CreateView(&view);
+    }
+    wgpu::TextureDescriptor atlasMap = cascadeMap;
+    atlasMap.label = "Shadow atlas";
+    atlasMap.size = {shadowAtlasSize, shadowAtlasSize, 1};
+    m_atlasMap = m_device.CreateTexture(&atlasMap);
+    // Bilinear comparisons, as Vulkan's sampler of shadows.
+    wgpu::SamplerDescriptor shadowSampler;
+    shadowSampler.addressModeU = shadowSampler.addressModeV = shadowSampler.addressModeW = wgpu::AddressMode::ClampToEdge;
+    shadowSampler.magFilter = shadowSampler.minFilter = wgpu::FilterMode::Linear;
+    shadowSampler.compare = wgpu::CompareFunction::LessEqual;
+    m_shadowSampler = m_device.CreateSampler(&shadowSampler);
 
     const wgpu::ShaderModule sky = shaderModule("webgpu_sky");
     wgpu::ColorTargetState skyTarget;
@@ -483,7 +574,30 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
     const RenderSun& sun = m_world.sun;
     const float sunLength = math::length(sun.direction);
     packLights(m_world, m_lights);
-    const SceneData scene{
+
+    // The cascades of the sun as Vulkan fits them, and the views of the atlas the lights that cast shadows are given.
+    const RenderCamera& camera = m_world.camera;
+    const float aspectRatio = static_cast<float>(m_sceneSize.width) / static_cast<float>(std::max(m_sceneSize.height, 1U));
+    const bool sunEnabled = std::max({sun.illuminance.r, sun.illuminance.g, sun.illuminance.b}) > 0.0f;
+    std::optional<ShadowCascades> cascades;
+    if (sunEnabled && sun.castShadows && sun.shadowDistance > camera.nearPlane)
+    {
+        cascades = computeShadowCascades(math::inverse(camera.view), ViewVolume::of(camera, aspectRatio), camera.nearPlane,
+                                         sun.shadowDistance, sun.direction, shadowMapSize);
+    }
+    const ShadowAssignment assigned =
+        assignShadowViews(m_world.lights, frustum, matrices.cameraPosition,
+                          ShadowAtlasLayout{.size = shadowAtlasSize, .cell = shadowAtlasCell, .largeLights = largeShadowLights}, flipY());
+    for (std::size_t index = 0; index < m_lights.size() && index < assigned.firstView.size(); ++index)
+    {
+        m_lights[index].firstShadowView = assigned.firstView[index];
+        if (assigned.firstView[index] >= 0)
+        {
+            m_lights[index].shadowFar = assigned.far[index];
+        }
+    }
+
+    SceneData scene{
         .viewProjection = matrices.viewProjection,
         .view = m_world.camera.view,
         .cameraPosition = matrices.cameraPosition,
@@ -496,6 +610,17 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
         .environmentRotation = m_world.environment.rotation,
         .specularMipCount = static_cast<float>(m_environment.specularMips),
     };
+    if (cascades)
+    {
+        scene.sunCastsShadows = 1;
+        scene.shadowDistance = sun.shadowDistance;
+        for (std::size_t cascade = 0; cascade < 4; ++cascade)
+        {
+            scene.cascadeViewProjections[cascade] = cascades->viewProjections[cascade];
+            scene.cascadeSplits[static_cast<int>(cascade)] = cascades->splitDistances[cascade];
+            scene.cascadeTexelSizes[static_cast<int>(cascade)] = cascades->texelSizes[cascade];
+        }
+    }
     m_queue.WriteBuffer(m_sceneBuffer, 0, &scene, sizeof(scene));
     const SkyData sky{
         .skyInverseViewProjection = math::inverse(matrices.skyViewProjection),
@@ -575,14 +700,120 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
                              .boneCount = entry.instance->boneCount});
     }
 
+    // The casters of each view of the shadows, by batches as the camera's, after them: opaque and cut-out surfaces cast
+    // shadows, blended ones do not.
+    struct ShadowView
+    {
+        math::Mat4 drawn;
+        Frustum frustum;
+        bool atlas;
+        std::uint32_t layer;
+        std::array<float, 4> viewport;
+    };
+    std::vector<ShadowView> views;
+    if (cascades)
+    {
+        for (std::uint32_t cascade = 0; cascade < 4; ++cascade)
+        {
+            const math::Mat4& read = cascades->viewProjections[cascade];
+            views.push_back({flipY() * read, frustumOf(read), false, cascade, {}});
+        }
+    }
+    for (const render::ShadowView& view : assigned.views)
+    {
+        const float size = static_cast<float>(shadowAtlasSize);
+        views.push_back({flipY() * view.viewProjection, frustumOf(view.viewProjection), true, 0,
+                         {view.tile.x * size, view.tile.y * size, view.tile.z * size, view.tile.w * size}});
+    }
+    m_shadowBatches.clear();
+    m_shadowPasses.clear();
+    struct Caster
+    {
+        const MeshInstance* instance;
+        const GpuMesh* mesh;
+        MaterialHandle material;
+        std::uint32_t pipeline;
+    };
+    std::vector<Caster> casters;
+    for (std::uint32_t index = 0; index < views.size(); ++index)
+    {
+        const ShadowView& view = views[index];
+        casters.clear();
+        for (const MeshInstance& instance : m_world.meshes)
+        {
+            const GpuMesh* const mesh = m_meshes.find(instance.mesh);
+            if (mesh == nullptr || instance.submesh >= mesh->submeshes.size())
+            {
+                continue;
+            }
+            const MaterialHandle material = m_materials.contains(instance.material) ? instance.material : m_defaultMaterial;
+            if (m_materials.find(material)->description.alphaMode == asset::AlphaMode::Blend)
+            {
+                continue;
+            }
+            const bool skinned = instance.boneCount > 0 && mesh->skin;
+            if (!skinned && !mesh->bounds.isEmpty() && !view.frustum.intersects(math::transform(instance.transform, mesh->bounds)))
+            {
+                continue;
+            }
+            casters.push_back({&instance, mesh, material, (skinned ? skinnedBit : 0U) | (view.atlas ? atlasBit : 0U)});
+        }
+        std::ranges::sort(casters, [](const Caster& left, const Caster& right) {
+            return std::tuple(left.pipeline, left.material.index, left.mesh, left.instance->submesh) <
+                   std::tuple(right.pipeline, right.material.index, right.mesh, right.instance->submesh);
+        });
+        ShadowPass pass{.firstBatch = static_cast<std::uint32_t>(m_shadowBatches.size()),
+                        .view = index,
+                        .atlas = view.atlas,
+                        .layer = view.layer,
+                        .viewport = view.viewport};
+        for (const Caster& caster : casters)
+        {
+            if (m_shadowBatches.size() == pass.firstBatch || m_shadowBatches.back().mesh != caster.mesh ||
+                m_shadowBatches.back().submesh != caster.instance->submesh || m_shadowBatches.back().material != caster.material ||
+                m_shadowBatches.back().pipeline != caster.pipeline)
+            {
+                m_shadowBatches.push_back({.mesh = caster.mesh,
+                                           .submesh = caster.instance->submesh,
+                                           .material = caster.material,
+                                           .pipeline = caster.pipeline,
+                                           .firstInstance = static_cast<std::uint32_t>(instances.size())});
+            }
+            ++m_shadowBatches.back().instanceCount;
+            instances.push_back({.world = caster.instance->transform,
+                                 .firstBone = caster.instance->firstBone,
+                                 .boneCount = caster.instance->boneCount});
+        }
+        pass.batchCount = static_cast<std::uint32_t>(m_shadowBatches.size()) - pass.firstBatch;
+        m_shadowPasses.push_back(pass);
+    }
+
     const std::uint64_t lightBytes = std::max<std::size_t>(m_lights.size(), 1) * sizeof(GpuLight);
     const std::uint64_t instanceBytes = std::max<std::size_t>(instances.size(), 1) * sizeof(InstanceData);
     const std::uint64_t boneBytes = std::max<std::size_t>(m_world.boneMatrices.size(), 1) * sizeof(math::Mat4);
     growBuffer(m_lightBuffer, m_lightCapacity, lightBytes, wgpu::BufferUsage::Storage, "Lights");
     growBuffer(m_instanceBuffer, m_instanceCapacity, instanceBytes, wgpu::BufferUsage::Storage, "Instances");
     growBuffer(m_boneBuffer, m_boneCapacity, boneBytes, wgpu::BufferUsage::Storage, "Bones");
-    growBuffer(m_meshDrawBuffer, m_meshDrawCapacity, std::max<std::size_t>(m_meshBatches.size(), 1) * uniformStride,
+    const std::size_t drawCount = m_meshBatches.size() + m_shadowBatches.size();
+    growBuffer(m_meshDrawBuffer, m_meshDrawCapacity, std::max<std::size_t>(drawCount, 1) * uniformStride,
                wgpu::BufferUsage::Uniform, "Mesh draws");
+    const std::uint64_t shadowViewBytes = std::max<std::size_t>(assigned.views.size(), 1) * sizeof(render::ShadowView);
+    growBuffer(m_shadowViewBuffer, m_shadowViewCapacity, shadowViewBytes, wgpu::BufferUsage::Storage, "Shadow views");
+    if (!assigned.views.empty())
+    {
+        m_queue.WriteBuffer(m_shadowViewBuffer, 0, assigned.views.data(), assigned.views.size() * sizeof(render::ShadowView));
+    }
+    growBuffer(m_shadowMatrixBuffer, m_shadowMatrixCapacity, std::max<std::size_t>(views.size(), 1) * uniformStride,
+               wgpu::BufferUsage::Uniform, "Shadow matrices");
+    std::vector<std::byte> shadowMatrices(views.size() * uniformStride);
+    for (std::size_t view = 0; view < views.size(); ++view)
+    {
+        std::memcpy(shadowMatrices.data() + view * uniformStride, &views[view].drawn, sizeof(math::Mat4));
+    }
+    if (!shadowMatrices.empty())
+    {
+        m_queue.WriteBuffer(m_shadowMatrixBuffer, 0, shadowMatrices.data(), shadowMatrices.size());
+    }
     if (!m_lights.empty())
     {
         m_queue.WriteBuffer(m_lightBuffer, 0, m_lights.data(), m_lights.size() * sizeof(GpuLight));
@@ -595,10 +826,12 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
     {
         m_queue.WriteBuffer(m_boneBuffer, 0, m_world.boneMatrices.data(), m_world.boneMatrices.size() * sizeof(math::Mat4));
     }
-    std::vector<std::byte> draws(m_meshBatches.size() * uniformStride);
-    for (std::size_t batch = 0; batch < m_meshBatches.size(); ++batch)
+    // The draws of the camera, then those of the shadows.
+    std::vector<std::byte> draws(drawCount * uniformStride);
+    for (std::size_t batch = 0; batch < drawCount; ++batch)
     {
-        const DrawData data{.first = m_meshBatches[batch].firstInstance};
+        const DrawData data{.first = batch < m_meshBatches.size() ? m_meshBatches[batch].firstInstance
+                                                                  : m_shadowBatches[batch - m_meshBatches.size()].firstInstance};
         std::memcpy(draws.data() + batch * uniformStride, &data, sizeof(data));
     }
     if (!draws.empty())
@@ -606,11 +839,19 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
         m_queue.WriteBuffer(m_meshDrawBuffer, 0, draws.data(), draws.size());
     }
 
+    wgpu::TextureViewDescriptor cascadeArrayView;
+    cascadeArrayView.dimension = wgpu::TextureViewDimension::e2DArray;
+    const wgpu::TextureView cascadeArray = m_cascadeMap.CreateView(&cascadeArrayView);
     const std::array sceneEntries{bufferBinding(0, m_sceneBuffer, sizeof(SceneData)), bufferBinding(1, m_lightBuffer, lightBytes),
                                   bufferBinding(2, m_instanceBuffer, instanceBytes), bufferBinding(3, m_boneBuffer, boneBytes),
                                   viewBinding(4, cubeView(m_environment.irradiance)), viewBinding(5, cubeView(m_environment.specular)),
-                                  viewBinding(6, m_brdfTable.CreateView()), samplerBinding(7, m_clampSampler)};
+                                  viewBinding(6, m_brdfTable.CreateView()), samplerBinding(7, m_clampSampler),
+                                  bufferBinding(8, m_shadowViewBuffer, shadowViewBytes), viewBinding(9, cascadeArray),
+                                  viewBinding(10, m_atlasMap.CreateView()), samplerBinding(11, m_shadowSampler)};
     m_sceneGroup = bindGroup(m_device, m_sceneLayout, sceneEntries);
+    const std::array shadowEntries{bufferBinding(0, m_instanceBuffer, instanceBytes), bufferBinding(1, m_boneBuffer, boneBytes),
+                                   bufferBinding(2, m_shadowMatrixBuffer, sizeof(math::Mat4))};
+    m_shadowGroup = bindGroup(m_device, m_shadowLayout, shadowEntries);
     const std::array drawEntries{bufferBinding(0, m_meshDrawBuffer, sizeof(DrawData))};
     m_meshDrawGroup = bindGroup(m_device, m_meshDrawLayout, drawEntries);
 
@@ -634,6 +875,78 @@ void WebGpuRenderer::drawSky(const wgpu::RenderPassEncoder& pass)
     pass.SetBindGroup(0, m_skyGroup);
     pass.Draw(3);
     ++m_drawCalls;
+}
+
+void WebGpuRenderer::drawShadows(const wgpu::CommandEncoder& encoder)
+{
+    const auto drawBatches = [this](const wgpu::RenderPassEncoder& pass, const ShadowPass& shadow) {
+        const auto view = static_cast<std::uint32_t>(std::uint64_t{shadow.view} * uniformStride);
+        std::uint32_t bound = 0xFFFFFFFFU;
+        for (std::uint32_t batch = shadow.firstBatch; batch < shadow.firstBatch + shadow.batchCount; ++batch)
+        {
+            const MeshBatch& drawn = m_shadowBatches[batch];
+            GpuMaterial* const material = m_materials.find(drawn.material);
+            if (material == nullptr)
+            {
+                continue;
+            }
+            if (drawn.pipeline != bound)
+            {
+                pass.SetPipeline(m_shadowPipelines[drawn.pipeline]);
+                pass.SetBindGroup(0, m_shadowGroup, 1, &view);
+                bound = drawn.pipeline;
+            }
+            pass.SetBindGroup(1, materialGroup(*material));
+            const auto offset = static_cast<std::uint32_t>(std::uint64_t{m_meshBatches.size() + batch} * uniformStride);
+            pass.SetBindGroup(2, m_meshDrawGroup, 1, &offset);
+            pass.SetVertexBuffer(0, drawn.mesh->vertices);
+            if ((drawn.pipeline & skinnedBit) != 0)
+            {
+                pass.SetVertexBuffer(1, drawn.mesh->skin);
+            }
+            pass.SetIndexBuffer(drawn.mesh->indices, wgpu::IndexFormat::Uint32);
+            const asset::Submesh& submesh = drawn.mesh->submeshes[drawn.submesh];
+            pass.DrawIndexed(submesh.indexCount, drawn.instanceCount, submesh.firstIndex);
+            ++m_drawCalls;
+        }
+    };
+    const auto begin = [&encoder](const wgpu::TextureView& target, const char* label) {
+        wgpu::RenderPassDepthStencilAttachment depth;
+        depth.view = target;
+        depth.depthLoadOp = wgpu::LoadOp::Clear;
+        depth.depthStoreOp = wgpu::StoreOp::Store;
+        depth.depthClearValue = 1.0f;
+        wgpu::RenderPassDescriptor descriptor;
+        descriptor.label = label;
+        descriptor.depthStencilAttachment = &depth;
+        return encoder.BeginRenderPass(&descriptor);
+    };
+    // Each cascade into its layer.
+    for (const ShadowPass& shadow : m_shadowPasses)
+    {
+        if (!shadow.atlas)
+        {
+            const wgpu::RenderPassEncoder pass = begin(m_cascadeLayers[shadow.layer], "Cascade");
+            drawBatches(pass, shadow);
+            pass.End();
+        }
+    }
+    // The lights into their tiles of the atlas, at once.
+    if (std::ranges::any_of(m_shadowPasses, [](const ShadowPass& shadow) { return shadow.atlas; }))
+    {
+        const wgpu::RenderPassEncoder pass = begin(m_atlasMap.CreateView(), "Shadow atlas");
+        for (const ShadowPass& shadow : m_shadowPasses)
+        {
+            if (shadow.atlas)
+            {
+                pass.SetViewport(shadow.viewport[0], shadow.viewport[1], shadow.viewport[2], shadow.viewport[3], 0.0f, 1.0f);
+                pass.SetScissorRect(static_cast<std::uint32_t>(shadow.viewport[0]), static_cast<std::uint32_t>(shadow.viewport[1]),
+                                    static_cast<std::uint32_t>(shadow.viewport[2]), static_cast<std::uint32_t>(shadow.viewport[3]));
+                drawBatches(pass, shadow);
+            }
+        }
+        pass.End();
+    }
 }
 
 void WebGpuRenderer::drawMeshes(const wgpu::RenderPassEncoder& pass, bool blended)

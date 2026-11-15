@@ -132,3 +132,19 @@ public float handedness(float4x4 world)
     const float3x3 columns = transpose(float3x3(world));
     return sign(dot(columns[0], cross(columns[1], columns[2])) + 1e-12);
 }
+
+// The face of the cube around a point light that a direction falls in, in the order the renderer
+// writes them: +X, -X, +Y, -Y, +Z, -Z.
+public uint cubeFace(float3 direction)
+{
+    const float3 magnitude = abs(direction);
+    if (magnitude.x >= magnitude.y && magnitude.x >= magnitude.z)
+    {
+        return direction.x > 0.0 ? 0 : 1;
+    }
+    if (magnitude.y >= magnitude.z)
+    {
+        return direction.y > 0.0 ? 2 : 3;
+    }
+    return direction.z > 0.0 ? 4 : 5;
+}

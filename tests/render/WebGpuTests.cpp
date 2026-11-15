@@ -152,7 +152,8 @@ private:
 
 
 // The window of a 3D scene drawn by one API: a rough sphere and a metallic one, a textured box on a plane and a
-// skinned box, lit by the sun, a point light, a spot and the environment baked from a sky texture, without shadows.
+// skinned box, lit by the sun, a point light and a spot, which cast shadows, and the environment baked from a sky
+// texture.
 [[nodiscard]] devex::render::CapturedImage drawMeshes(devex::render::RenderApi api)
 {
     auto platform = devex::platform::Platform::create();
@@ -226,15 +227,16 @@ private:
         world.environment.rotation = 0.5f;
         world.sun.direction = {-0.4f, -1.0f, -0.5f};
         world.sun.illuminance = {2.5f, 2.4f, 2.2f};
-        world.sun.castShadows = false;
-        world.lights.push_back({.position = {1.5f, 1.0f, 1.0f}, .intensity = {3.0f, 1.0f, 0.5f}, .range = 5.0f});
+        world.sun.castShadows = true;
+        world.lights.push_back({.position = {1.5f, 1.0f, 1.0f}, .intensity = {3.0f, 1.0f, 0.5f}, .range = 5.0f, .castShadows = true});
         world.lights.push_back({.type = devex::render::LightType::Spot,
                                 .position = {-1.5f, 2.5f, 1.0f},
                                 .direction = {0.3f, -1.0f, -0.2f},
                                 .intensity = {0.5f, 1.0f, 4.0f},
                                 .range = 6.0f,
                                 .innerAngle = 0.3f,
-                                .outerAngle = 0.6f});
+                                .outerAngle = 0.6f,
+                                .castShadows = true});
         world.meshes.push_back({.mesh = *plane, .material = ground});
         world.meshes.push_back({.mesh = *sphere, .material = rough, .transform = at(-1.2f, 0.5f, 0.0f)});
         world.meshes.push_back({.mesh = *sphere, .material = metal, .transform = at(0.0f, 0.5f, -0.5f)});
@@ -321,7 +323,7 @@ TEST_CASE("WebGPU draws a 2D scene and its interface as Vulkan does", "[render][
     CHECK(capture.errors().empty());
 }
 
-TEST_CASE("WebGPU draws lit meshes as Vulkan does", "[render][gpu][webgpu]")
+TEST_CASE("WebGPU draws lit meshes and their shadows as Vulkan does", "[render][gpu][webgpu]")
 {
     const ErrorCapture capture;
     const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan);

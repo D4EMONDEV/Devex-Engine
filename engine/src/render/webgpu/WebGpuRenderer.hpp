@@ -118,6 +118,19 @@ private:
         std::uint32_t instanceCount = 0;
         float distance = 0.0f;
     };
+    // A pass that draws the depth of the casters of one view of the shadows.
+    struct ShadowPass
+    {
+        // Its batches among m_shadowBatches.
+        std::uint32_t firstBatch = 0;
+        std::uint32_t batchCount = 0;
+        // Its matrix, at its offset among those of the views.
+        std::uint32_t view = 0;
+        // A cascade draws into its layer of the map, a light into its tile of the atlas, in pixels.
+        bool atlas = false;
+        std::uint32_t layer = 0;
+        std::array<float, 4> viewport{};
+    };
     // The light of the environment: its maps, baked from the sky texture as Vulkan bakes them, or white for a sky of
     // one colour, which the colour then tints.
     struct Environment
@@ -192,6 +205,8 @@ private:
     // The meshes of the frame by batches, and the data the scene pass reads of them.
     void prepareMeshes(const ViewMatrices& matrices, const Frustum& frustum);
     void drawSky(const wgpu::RenderPassEncoder& pass);
+    // The depth of the shadow casters, into the cascades of the sun and the atlas of the local lights.
+    void drawShadows(const wgpu::CommandEncoder& encoder);
     void drawMeshes(const wgpu::RenderPassEncoder& pass, bool blended);
 
     platform::Window& m_window;
@@ -292,6 +307,24 @@ private:
     MaterialHandle m_defaultMaterial;
     std::vector<MeshBatch> m_meshBatches;
     std::vector<GpuLight> m_lights;
+
+    // The shadows: the cascades of the sun in the layers of one map, those of the local lights in tiles of an atlas.
+    wgpu::Texture m_cascadeMap;
+    std::array<wgpu::TextureView, 4> m_cascadeLayers;
+    wgpu::Texture m_atlasMap;
+    wgpu::Sampler m_shadowSampler;
+    wgpu::BindGroupLayout m_shadowLayout;
+    // 1 skinned + 2 the atlas, whose slope bias is larger.
+    std::array<wgpu::RenderPipeline, 4> m_shadowPipelines;
+    // Depth clamped rather than clipped, as Vulkan draws shadows, where the device can.
+    bool m_unclippedDepth = false;
+    wgpu::Buffer m_shadowViewBuffer;
+    std::uint64_t m_shadowViewCapacity = 0;
+    wgpu::Buffer m_shadowMatrixBuffer;
+    std::uint64_t m_shadowMatrixCapacity = 0;
+    wgpu::BindGroup m_shadowGroup;
+    std::vector<MeshBatch> m_shadowBatches;
+    std::vector<ShadowPass> m_shadowPasses;
     core::SlotMap<Empty, ShaderTag> m_shaders;
     core::SlotMap<Empty, ReflectionProbeTag> m_probes;
     core::SlotMap<Empty, IrradianceVolumeTag> m_volumes;

@@ -118,7 +118,7 @@ void reportError(wgpu::ErrorType type, wgpu::StringView message)
 {
     std::vector<wgpu::FeatureName> features;
     for (const wgpu::FeatureName feature :
-         {wgpu::FeatureName::TextureCompressionBC, wgpu::FeatureName::TextureCompressionASTC})
+         {wgpu::FeatureName::TextureCompressionBC, wgpu::FeatureName::TextureCompressionASTC, wgpu::FeatureName::DepthClipControl})
     {
         if (adapter.HasFeature(feature))
         {
@@ -1327,6 +1327,7 @@ core::Result<void> WebGpuRenderer::endFrame()
     m_tonemapGroup = bindGroup(m_device, m_tonemapLayout, tonemapEntries);
 
     const wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
+    drawShadows(encoder);
     {
         // The sky covers the image, then the opaque meshes, the blended ones from the farthest, and the sprites.
         wgpu::RenderPassColorAttachment color;

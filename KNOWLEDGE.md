@@ -3991,3 +3991,6 @@ public:
   transparent. Un uniforme WGSL est arrondi à 16 octets : la structure C++ doit l'être aussi, sinon le binding est trop petit.
 - `ibl.slang` se compile pour WebGPU avec `-DDEVEX_WEBGPU=1` (que `devex_embed_wgsl` passe à tous) : paramètres dans un
   uniforme, sorties `WTexture` en écriture seule (rgba16float ne s'écrit pas en lecture-écriture en WGSL).
+- Ombres WebGPU : les shaders lisent les cartes avec les matrices de Vulkan (Y vers le bas, coordonnées de texture vers le
+  bas) et les passes les dessinent avec `flipY() * matrice`. Une carte de profondeur se déclare `DepthTexture2D` /
+  `DepthTexture2DArray` en Slang, sinon le WGSL en fait une `texture_2d<f32>` que `textureSampleCompare` refuse.

@@ -56,22 +56,6 @@ float sunShadow(SceneData* scene, Surface surface)
     return 1.0;
 }
 
-// The face of the cube around a point light that a direction falls in, in the order the renderer
-// writes them: +X, -X, +Y, -Y, +Z, -Z.
-uint cubeFace(float3 direction)
-{
-    const float3 magnitude = abs(direction);
-    if (magnitude.x >= magnitude.y && magnitude.x >= magnitude.z)
-    {
-        return direction.x > 0.0 ? 0 : 1;
-    }
-    if (magnitude.y >= magnitude.z)
-    {
-        return direction.y > 0.0 ? 2 : 3;
-    }
-    return direction.z > 0.0 ? 4 : 5;
-}
-
 // How much of a local light reaches the surface: 1 in the open, 0 behind something it lights.
 float localShadow(SceneData* scene, Surface surface, Light light, float3 toSurface)
 {

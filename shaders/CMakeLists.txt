@@ -39,6 +39,7 @@ devex_add_shaders(devex_shaders
         ui_shape.slang
         webgpu_luminance.slang
         webgpu_mesh.slang
+        webgpu_shadow.slang
         webgpu_sky.slang
         webgpu_sprite.slang
         webgpu_tonemap.slang
