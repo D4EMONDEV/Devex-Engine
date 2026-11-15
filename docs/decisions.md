@@ -5829,6 +5829,13 @@ Les étapes, chacune livrable et testée :
    - Décidé le 2026-11-15 : **l'air physique après la 1.0** (le ciel de l'atmosphère, le disque du soleil, le voile du lointain,
      dont il faudrait porter les tables précalculées) : c'est le plus gros morceau de 3c pour le moins de jeux. 3c garde le
      brouillard de hauteur et les particules.
+   - 3c, le brouillard et les particules ✅ : le brouillard de hauteur voile les maillages, les particules et le ciel comme sous
+     Vulkan (`heightFogOpacity` et `henyeyGreenstein` partagés). Les particules, douces ou non, étirées, à plat ou face à la
+     caméra, et les traînées se dessinent avec la forme et la couleur partagées dans `particle_shape.slang`, préparées par
+     `packParticles` comme pour Vulkan. Les surfaces transparentes, les particules et les sprites passent dans l'ordre de
+     Vulkan (calque, ordre, du plus loin), dans une passe qui lit la profondeur sans l'écrire, que les particules douces
+     lisent. La scène WebGPU devient un module, `webgpu_scene.slang`, que les maillages, le ciel et les particules importent.
+     Le test de la 3D compare maintenant aussi le brouillard, des particules douces, additives et étirées, et une traînée.
 4. **Web** dans la liste de l'export, avec **Run in Browser** sur un petit serveur local, et les problèmes en rouge.
 5. Le C++ des jeux compilé avec Emscripten.
 6. Saisie, plein écran, souris capturée, son et sauvegardes dans le navigateur.

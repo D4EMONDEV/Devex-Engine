@@ -118,6 +118,23 @@ private:
         std::uint32_t instanceCount = 0;
         float distance = 0.0f;
     };
+    // What the pass of blended things draws, in Vulkan's order: by layer, then order, then from the farthest. A blended
+    // batch of meshes, a draw of particles, or runs of sprites that follow each other.
+    struct TransparentDraw
+    {
+        enum class Kind : std::uint8_t
+        {
+            Mesh,
+            Particles,
+            Sprites,
+        };
+        Kind kind = Kind::Mesh;
+        // The batch of meshes, or the draw of particles of the world.
+        std::uint32_t index = 0;
+        // The runs of sprites, among m_spriteRuns.
+        std::uint32_t firstRun = 0;
+        std::uint32_t runCount = 0;
+    };
     // A pass that draws the depth of the casters of one view of the shadows.
     struct ShadowPass
     {
@@ -210,6 +227,15 @@ private:
     // The depth of the shadow casters, into the cascades of the sun and the atlas of the local lights.
     void drawShadows(const wgpu::CommandEncoder& encoder);
     void drawMeshes(const wgpu::RenderPassEncoder& pass, bool blended);
+    void drawMeshBatch(const wgpu::RenderPassEncoder& pass, std::uint32_t batch, std::uint32_t& bound);
+    // The particles of the frame, and the order of what is blended, in WebGpuScene.cpp.
+    [[nodiscard]] core::Result<void> createParticlePipelines();
+    void prepareParticles(const ViewMatrices& matrices);
+    void orderTransparent(const ViewMatrices& matrices);
+    void drawTransparent(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& sprites);
+    // How far a point is from the camera for sorting, as Vulkan measures it: along the view for an orthographic camera,
+    // squared otherwise.
+    [[nodiscard]] float sortDistance(math::Vec3 point, math::Vec3 cameraPosition) const noexcept;
 
     platform::Window& m_window;
     RendererConfig m_config;
@@ -294,12 +320,10 @@ private:
     wgpu::BindGroupLayout m_sceneLayout;
     wgpu::BindGroupLayout m_materialLayout;
     wgpu::BindGroupLayout m_meshDrawLayout;
-    wgpu::BindGroupLayout m_skyLayout;
     // Rigid or skinned, one side or both, opaque or blended: the index is 1 skinned + 2 both sides + 4 blended.
     std::array<wgpu::RenderPipeline, 8> m_meshPipelines;
     wgpu::RenderPipeline m_skyPipeline;
     wgpu::Buffer m_sceneBuffer;
-    wgpu::Buffer m_skyBuffer;
     wgpu::Buffer m_lightBuffer;
     std::uint64_t m_lightCapacity = 0;
     wgpu::Buffer m_instanceBuffer;
@@ -310,7 +334,6 @@ private:
     std::uint64_t m_meshDrawCapacity = 0;
     wgpu::BindGroup m_sceneGroup;
     wgpu::BindGroup m_meshDrawGroup;
-    wgpu::BindGroup m_skyGroup;
     wgpu::Texture m_brdfTable;
     Environment m_environment;
     // The default material, for an instance whose material is gone.
@@ -335,6 +358,26 @@ private:
     wgpu::BindGroup m_shadowGroup;
     std::vector<MeshBatch> m_shadowBatches;
     std::vector<ShadowPass> m_shadowPasses;
+
+    // The particles and the ribbons of the frame.
+    wgpu::BindGroupLayout m_particleLayout;
+    wgpu::BindGroupLayout m_particleDrawLayout;
+    // Particles, then ribbons.
+    std::array<wgpu::RenderPipeline, 2> m_particlePipelines;
+    std::vector<GpuParticle> m_particles;
+    std::vector<GpuTrailPoint> m_points;
+    wgpu::Buffer m_particleBuffer;
+    std::uint64_t m_particleCapacity = 0;
+    wgpu::Buffer m_pointBuffer;
+    std::uint64_t m_pointCapacity = 0;
+    wgpu::Buffer m_segmentBuffer;
+    std::uint64_t m_segmentCapacity = 0;
+    wgpu::Buffer m_particleDrawBuffer;
+    std::uint64_t m_particleDrawCapacity = 0;
+    // The data and texture of each draw of particles.
+    std::vector<wgpu::BindGroup> m_particleGroups;
+    wgpu::BindGroup m_particleDrawGroup;
+    std::vector<TransparentDraw> m_transparentDraws;
     core::SlotMap<Empty, ShaderTag> m_shaders;
     core::SlotMap<Empty, ReflectionProbeTag> m_probes;
     core::SlotMap<Empty, IrradianceVolumeTag> m_volumes;

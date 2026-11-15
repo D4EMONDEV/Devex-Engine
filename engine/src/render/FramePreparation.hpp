@@ -53,6 +53,11 @@ struct PackedAtmosphere
 // their views.
 DEVEX_API void packLights(const RenderWorld& world, std::vector<GpuLight>& lights);
 
+// The particles and the points of the trails of the world as the shaders read them: the particles of a blended draw
+// sorted from the farthest from `camera`, those of an additive one as they come.
+DEVEX_API void packParticles(const RenderWorld& world, math::Vec3 camera, std::vector<GpuParticle>& packed,
+                             std::vector<GpuTrailPoint>& points);
+
 // The interface of the frame in one list of vertices and one of indices: that of the scene, then each surface, then the
 // layer of the tools, which only the tools draw. A surface counts its indices from its own first vertex, placed after what
 // came before; where each surface and the tools start among the indices.

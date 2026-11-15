@@ -148,3 +148,28 @@ public uint cubeFace(float3 direction)
     }
     return direction.z > 0.0 ? 4 : 5;
 }
+
+// Phase of Henyey-Greenstein: the share of the light turned by an angle, forward for g towards 1.
+public float henyeyGreenstein(float cosAngle, float g)
+{
+    const float g2 = g * g;
+    return (1.0 - g2) / (4.0 * pi * pow(max(1.0 + g2 - 2.0 * g * cosAngle, 1e-4), 1.5));
+}
+
+// The height fog between a point and another `distance` meters away in a direction: what it hides of the far one, from
+// 0 to `maxOpacity`, integrated along the ray as its density falls with height, from `start` meters.
+public float heightFogOpacity(float3 origin, float3 direction, float distance, float start, float fogDensity, float falloff,
+                              float height, float maxOpacity)
+{
+    const float span = distance - start;
+    if (span <= 0.0 || fogDensity <= 0.0)
+    {
+        return 0.0;
+    }
+    const float thinning = 1.0 / max(falloff, 1e-3);
+    const float startHeight = origin.y + direction.y * start - height;
+    const float density = fogDensity * exp(clamp(-startHeight * thinning, -80.0, 80.0));
+    const float rise = direction.y * span * thinning;
+    const float depth = abs(rise) > 1e-4 ? density * span * (1.0 - exp(clamp(-rise, -80.0, 80.0))) / rise : density * span;
+    return min(1.0 - exp(-depth), maxOpacity);
+}

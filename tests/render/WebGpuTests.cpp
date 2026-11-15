@@ -153,7 +153,7 @@ private:
 
 // The window of a 3D scene drawn by one API: a rough sphere and a metallic one, a textured box on a plane and a
 // skinned box, lit by the sun, a point light and a spot, which cast shadows, and the environment baked from a sky
-// texture.
+// texture, in a height fog, with particles and a ribbon.
 [[nodiscard]] devex::render::CapturedImage drawMeshes(devex::render::RenderApi api)
 {
     auto platform = devex::platform::Platform::create();
@@ -228,6 +228,12 @@ private:
         world.sun.direction = {-0.4f, -1.0f, -0.5f};
         world.sun.illuminance = {2.5f, 2.4f, 2.2f};
         world.sun.castShadows = true;
+        // A height fog, lit by the sky and the sun, which melts into the sky far away.
+        world.fog.enabled = true;
+        world.fog.density = 0.08f;
+        world.fog.height = 0.5f;
+        world.fog.falloff = 2.0f;
+        world.fog.startDistance = 1.0f;
         world.lights.push_back({.position = {1.5f, 1.0f, 1.0f}, .intensity = {3.0f, 1.0f, 0.5f}, .range = 5.0f, .castShadows = true});
         world.lights.push_back({.type = devex::render::LightType::Spot,
                                 .position = {-1.5f, 2.5f, 1.0f},
@@ -242,6 +248,30 @@ private:
         world.meshes.push_back({.mesh = *sphere, .material = metal, .transform = at(0.0f, 0.5f, -0.5f)});
         world.meshes.push_back({.mesh = *cube, .material = textured, .transform = at(1.3f, 0.5f, 0.0f)});
         world.meshes.push_back({.mesh = *cube, .material = glass, .transform = at(0.2f, 0.5f, 1.2f)});
+        // Soft particles that fade into the ground, additive ones stretched along their motion, and a lit ribbon.
+        for (int index = 0; index < 6; ++index)
+        {
+            const float offset = static_cast<float>(index);
+            world.particles.push_back({.position = {-1.8f + offset * 0.3f, 0.1f + offset * 0.05f, 1.5f}, .size = 0.6f,
+                                       .color = {0.9f, 0.9f, 1.0f, 0.6f}, .rotation = offset});
+        }
+        world.particleDraws.push_back({.first = 0, .count = 6, .softness = 0.4f, .center = {-1.0f, 0.2f, 1.5f}});
+        for (int index = 0; index < 4; ++index)
+        {
+            const float offset = static_cast<float>(index);
+            world.particles.push_back({.position = {0.8f + offset * 0.2f, 1.4f, 0.5f}, .size = 0.15f, .color = {1.0f, 0.6f, 0.2f, 1.0f},
+                                       .stretch = {0.1f, 0.3f, 0.0f}});
+        }
+        world.particleDraws.push_back({.first = 6, .count = 4, .blend = devex::render::ParticleBlend::Additive,
+                                       .facing = devex::render::ParticleFacing::Stretched, .center = {1.1f, 1.4f, 0.5f}});
+        for (int index = 0; index < 4; ++index)
+        {
+            const float offset = static_cast<float>(index);
+            world.trailPoints.push_back({.position = {-1.5f + offset * 0.5f, 1.8f + offset * 0.1f, 0.0f}, .width = 0.2f,
+                                         .color = {0.3f, 1.0f, 0.5f, 0.8f}, .direction = {1.0f, 0.2f, 0.0f}, .u = offset / 3.0f});
+        }
+        world.trailSegments = {0, 1, 2};
+        world.particleDraws.push_back({.ribbons = true, .first = 0, .count = 3, .lit = true, .center = {-0.75f, 1.95f, 0.0f}});
         // The skinned box, moved by its bone.
         world.boneMatrices.push_back(at(-0.6f, 0.3f, 1.4f));
         world.meshes.push_back({.mesh = *skinned, .material = rough, .firstBone = 0, .boneCount = 1});
@@ -390,7 +420,7 @@ TEST_CASE("WebGPU draws a 2D scene and its interface as Vulkan does", "[render][
     CHECK(capture.errors().empty());
 }
 
-TEST_CASE("WebGPU draws lit meshes and their shadows as Vulkan does", "[render][gpu][webgpu]")
+TEST_CASE("WebGPU draws lit meshes, their shadows, the fog and particles as Vulkan does", "[render][gpu][webgpu]")
 {
     const ErrorCapture capture;
     const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan);

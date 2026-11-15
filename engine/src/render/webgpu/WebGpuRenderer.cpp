@@ -464,6 +464,10 @@ core::Result<void> WebGpuRenderer::initialize()
     {
         return scene;
     }
+    if (core::Result<void> particles = createParticlePipelines(); !particles)
+    {
+        return particles;
+    }
     return {};
 }
 
@@ -735,7 +739,8 @@ void WebGpuRenderer::ensureSceneTarget(math::Extent2D size)
     depth.label = "Depth";
     depth.size = {size.width, size.height, 1};
     depth.format = wgpu::TextureFormat::Depth32Float;
-    depth.usage = wgpu::TextureUsage::RenderAttachment;
+    // Particles read it to fade where they meet a surface.
+    depth.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
     m_depthTarget = m_device.CreateTexture(&depth);
     m_depthView = m_depthTarget.CreateView();
     m_sceneSize = size;
@@ -1255,17 +1260,8 @@ core::Result<void> WebGpuRenderer::endFrame()
     const Frustum frustum = frustumOf(matrices.unjitteredViewProjection);
     prepareMeshes(matrices, frustum);
     gatherSprites(m_world, frustum, resources, m_spriteFrame);
-    m_spriteRuns.clear();
-    for (std::uint32_t index = 0; index < m_spriteFrame.sprites.size(); ++index)
-    {
-        const std::uint32_t texture = m_spriteFrame.sprites[index].texture;
-        const std::uint32_t normalTexture = m_spriteFrame.sprites[index].normalTexture;
-        if (m_spriteRuns.empty() || m_spriteRuns.back().texture != texture || m_spriteRuns.back().normalTexture != normalTexture)
-        {
-            m_spriteRuns.push_back({.first = index, .count = 0, .texture = texture, .normalTexture = normalTexture});
-        }
-        ++m_spriteRuns.back().count;
-    }
+    prepareParticles(matrices);
+    orderTransparent(matrices);
     const std::uint64_t spriteBytes = std::max<std::size_t>(m_spriteFrame.sprites.size(), 1) * sizeof(GpuSprite);
     growBuffer(m_spriteBuffer, m_spriteCapacity, spriteBytes, wgpu::BufferUsage::Storage, "Sprites");
     if (!m_spriteFrame.sprites.empty())
@@ -1373,7 +1369,7 @@ core::Result<void> WebGpuRenderer::endFrame()
     const wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
     drawShadows(encoder);
     {
-        // The sky covers the image, then the opaque meshes, the blended ones from the farthest, and the sprites.
+        // The sky covers the image, then the opaque meshes; what is blended follows in a pass of its own.
         wgpu::RenderPassColorAttachment color;
         color.view = m_sceneView;
         color.loadOp = wgpu::LoadOp::Clear;
@@ -1383,7 +1379,7 @@ core::Result<void> WebGpuRenderer::endFrame()
         wgpu::RenderPassDepthStencilAttachment depth;
         depth.view = m_depthView;
         depth.depthLoadOp = wgpu::LoadOp::Clear;
-        depth.depthStoreOp = wgpu::StoreOp::Discard;
+        depth.depthStoreOp = wgpu::StoreOp::Store;
         depth.depthClearValue = 0.0f;
         wgpu::RenderPassDescriptor descriptor;
         descriptor.label = "Scene";
@@ -1393,20 +1389,25 @@ core::Result<void> WebGpuRenderer::endFrame()
         const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
         drawSky(pass);
         drawMeshes(pass, false);
-        drawMeshes(pass, true);
-        if (!m_spriteRuns.empty())
-        {
-            pass.SetPipeline(m_spritePipeline);
-            for (std::uint32_t run = 0; run < m_spriteRuns.size(); ++run)
-            {
-                const SpriteRun& drawn = m_spriteRuns[run];
-                const auto offset = static_cast<std::uint32_t>(std::uint64_t{run} * uniformStride);
-                pass.SetBindGroup(0, spriteGroup, 1, &offset);
-                pass.SetBindGroup(1, drawn.group);
-                pass.Draw(6, drawn.count);
-                ++m_drawCalls;
-            }
-        }
+        pass.End();
+    }
+    {
+        // Blended meshes, particles and sprites, in Vulkan's order, testing the depth of the opaque surfaces without
+        // writing it, which particles read to fade where they meet them.
+        wgpu::RenderPassColorAttachment color;
+        color.view = m_sceneView;
+        color.loadOp = wgpu::LoadOp::Load;
+        color.storeOp = wgpu::StoreOp::Store;
+        wgpu::RenderPassDepthStencilAttachment depth;
+        depth.view = m_depthView;
+        depth.depthReadOnly = true;
+        wgpu::RenderPassDescriptor descriptor;
+        descriptor.label = "Blended";
+        descriptor.colorAttachmentCount = 1;
+        descriptor.colorAttachments = &color;
+        descriptor.depthStencilAttachment = &depth;
+        const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+        drawTransparent(pass, spriteGroup);
         pass.End();
     }
 

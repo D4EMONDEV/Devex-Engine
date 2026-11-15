@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <span>
@@ -165,6 +166,65 @@ void packLights(const RenderWorld& world, std::vector<GpuLight>& lights)
             gpuLight.spotOffset = -cosOuter * gpuLight.spotScale;
         }
         lights.push_back(gpuLight);
+    }
+}
+
+void packParticles(const RenderWorld& world, math::Vec3 camera, std::vector<GpuParticle>& packed, std::vector<GpuTrailPoint>& points)
+{
+    const std::vector<RenderParticle>& particles = world.particles;
+    packed.resize(particles.size());
+    std::vector<std::pair<float, std::uint32_t>> order;
+    const auto convert = [](const RenderParticle& particle) {
+        return GpuParticle{
+            .position = particle.position,
+            .size = particle.size,
+            .color = particle.color,
+            .stretch = particle.stretch,
+            .rotation = particle.rotation,
+            .frame = particle.frame,
+        };
+    };
+    for (const ParticleDraw& draw : world.particleDraws)
+    {
+        if (draw.ribbons || draw.first >= particles.size())
+        {
+            continue;
+        }
+        const std::uint32_t end = std::min<std::uint32_t>(draw.first + draw.count, static_cast<std::uint32_t>(particles.size()));
+        if (draw.blend == ParticleBlend::Additive)
+        {
+            for (std::uint32_t index = draw.first; index < end; ++index)
+            {
+                packed[index] = convert(particles[index]);
+            }
+            continue;
+        }
+        order.clear();
+        for (std::uint32_t index = draw.first; index < end; ++index)
+        {
+            const math::Vec3 toCamera = particles[index].position - camera;
+            order.emplace_back(math::dot(toCamera, toCamera), index);
+        }
+        std::ranges::sort(order, std::greater{}, &std::pair<float, std::uint32_t>::first);
+        std::uint32_t slot = draw.first;
+        for (const auto& [distance, index] : order)
+        {
+            static_cast<void>(distance);
+            packed[slot++] = convert(particles[index]);
+        }
+    }
+
+    points.resize(world.trailPoints.size());
+    for (std::size_t index = 0; index < world.trailPoints.size(); ++index)
+    {
+        const RenderTrailPoint& point = world.trailPoints[index];
+        points[index] = GpuTrailPoint{
+            .position = point.position,
+            .width = point.width,
+            .color = point.color,
+            .direction = point.direction,
+            .u = point.u,
+        };
     }
 }
 

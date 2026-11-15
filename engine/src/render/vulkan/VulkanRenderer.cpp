@@ -5016,62 +5016,7 @@ std::uint32_t VulkanRenderer::drawSpriteRun(VkCommandBuffer commandBuffer, VkDev
 
 core::Result<void> VulkanRenderer::uploadParticles(FrameContext& frame) const
 {
-    // Blended batches are drawn from their farthest particle, as seen from the camera of the frame.
-    const math::Vec3 camera = math::Vec3(math::inverse(m_world.camera.view)[3]);
-    const std::vector<RenderParticle>& particles = m_world.particles;
-    m_gpuParticles.resize(particles.size());
-    const auto convert = [](const RenderParticle& particle) {
-        return GpuParticle{
-            .position = particle.position,
-            .size = particle.size,
-            .color = particle.color,
-            .stretch = particle.stretch,
-            .rotation = particle.rotation,
-            .frame = particle.frame,
-        };
-    };
-    for (const ParticleDraw& draw : m_world.particleDraws)
-    {
-        if (draw.ribbons || draw.first >= particles.size())
-        {
-            continue;
-        }
-        const std::uint32_t end = std::min<std::uint32_t>(draw.first + draw.count, static_cast<std::uint32_t>(particles.size()));
-        if (draw.blend == ParticleBlend::Additive)
-        {
-            for (std::uint32_t index = draw.first; index < end; ++index)
-            {
-                m_gpuParticles[index] = convert(particles[index]);
-            }
-            continue;
-        }
-        m_particleOrder.clear();
-        for (std::uint32_t index = draw.first; index < end; ++index)
-        {
-            const math::Vec3 toCamera = particles[index].position - camera;
-            m_particleOrder.emplace_back(math::dot(toCamera, toCamera), index);
-        }
-        std::ranges::sort(m_particleOrder, std::greater{}, &std::pair<float, std::uint32_t>::first);
-        std::uint32_t slot = draw.first;
-        for (const auto& [distance, index] : m_particleOrder)
-        {
-            static_cast<void>(distance);
-            m_gpuParticles[slot++] = convert(particles[index]);
-        }
-    }
-
-    m_gpuTrailPoints.resize(m_world.trailPoints.size());
-    for (std::size_t index = 0; index < m_world.trailPoints.size(); ++index)
-    {
-        const RenderTrailPoint& point = m_world.trailPoints[index];
-        m_gpuTrailPoints[index] = GpuTrailPoint{
-            .position = point.position,
-            .width = point.width,
-            .color = point.color,
-            .direction = point.direction,
-            .u = point.u,
-        };
-    }
+    packParticles(m_world, math::Vec3(math::inverse(m_world.camera.view)[3]), m_gpuParticles, m_gpuTrailPoints);
 
     const VkDeviceSize particleBytes = std::max<std::size_t>(m_gpuParticles.size(), 1) * sizeof(GpuParticle);
     const VkDeviceSize pointBytes = std::max<std::size_t>(m_gpuTrailPoints.size(), 1) * sizeof(GpuTrailPoint);

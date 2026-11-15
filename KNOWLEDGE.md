@@ -3994,3 +3994,6 @@ public:
 - Ombres WebGPU : les shaders lisent les cartes avec les matrices de Vulkan (Y vers le bas, coordonnées de texture vers le
   bas) et les passes les dessinent avec `flipY() * matrice`. Une carte de profondeur se déclare `DepthTexture2D` /
   `DepthTexture2DArray` en Slang, sinon le WGSL en fait une `texture_2d<f32>` que `textureSampleCompare` refuse.
+- WebGPU dessine en deux passes : la première écrit la profondeur (ciel, maillages opaques), la seconde la lit sans l'écrire
+  (`depthReadOnly`), et peut donc l'échantillonner pour les particules douces : transparents, particules et sprites y passent
+  dans l'ordre de Vulkan (`orderTransparent`). Un pipeline de cette passe doit avoir `depthWriteEnabled = false`.

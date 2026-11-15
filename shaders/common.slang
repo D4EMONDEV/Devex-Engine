@@ -635,28 +635,12 @@ public float3 atmosphereHaze(SceneData* scene, float3 exposed, float3 position)
     return exposed * (1.0 - haze.a) + haze.rgb * scene.exposure;
 }
 
-// Phase of Henyey-Greenstein: the share of the light turned by an angle, forward for g towards 1.
-public float henyeyGreenstein(float cosAngle, float g)
-{
-    const float g2 = g * g;
-    return (1.0 - g2) / (4.0 * pi * pow(max(1.0 + g2 - 2.0 * g * cosAngle, 1e-4), 1.5));
-}
-
 // The height fog between the camera and a point `distance` meters away in a direction: what it
 // hides of the point, from 0 to its most, integrated along the ray as its density falls with height.
 public float fogOpacity(Atmosphere* air, float3 origin, float3 direction, float distance)
 {
-    const float span = distance - air.fogStart;
-    if (span <= 0.0 || air.fogDensity <= 0.0)
-    {
-        return 0.0;
-    }
-    const float thinning = 1.0 / max(air.fogFalloff, 1e-3);
-    const float startHeight = origin.y + direction.y * air.fogStart - air.fogHeight;
-    const float density = air.fogDensity * exp(clamp(-startHeight * thinning, -80.0, 80.0));
-    const float rise = direction.y * span * thinning;
-    const float depth = abs(rise) > 1e-4 ? density * span * (1.0 - exp(clamp(-rise, -80.0, 80.0))) / rise : density * span;
-    return min(1.0 - exp(-depth), air.fogMaxOpacity);
+    return heightFogOpacity(origin, direction, distance, air.fogStart, air.fogDensity, air.fogFalloff, air.fogHeight,
+                            air.fogMaxOpacity);
 }
 
 // The light the fog sends towards the camera, in nits: the sky around it and the sun through it.

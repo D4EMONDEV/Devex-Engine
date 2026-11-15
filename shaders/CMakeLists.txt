@@ -32,6 +32,7 @@ devex_add_shaders(devex_shaders
         custom.slang
         geometry.slang
         particles.slang
+        particle_shape.slang
         pbr.slang
         sprite_shape.slang
         surface_shading.slang
@@ -39,6 +40,8 @@ devex_add_shaders(devex_shaders
         ui_shape.slang
         webgpu_luminance.slang
         webgpu_mesh.slang
+        webgpu_particle.slang
+        webgpu_scene.slang
         webgpu_shadow.slang
         webgpu_sky.slang
         webgpu_sprite.slang
@@ -54,6 +57,7 @@ devex_ship_shader_modules(devex_shader_modules
         common.slang
         custom.slang
         particles.slang
+        particle_shape.slang
         pbr.slang
         sprite_shape.slang
         surface_shading.slang

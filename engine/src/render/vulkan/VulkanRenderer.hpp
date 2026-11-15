@@ -755,7 +755,6 @@ private:
     // Scratch for the particles of the frame, kept between frames to avoid allocating.
     mutable std::vector<GpuParticle> m_gpuParticles;
     mutable std::vector<GpuTrailPoint> m_gpuTrailPoints;
-    mutable std::vector<std::pair<float, std::uint32_t>> m_particleOrder;
     mutable std::vector<std::uint32_t> m_transparentRun;
     // Blended instances of the frame, farthest first; kept between frames to avoid allocating.
     mutable std::vector<std::pair<float, std::uint32_t>> m_transparentOrder;

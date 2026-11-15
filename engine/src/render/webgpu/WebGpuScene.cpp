@@ -61,6 +61,28 @@ struct SceneData
     float shadowDistance = 0.0f;
     std::uint32_t sunCastsShadows = 0;
     float padding1[2]{};
+    math::Mat4 skyInverseViewProjection{1.0f};
+    math::Vec3 fogColor{0.0f};
+    float fogDensity = 0.0f;
+    float fogHeight = 0.0f;
+    float fogFalloff = 1.0f;
+    float fogStart = 0.0f;
+    float fogMaxOpacity = 1.0f;
+    float fogSunScattering = 0.0f;
+    float fogSunAnisotropy = 0.0f;
+    float fogSkyBlend = 0.0f;
+    float padding2 = 0.0f;
+    math::Mat4 inverseViewProjection{1.0f};
+};
+struct ParticleDrawData
+{
+    std::uint32_t first = 0;
+    std::uint32_t facing = 0;
+    std::uint32_t flags = 0;
+    std::uint32_t textured = 0;
+    math::Vec2 sheet{1.0f};
+    float softness = 0.0f;
+    std::uint32_t padding = 0;
 };
 struct InstanceData
 {
@@ -87,14 +109,6 @@ struct DrawData
     std::uint32_t first = 0;
     std::uint32_t padding[3]{};
 };
-struct SkyData
-{
-    math::Mat4 skyInverseViewProjection{1.0f};
-    math::Vec3 sky{1.0f};
-    float exposure = 1.0f;
-    float environmentRotation = 0.0f;
-    float padding[3]{};
-};
 struct BakeParameters
 {
     std::uint32_t size = 0;
@@ -105,8 +119,8 @@ struct BakeParameters
     // A uniform buffer of WGSL rounds its structures to 16 bytes.
     float padding[3]{};
 };
-static_assert(sizeof(SceneData) == 512 && sizeof(InstanceData) == 80 && sizeof(MaterialData) == 64 &&
-              sizeof(SkyData) == 96 && sizeof(BakeParameters) == 32);
+static_assert(sizeof(SceneData) == 688 && sizeof(ParticleDrawData) == 32 && sizeof(InstanceData) == 80 && sizeof(MaterialData) == 64 &&
+              sizeof(BakeParameters) == 32);
 
 constexpr std::uint32_t skinnedBit = 1;
 constexpr std::uint32_t atlasBit = 2;
@@ -184,7 +198,8 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
     const std::array sceneEntries{uniformEntry(0, both, false, sizeof(SceneData)), storageEntry(1, fragment),
                                   storageEntry(2, wgpu::ShaderStage::Vertex), storageEntry(3, wgpu::ShaderStage::Vertex),
                                   cubeEntry(4, fragment), cubeEntry(5, fragment), textureEntry(6, fragment), samplerEntry(7, fragment),
-                                  storageEntry(8, fragment), cascades, atlas, comparison};
+                                  storageEntry(8, fragment), cascades, atlas, comparison, textureEntry(12, fragment),
+                                  samplerEntry(13, fragment)};
     m_sceneLayout = bindGroupLayout(m_device, "Scene", sceneEntries);
     std::array<wgpu::BindGroupLayoutEntry, 11> materialEntries{};
     materialEntries[0] = uniformEntry(0, fragment, false, sizeof(MaterialData));
@@ -196,8 +211,6 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
     m_materialLayout = bindGroupLayout(m_device, "Material", materialEntries);
     const std::array drawEntries{uniformEntry(0, wgpu::ShaderStage::Vertex, true, sizeof(DrawData))};
     m_meshDrawLayout = bindGroupLayout(m_device, "Mesh draw", drawEntries);
-    const std::array skyEntries{uniformEntry(0, fragment, false, sizeof(SkyData)), textureEntry(1, fragment), samplerEntry(2, fragment)};
-    m_skyLayout = bindGroupLayout(m_device, "Sky", skyEntries);
 
     const wgpu::ShaderModule mesh = shaderModule("webgpu_mesh");
     const std::array meshGroups{m_sceneLayout, m_materialLayout, m_meshDrawLayout};
@@ -327,7 +340,7 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
     skyDepth.format = depthFormat;
     skyDepth.depthWriteEnabled = false;
     skyDepth.depthCompare = wgpu::CompareFunction::Always;
-    const std::array skyGroups{m_skyLayout};
+    const std::array skyGroups{m_sceneLayout};
     wgpu::RenderPipelineDescriptor skyPipeline;
     skyPipeline.label = "Sky";
     skyPipeline.layout = pipelineLayout(m_device, skyGroups);
@@ -342,9 +355,6 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
     scene.size = sizeof(SceneData);
     scene.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
     m_sceneBuffer = m_device.CreateBuffer(&scene);
-    scene.label = "Sky";
-    scene.size = sizeof(SkyData);
-    m_skyBuffer = m_device.CreateBuffer(&scene);
 
     // A flat normal, for the normal map of a material without one.
     wgpu::TextureDescriptor flat;
@@ -610,6 +620,19 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
         .environmentRotation = m_world.environment.rotation,
         .specularMipCount = static_cast<float>(m_environment.specularMips),
     };
+    // The height fog, as Vulkan packs it: a density of 0 without one.
+    scene.skyInverseViewProjection = math::inverse(matrices.skyViewProjection);
+    scene.inverseViewProjection = matrices.inverseViewProjection;
+    const GpuAtmosphere air = packAtmosphere(m_world, matrices.cameraPosition.y).gpu;
+    scene.fogColor = air.fogColor;
+    scene.fogDensity = air.fogDensity;
+    scene.fogHeight = air.fogHeight;
+    scene.fogFalloff = air.fogFalloff;
+    scene.fogStart = air.fogStart;
+    scene.fogMaxOpacity = air.fogMaxOpacity;
+    scene.fogSunScattering = air.fogSunScattering;
+    scene.fogSunAnisotropy = air.fogSunAnisotropy;
+    scene.fogSkyBlend = air.fogSkyBlend;
     if (cascades)
     {
         scene.sunCastsShadows = 1;
@@ -622,13 +645,6 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
         }
     }
     m_queue.WriteBuffer(m_sceneBuffer, 0, &scene, sizeof(scene));
-    const SkyData sky{
-        .skyInverseViewProjection = math::inverse(matrices.skyViewProjection),
-        .sky = scene.sky,
-        .exposure = m_exposure,
-        .environmentRotation = m_world.environment.rotation,
-    };
-    m_queue.WriteBuffer(m_skyBuffer, 0, &sky, sizeof(sky));
 
     // The instances the camera sees, by batches of one mesh, submesh, material and way to be drawn; blended ones alone,
     // the farthest first.
@@ -659,9 +675,7 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
         std::uint32_t pipeline = skinned ? skinnedBit : 0;
         pipeline |= description.doubleSided ? bothSidesBit : 0;
         pipeline |= description.alphaMode == asset::AlphaMode::Blend ? blendedBit : 0;
-        const math::Vec3 centre = math::Vec3(instance.transform[3]);
-        const math::Vec3 toCamera = centre - matrices.cameraPosition;
-        visible.push_back({&instance, mesh, material, pipeline, math::dot(toCamera, toCamera)});
+        visible.push_back({&instance, mesh, material, pipeline, sortDistance(math::Vec3(instance.transform[3]), matrices.cameraPosition)});
     }
     std::ranges::stable_sort(visible, [](const Visible& left, const Visible& right) {
         const bool leftBlended = (left.pipeline & blendedBit) != 0;
@@ -839,6 +853,13 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
         m_queue.WriteBuffer(m_meshDrawBuffer, 0, draws.data(), draws.size());
     }
 
+    // The sky texture, or white for a sky of one colour, wrapping around but not over the poles.
+    const GpuTexture* const skyTexture = m_textures.find(m_world.environment.sky);
+    wgpu::SamplerDescriptor wrap;
+    wrap.addressModeU = wgpu::AddressMode::Repeat;
+    wrap.addressModeV = wgpu::AddressMode::ClampToEdge;
+    wrap.magFilter = wrap.minFilter = wgpu::FilterMode::Linear;
+    wrap.mipmapFilter = wgpu::MipmapFilterMode::Linear;
     wgpu::TextureViewDescriptor cascadeArrayView;
     cascadeArrayView.dimension = wgpu::TextureViewDimension::e2DArray;
     const wgpu::TextureView cascadeArray = m_cascadeMap.CreateView(&cascadeArrayView);
@@ -847,7 +868,10 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
                                   viewBinding(4, cubeView(m_environment.irradiance)), viewBinding(5, cubeView(m_environment.specular)),
                                   viewBinding(6, m_brdfTable.CreateView()), samplerBinding(7, m_clampSampler),
                                   bufferBinding(8, m_shadowViewBuffer, shadowViewBytes), viewBinding(9, cascadeArray),
-                                  viewBinding(10, m_atlasMap.CreateView()), samplerBinding(11, m_shadowSampler)};
+                                  viewBinding(10, m_atlasMap.CreateView()), samplerBinding(11, m_shadowSampler),
+                                  viewBinding(12, skyTexture != nullptr && skyTexture->bindable ? skyTexture->texture.CreateView()
+                                                                                                : m_white.CreateView()),
+                                  samplerBinding(13, m_device.CreateSampler(&wrap))};
     m_sceneGroup = bindGroup(m_device, m_sceneLayout, sceneEntries);
     const std::array shadowEntries{bufferBinding(0, m_instanceBuffer, instanceBytes), bufferBinding(1, m_boneBuffer, boneBytes),
                                    bufferBinding(2, m_shadowMatrixBuffer, sizeof(math::Mat4))};
@@ -855,24 +879,12 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
     const std::array drawEntries{bufferBinding(0, m_meshDrawBuffer, sizeof(DrawData))};
     m_meshDrawGroup = bindGroup(m_device, m_meshDrawLayout, drawEntries);
 
-    // The sky texture, or white for a sky of one colour.
-    const GpuTexture* const skyTexture = m_textures.find(m_world.environment.sky);
-    wgpu::SamplerDescriptor wrap;
-    wrap.addressModeU = wgpu::AddressMode::Repeat;
-    wrap.addressModeV = wgpu::AddressMode::ClampToEdge;
-    wrap.magFilter = wrap.minFilter = wgpu::FilterMode::Linear;
-    wrap.mipmapFilter = wgpu::MipmapFilterMode::Linear;
-    const std::array skyEntries{bufferBinding(0, m_skyBuffer, sizeof(SkyData)),
-                                viewBinding(1, skyTexture != nullptr && skyTexture->bindable ? skyTexture->texture.CreateView()
-                                                                                             : m_white.CreateView()),
-                                samplerBinding(2, m_device.CreateSampler(&wrap))};
-    m_skyGroup = bindGroup(m_device, m_skyLayout, skyEntries);
 }
 
 void WebGpuRenderer::drawSky(const wgpu::RenderPassEncoder& pass)
 {
     pass.SetPipeline(m_skyPipeline);
-    pass.SetBindGroup(0, m_skyGroup);
+    pass.SetBindGroup(0, m_sceneGroup);
     pass.Draw(3);
     ++m_drawCalls;
 }
@@ -949,39 +961,282 @@ void WebGpuRenderer::drawShadows(const wgpu::CommandEncoder& encoder)
     }
 }
 
+void WebGpuRenderer::drawMeshBatch(const wgpu::RenderPassEncoder& pass, std::uint32_t batch, std::uint32_t& bound)
+{
+    const MeshBatch& drawn = m_meshBatches[batch];
+    GpuMaterial* const material = m_materials.find(drawn.material);
+    if (material == nullptr)
+    {
+        return;
+    }
+    if (drawn.pipeline != bound)
+    {
+        pass.SetPipeline(m_meshPipelines[drawn.pipeline]);
+        pass.SetBindGroup(0, m_sceneGroup);
+        bound = drawn.pipeline;
+    }
+    pass.SetBindGroup(1, materialGroup(*material));
+    const auto offset = static_cast<std::uint32_t>(std::uint64_t{batch} * uniformStride);
+    pass.SetBindGroup(2, m_meshDrawGroup, 1, &offset);
+    pass.SetVertexBuffer(0, drawn.mesh->vertices);
+    if ((drawn.pipeline & skinnedBit) != 0)
+    {
+        pass.SetVertexBuffer(1, drawn.mesh->skin);
+    }
+    pass.SetIndexBuffer(drawn.mesh->indices, wgpu::IndexFormat::Uint32);
+    const asset::Submesh& submesh = drawn.mesh->submeshes[drawn.submesh];
+    pass.DrawIndexed(submesh.indexCount, drawn.instanceCount, submesh.firstIndex);
+    ++m_drawCalls;
+}
+
 void WebGpuRenderer::drawMeshes(const wgpu::RenderPassEncoder& pass, bool blended)
 {
     std::uint32_t bound = 0xFFFFFFFFU;
     for (std::uint32_t batch = 0; batch < m_meshBatches.size(); ++batch)
     {
-        const MeshBatch& drawn = m_meshBatches[batch];
-        if (((drawn.pipeline & blendedBit) != 0) != blended)
+        if (((m_meshBatches[batch].pipeline & blendedBit) != 0) == blended)
         {
+            drawMeshBatch(pass, batch, bound);
+        }
+    }
+}
+
+float WebGpuRenderer::sortDistance(math::Vec3 point, math::Vec3 cameraPosition) const noexcept
+{
+    if (m_world.camera.projection == Projection::Orthographic)
+    {
+        return -(m_world.camera.view * math::Vec4(point, 1.0f)).z;
+    }
+    const math::Vec3 toCamera = point - cameraPosition;
+    return math::dot(toCamera, toCamera);
+}
+
+core::Result<void> WebGpuRenderer::createParticlePipelines()
+{
+    const wgpu::ShaderStage both = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
+    wgpu::BindGroupLayoutEntry depth = textureEntry(5, wgpu::ShaderStage::Fragment);
+    depth.texture.sampleType = wgpu::TextureSampleType::Depth;
+    const std::array particleEntries{storageEntry(0, wgpu::ShaderStage::Vertex), storageEntry(1, wgpu::ShaderStage::Vertex),
+                                     storageEntry(2, wgpu::ShaderStage::Vertex), textureEntry(3, wgpu::ShaderStage::Fragment),
+                                     samplerEntry(4, wgpu::ShaderStage::Fragment), depth};
+    m_particleLayout = bindGroupLayout(m_device, "Particles", particleEntries);
+    const std::array drawEntries{uniformEntry(0, both, true, sizeof(ParticleDrawData))};
+    m_particleDrawLayout = bindGroupLayout(m_device, "Particle draw", drawEntries);
+    const std::array groups{m_sceneLayout, m_particleLayout, m_particleDrawLayout};
+    const wgpu::PipelineLayout layout = pipelineLayout(m_device, groups);
+    const wgpu::ShaderModule module = shaderModule("webgpu_particle");
+    // Premultiplied colours, which additive particles leave with an alpha of zero.
+    wgpu::BlendState premultiplied;
+    premultiplied.color = {.operation = wgpu::BlendOperation::Add, .srcFactor = wgpu::BlendFactor::One,
+                           .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha};
+    premultiplied.alpha = premultiplied.color;
+    for (std::uint32_t index = 0; index < m_particlePipelines.size(); ++index)
+    {
+        const bool ribbons = index == 1;
+        wgpu::ColorTargetState target;
+        target.format = sceneFormat;
+        target.blend = &premultiplied;
+        wgpu::FragmentState fragment;
+        fragment.module = module;
+        fragment.entryPoint = ribbons ? "ribbonFragment" : "particleFragment";
+        fragment.targetCount = 1;
+        fragment.targets = &target;
+        wgpu::DepthStencilState depthState;
+        depthState.format = depthFormat;
+        depthState.depthWriteEnabled = false;
+        depthState.depthCompare = wgpu::CompareFunction::GreaterEqual;
+        wgpu::RenderPipelineDescriptor descriptor;
+        descriptor.label = ribbons ? "Ribbons" : "Particles";
+        descriptor.layout = layout;
+        descriptor.vertex.module = module;
+        descriptor.vertex.entryPoint = ribbons ? "ribbonVertex" : "particleVertex";
+        descriptor.depthStencil = &depthState;
+        descriptor.fragment = &fragment;
+        m_particlePipelines[index] = m_device.CreateRenderPipeline(&descriptor);
+    }
+    return {};
+}
+
+void WebGpuRenderer::prepareParticles(const ViewMatrices& matrices)
+{
+    packParticles(m_world, matrices.cameraPosition, m_particles, m_points);
+    const std::uint64_t particleBytes = std::max<std::size_t>(m_particles.size(), 1) * sizeof(GpuParticle);
+    const std::uint64_t pointBytes = std::max<std::size_t>(m_points.size(), 1) * sizeof(GpuTrailPoint);
+    const std::uint64_t segmentBytes = std::max<std::size_t>(m_world.trailSegments.size(), 1) * sizeof(std::uint32_t);
+    growBuffer(m_particleBuffer, m_particleCapacity, particleBytes, wgpu::BufferUsage::Storage, "Particles");
+    growBuffer(m_pointBuffer, m_pointCapacity, pointBytes, wgpu::BufferUsage::Storage, "Trail points");
+    growBuffer(m_segmentBuffer, m_segmentCapacity, segmentBytes, wgpu::BufferUsage::Storage, "Trail segments");
+    if (!m_particles.empty())
+    {
+        m_queue.WriteBuffer(m_particleBuffer, 0, m_particles.data(), m_particles.size() * sizeof(GpuParticle));
+    }
+    if (!m_points.empty())
+    {
+        m_queue.WriteBuffer(m_pointBuffer, 0, m_points.data(), m_points.size() * sizeof(GpuTrailPoint));
+    }
+    if (!m_world.trailSegments.empty())
+    {
+        m_queue.WriteBuffer(m_segmentBuffer, 0, m_world.trailSegments.data(), m_world.trailSegments.size() * sizeof(std::uint32_t));
+    }
+    const std::vector<ParticleDraw>& draws = m_world.particleDraws;
+    growBuffer(m_particleDrawBuffer, m_particleDrawCapacity, std::max<std::size_t>(draws.size(), 1) * uniformStride,
+               wgpu::BufferUsage::Uniform, "Particle draws");
+    std::vector<std::byte> data(draws.size() * uniformStride);
+    m_particleGroups.clear();
+    for (std::size_t index = 0; index < draws.size(); ++index)
+    {
+        const ParticleDraw& draw = draws[index];
+        const GpuTexture* const texture = m_textures.find(draw.texture);
+        const bool textured = texture != nullptr && texture->bindable;
+        const ParticleDrawData drawData{
+            .first = draw.first,
+            .facing = static_cast<std::uint32_t>(draw.facing),
+            .flags = (draw.blend == ParticleBlend::Additive ? 1U : 0U) | (draw.lit ? 2U : 0U),
+            .textured = textured ? 1U : 0U,
+            .sheet = {static_cast<float>(std::max(draw.sheetColumns, 1U)), static_cast<float>(std::max(draw.sheetRows, 1U))},
+            .softness = std::max(draw.softness, 0.0f),
+        };
+        std::memcpy(data.data() + index * uniformStride, &drawData, sizeof(drawData));
+        const std::array entries{bufferBinding(0, m_particleBuffer, particleBytes), bufferBinding(1, m_pointBuffer, pointBytes),
+                                 bufferBinding(2, m_segmentBuffer, segmentBytes),
+                                 viewBinding(3, textured ? texture->texture.CreateView() : m_white.CreateView()),
+                                 samplerBinding(4, textured && texture->nearest ? m_nearestSampler : m_linearSampler),
+                                 viewBinding(5, m_depthView)};
+        m_particleGroups.push_back(bindGroup(m_device, m_particleLayout, entries));
+    }
+    if (!data.empty())
+    {
+        m_queue.WriteBuffer(m_particleDrawBuffer, 0, data.data(), data.size());
+    }
+    const std::array drawEntries{bufferBinding(0, m_particleDrawBuffer, sizeof(ParticleDrawData))};
+    m_particleDrawGroup = bindGroup(m_device, m_particleDrawLayout, drawEntries);
+}
+
+void WebGpuRenderer::orderTransparent(const ViewMatrices& matrices)
+{
+    // Blended meshes and particles lie in the layer "Default", which sprites place themselves around: by layer, then
+    // order, then from the farthest. The blended batches come sorted, and sprite batches in this order among themselves,
+    // which a stable sort keeps.
+    struct Item
+    {
+        std::int32_t layer = 0;
+        std::int32_t order = 0;
+        float distance = 0.0f;
+        TransparentDraw::Kind kind = TransparentDraw::Kind::Mesh;
+        std::uint32_t index = 0;
+    };
+    std::vector<Item> items;
+    for (std::uint32_t batch = 0; batch < m_meshBatches.size(); ++batch)
+    {
+        if ((m_meshBatches[batch].pipeline & blendedBit) != 0)
+        {
+            items.push_back({.distance = m_meshBatches[batch].distance, .kind = TransparentDraw::Kind::Mesh, .index = batch});
+        }
+    }
+    for (std::uint32_t draw = 0; draw < m_world.particleDraws.size(); ++draw)
+    {
+        if (m_world.particleDraws[draw].count > 0)
+        {
+            items.push_back({.distance = sortDistance(m_world.particleDraws[draw].center, matrices.cameraPosition),
+                             .kind = TransparentDraw::Kind::Particles,
+                             .index = draw});
+        }
+    }
+    for (std::uint32_t batch = 0; batch < m_spriteFrame.batches.size(); ++batch)
+    {
+        const SpriteBatch& sprites = m_spriteFrame.batches[batch];
+        if (sprites.count > 0)
+        {
+            items.push_back({.layer = sprites.layer, .order = sprites.order, .distance = sprites.distance,
+                             .kind = TransparentDraw::Kind::Sprites, .index = batch});
+        }
+    }
+    std::ranges::stable_sort(items, [](const Item& a, const Item& b) {
+        if (a.layer != b.layer)
+        {
+            return a.layer < b.layer;
+        }
+        if (a.order != b.order)
+        {
+            return a.order < b.order;
+        }
+        return a.distance > b.distance;
+    });
+
+    // Sprite batches that follow each other lie one after the other among the sprites: they are drawn by runs of one
+    // texture and one normal map.
+    m_transparentDraws.clear();
+    m_spriteRuns.clear();
+    for (std::size_t at = 0; at < items.size();)
+    {
+        if (items[at].kind != TransparentDraw::Kind::Sprites)
+        {
+            m_transparentDraws.push_back({.kind = items[at].kind, .index = items[at].index});
+            ++at;
             continue;
         }
-        GpuMaterial* const material = m_materials.find(drawn.material);
-        if (material == nullptr)
+        const std::uint32_t first = m_spriteFrame.batches[items[at].index].first;
+        std::uint32_t end = first;
+        while (at < items.size() && items[at].kind == TransparentDraw::Kind::Sprites &&
+               m_spriteFrame.batches[items[at].index].first == end)
         {
-            continue;
+            end += m_spriteFrame.batches[items[at].index].count;
+            ++at;
         }
-        if (drawn.pipeline != bound)
+        TransparentDraw draw{.kind = TransparentDraw::Kind::Sprites, .firstRun = static_cast<std::uint32_t>(m_spriteRuns.size())};
+        for (std::uint32_t index = first; index < end; ++index)
         {
-            pass.SetPipeline(m_meshPipelines[drawn.pipeline]);
+            const GpuSprite& sprite = m_spriteFrame.sprites[index];
+            if (m_spriteRuns.size() == draw.firstRun || m_spriteRuns.back().texture != sprite.texture ||
+                m_spriteRuns.back().normalTexture != sprite.normalTexture)
+            {
+                m_spriteRuns.push_back({.first = index, .count = 0, .texture = sprite.texture, .normalTexture = sprite.normalTexture});
+            }
+            ++m_spriteRuns.back().count;
+        }
+        draw.runCount = static_cast<std::uint32_t>(m_spriteRuns.size()) - draw.firstRun;
+        m_transparentDraws.push_back(draw);
+    }
+}
+
+void WebGpuRenderer::drawTransparent(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& sprites)
+{
+    std::uint32_t bound = 0xFFFFFFFFU;
+    for (const TransparentDraw& draw : m_transparentDraws)
+    {
+        switch (draw.kind)
+        {
+        case TransparentDraw::Kind::Mesh:
+            drawMeshBatch(pass, draw.index, bound);
+            break;
+        case TransparentDraw::Kind::Particles:
+        {
+            const ParticleDraw& particles = m_world.particleDraws[draw.index];
+            pass.SetPipeline(m_particlePipelines[particles.ribbons ? 1 : 0]);
             pass.SetBindGroup(0, m_sceneGroup);
-            bound = drawn.pipeline;
+            pass.SetBindGroup(1, m_particleGroups[draw.index]);
+            const auto offset = static_cast<std::uint32_t>(std::uint64_t{draw.index} * uniformStride);
+            pass.SetBindGroup(2, m_particleDrawGroup, 1, &offset);
+            // Six corners for each particle or segment; the instance says which.
+            pass.Draw(6, particles.count);
+            ++m_drawCalls;
+            bound = 0xFFFFFFFFU;
+            break;
         }
-        pass.SetBindGroup(1, materialGroup(*material));
-        const auto offset = static_cast<std::uint32_t>(std::uint64_t{batch} * uniformStride);
-        pass.SetBindGroup(2, m_meshDrawGroup, 1, &offset);
-        pass.SetVertexBuffer(0, drawn.mesh->vertices);
-        if ((drawn.pipeline & skinnedBit) != 0)
-        {
-            pass.SetVertexBuffer(1, drawn.mesh->skin);
+        case TransparentDraw::Kind::Sprites:
+            pass.SetPipeline(m_spritePipeline);
+            for (std::uint32_t run = draw.firstRun; run < draw.firstRun + draw.runCount; ++run)
+            {
+                const SpriteRun& drawn = m_spriteRuns[run];
+                const auto offset = static_cast<std::uint32_t>(std::uint64_t{run} * uniformStride);
+                pass.SetBindGroup(0, sprites, 1, &offset);
+                pass.SetBindGroup(1, drawn.group);
+                pass.Draw(6, drawn.count);
+                ++m_drawCalls;
+            }
+            bound = 0xFFFFFFFFU;
+            break;
         }
-        pass.SetIndexBuffer(drawn.mesh->indices, wgpu::IndexFormat::Uint32);
-        const asset::Submesh& submesh = drawn.mesh->submeshes[drawn.submesh];
-        pass.DrawIndexed(submesh.indexCount, drawn.instanceCount, submesh.firstIndex);
-        ++m_drawCalls;
     }
 }
 
