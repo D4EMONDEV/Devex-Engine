@@ -1,6 +1,6 @@
-// Maps the exposed high dynamic range scene to the display for WebGPU, compiled to WGSL: the bloom, the grading,
-// the operators and the vignette and grain of tonemap.slang, without its chromatic aberration and table of colours
-// (after the 1.0). The image drawn into encodes sRGB itself, or this pass encodes it.
+// Maps the exposed high dynamic range scene to the display for WebGPU, compiled to WGSL, as tonemap.slang does: the
+// chromatic aberration, the bloom, the grading, the operators, the table of colours, the vignette and the grain. The
+// image drawn into encodes sRGB itself, or this pass encodes it.
 
 import tonemapping;
 
@@ -24,8 +24,10 @@ struct TonemapData
     float contrast;
     // How much of the halo of bright things is added back to the image.
     float bloom;
-    float padding1;
-    float padding2;
+    // How far, in texture coordinates, red and blue are pulled apart at the edges.
+    float chromatic;
+    // How many steps the table of colours has; 0 leaves the image alone.
+    float colorTableSize;
     // The filter the colours are multiplied by, and the factors of the white balance on the cones
     // of the eye.
     float4 filter;
@@ -40,6 +42,16 @@ Texture2D sceneTexture;
 SamplerState clampSampler;
 [[vk::binding(3, 0)]]
 Texture2D bloomTexture;
+[[vk::binding(4, 0)]]
+Texture2D colorTableTexture;
+
+struct BoundTable : IColorTable
+{
+    float3 read(float2 uv)
+    {
+        return colorTableTexture.SampleLevel(clampSampler, uv, 0.0).rgb;
+    }
+};
 
 struct VertexOutput
 {
@@ -73,12 +85,25 @@ float4 tonemapFragment(VertexOutput input) : SV_Target
     // The halo, read by every pixel as WGSL wants it.
     const float3 halo = max(bloomTexture.Sample(clampSampler, imageUv).rgb, float3(0.0));
     float3 color = max(smaller ? sampled : loaded, float3(0.0));
+    if (settings.chromatic > 0.0)
+    {
+        // Lenses bend the colours apart, the more so away from the middle.
+        const float2 shift = fromMiddle * settings.chromatic;
+        color = max(float3(sceneTexture.SampleLevel(clampSampler, imageUv + shift, 0.0).r, sceneTexture.SampleLevel(clampSampler, imageUv, 0.0).g,
+                           sceneTexture.SampleLevel(clampSampler, imageUv - shift, 0.0).b),
+                    float3(0.0));
+    }
     if (settings.bloom > 0.0)
     {
         color += halo * settings.bloom;
     }
     color = grade(color, settings.balance.rgb, settings.filter.rgb, settings.contrast, settings.saturation);
     float3 mapped = tonemap(color, settings.tonemapper);
+    if (settings.colorTableSize > 1.0)
+    {
+        BoundTable table;
+        mapped = applyColorTable(table, mapped, settings.colorTableSize);
+    }
     if (settings.vignette > 0.0)
     {
         // Darkens with the square of the distance to the middle, as a lens does.

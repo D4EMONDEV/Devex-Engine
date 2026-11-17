@@ -32,6 +32,7 @@ devex_add_shaders(devex_shaders
         custom.slang
         bloom_filter.slang
         geometry.slang
+        lens_filter.slang
         particles.slang
         particle_shape.slang
         pbr.slang
@@ -41,6 +42,7 @@ devex_add_shaders(devex_shaders
         tonemapping.slang
         ui_shape.slang
         webgpu_bloom.slang
+        webgpu_lens.slang
         webgpu_luminance.slang
         webgpu_mesh.slang
         webgpu_particle.slang

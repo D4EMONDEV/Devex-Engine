@@ -54,25 +54,16 @@ VertexOutput vertexMain(uint vertexIndex : SV_VertexID)
     return output;
 }
 
-// A table of colors kept as a strip of squares, one per blue step, read between the two nearest.
-float3 applyColorTable(float3 color, uint slot, float size)
+// The table of colours, among the textures of the scene.
+struct BindlessTable : IColorTable
 {
-    color = saturate(color);
-    const float sliceSize = 1.0 / size;
-    const float slicePixelSize = sliceSize / size;
-    const float sliceInnerSize = slicePixelSize * (size - 1.0);
-    const float lowSlice = min(floor(color.b * size), size - 1.0);
-    const float highSlice = min(lowSlice + 1.0, size - 1.0);
-    const float x = slicePixelSize * 0.5 + color.r * sliceInnerSize;
-    const float y = (color.g * (size - 1.0) + 0.5) / size;
-    const float3 low = textures[NonUniformResourceIndex(slot)]
-                           .Sample(clampSampler, float2(x + lowSlice * sliceSize, y))
-                           .rgb;
-    const float3 high = textures[NonUniformResourceIndex(slot)]
-                            .Sample(clampSampler, float2(x + highSlice * sliceSize, y))
-                            .rgb;
-    return lerp(low, high, frac(color.b * size));
-}
+    uint slot;
+
+    float3 read(float2 uv)
+    {
+        return textures[NonUniformResourceIndex(slot)].Sample(clampSampler, uv).rgb;
+    }
+};
 
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
@@ -116,7 +107,9 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float3 mapped = tonemap(color, settings.tonemapper);
     if (settings.colorTableSize > 1.0)
     {
-        mapped = applyColorTable(mapped, settings.colorTable, settings.colorTableSize);
+        BindlessTable table;
+        table.slot = settings.colorTable;
+        mapped = applyColorTable(table, mapped, settings.colorTableSize);
     }
     if (settings.vignette > 0.0)
     {

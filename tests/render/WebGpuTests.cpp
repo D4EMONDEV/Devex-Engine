@@ -154,7 +154,7 @@ private:
 // The window of a 3D scene drawn by one API: a rough sphere and a metallic one, a textured box on a plane and a
 // skinned box, lit by the sun, a point light and a spot, which cast shadows, and the environment baked from a sky
 // texture, in a height fog, with particles and a ribbon.
-[[nodiscard]] devex::render::CapturedImage drawMeshes(devex::render::RenderApi api, bool temporalAndBloom = false)
+[[nodiscard]] devex::render::CapturedImage drawMeshes(devex::render::RenderApi api, bool temporalAndBloom = false, bool lens = false)
 {
     auto platform = devex::platform::Platform::create();
     REQUIRE(platform.has_value());
@@ -192,6 +192,24 @@ private:
     }
     const auto skyTexture = renderer->createTexture(skyPixels);
     REQUIRE(skyTexture.has_value());
+    // A table of colours of 8 steps, as a strip of 8 squares, one per step of blue: a little warmer than the image.
+    devex::asset::TextureData tablePixels{.format = devex::asset::TextureFormat::Rgba8Unorm};
+    tablePixels.mips.push_back({.width = 64, .height = 8});
+    for (std::uint32_t y = 0; y < 8; ++y)
+    {
+        for (std::uint32_t x = 0; x < 64; ++x)
+        {
+            const float red = static_cast<float>(x % 8) / 7.0f;
+            const float green = static_cast<float>(y) / 7.0f;
+            const float blue = static_cast<float>(x / 8) / 7.0f;
+            for (const float channel : {std::min(red * 1.1f, 1.0f), green * 0.95f, blue * 0.8f, 1.0f})
+            {
+                tablePixels.mips.back().bytes.push_back(std::byte{static_cast<std::uint8_t>(std::lround(channel * 255.0f))});
+            }
+        }
+    }
+    const auto colorTable = renderer->createTexture(tablePixels);
+    REQUIRE(colorTable.has_value());
     const auto sphere = renderer->createMesh(devex::asset::makeUvSphere(0.5f));
     const auto cube = renderer->createMesh(devex::asset::makeCube());
     const auto plane = renderer->createMesh(devex::asset::makePlane(8.0f));
@@ -223,6 +241,20 @@ private:
         world.camera.bloomThreshold = 0.6f;
         world.camera.ambientOcclusion = 0.0f;
         world.camera.screenReflections = 0.0f;
+        if (lens)
+        {
+            // The camera slides along, which the motion blur follows, focused on the metal sphere, its lens pulling the
+            // colours apart at the edges, and the image through the table of colours.
+            const float along = 0.1f * static_cast<float>(frame);
+            world.camera.view = devex::math::lookAt(devex::math::Vec3{along, 2.0f, 5.0f}, devex::math::Vec3{along, 0.3f, 0.0f},
+                                                    devex::math::Vec3{0.0f, 1.0f, 0.0f});
+            world.camera.depthOfField = 1.0f;
+            world.camera.aperture = 1.4f;
+            world.camera.focusDistance = 5.5f;
+            world.camera.motionBlur = 0.5f;
+            world.camera.chromaticAberration = 0.004f;
+            world.camera.colorTable = *colorTable;
+        }
         world.environment.sky = *skyTexture;
         world.environment.color = {0.9f, 1.0f, 1.0f};
         world.environment.intensity = 1.2f;
@@ -446,6 +478,23 @@ TEST_CASE("WebGPU resolves the temporal antialiasing and the bloom as Vulkan doe
     const ErrorCapture capture;
     const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan, true);
     const devex::render::CapturedImage webgpu = drawMeshes(devex::render::RenderApi::WebGpu, true);
+    REQUIRE(webgpu.rgba.size() == vulkan.rgba.size());
+    const Difference difference = compare(vulkan, webgpu, 8);
+    INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));
+    CHECK(difference.channels < vulkan.rgba.size() / 100);
+    CHECK(difference.mean < 1.5);
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("WebGPU draws the depth of field, the motion blur and the table of colours as Vulkan does", "[render][gpu][webgpu]")
+{
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan, false, true);
+    const devex::render::CapturedImage webgpu = drawMeshes(devex::render::RenderApi::WebGpu, false, true);
     REQUIRE(webgpu.rgba.size() == vulkan.rgba.size());
     const Difference difference = compare(vulkan, webgpu, 8);
     INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));

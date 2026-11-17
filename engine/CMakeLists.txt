@@ -483,6 +483,7 @@ if(DEVEX_WEBGPU)
             ibl.slang
             webgpu_luminance.slang
             webgpu_bloom.slang
+            webgpu_lens.slang
             webgpu_mesh.slang
             webgpu_particle.slang
             webgpu_shadow.slang

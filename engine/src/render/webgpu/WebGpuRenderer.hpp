@@ -240,6 +240,13 @@ private:
     [[nodiscard]] wgpu::TextureView resolve(const wgpu::CommandEncoder& encoder, const ViewMatrices& matrices);
     // The halo of what is brighter than the threshold, in the first level of the chain; null without bloom.
     [[nodiscard]] wgpu::TextureView drawBloom(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& finished);
+    // The depth of field and the motion blur of the camera over the resolved image, as Vulkan draws them; the image
+    // itself without them.
+    void ensureLensTargets(math::Extent2D size);
+    [[nodiscard]] wgpu::TextureView drawLens(const wgpu::CommandEncoder& encoder, const ViewMatrices& matrices,
+                                             const wgpu::TextureView& source);
+    // The table of colours of the camera, when it is a texture that can be read.
+    [[nodiscard]] const GpuTexture* colorTableOf(TextureHandle handle) const;
     // How far a point is from the camera for sorting, as Vulkan measures it: along the view for an orthographic camera,
     // squared otherwise.
     [[nodiscard]] float sortDistance(math::Vec3 point, math::Vec3 cameraPosition) const noexcept;
@@ -407,6 +414,17 @@ private:
     wgpu::RenderPipeline m_bloomDownsample;
     wgpu::RenderPipeline m_bloomUpsample;
     wgpu::Buffer m_bloomBuffer;
+    // The lens: its chain (the circles of confusion, the halved image, its blur and its smoothing, the image in focus,
+    // the tiles of motion and their neighbours), the image it gives, and a pipeline for each of its steps.
+    std::array<wgpu::Texture, 7> m_lensChain;
+    std::array<wgpu::TextureView, 7> m_lensViews;
+    wgpu::Texture m_lensOutput;
+    wgpu::TextureView m_lensOutputView;
+    math::Extent2D m_lensSize{};
+    std::uint32_t m_lensTileSize = 8;
+    wgpu::BindGroupLayout m_lensLayout;
+    std::array<wgpu::RenderPipeline, 8> m_lensPipelines;
+    wgpu::Buffer m_lensBuffer;
     wgpu::Texture m_black;
     core::SlotMap<Empty, ShaderTag> m_shaders;
     core::SlotMap<Empty, ReflectionProbeTag> m_probes;

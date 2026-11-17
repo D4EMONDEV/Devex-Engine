@@ -101,3 +101,25 @@ public float3 tonemap(float3 color, uint tonemapper)
         return saturate(color);
     }
 }
+
+// A table of colours kept as a strip of squares, one per blue step, as Vulkan and WebGPU each bind it.
+public interface IColorTable
+{
+    float3 read(float2 uv);
+};
+
+// The tonemapped colour through the table, read between the two nearest squares; a size of 0 leaves it alone.
+public float3 applyColorTable<T : IColorTable>(T table, float3 color, float size)
+{
+    color = saturate(color);
+    const float sliceSize = 1.0 / size;
+    const float slicePixelSize = sliceSize / size;
+    const float sliceInnerSize = slicePixelSize * (size - 1.0);
+    const float lowSlice = min(floor(color.b * size), size - 1.0);
+    const float highSlice = min(lowSlice + 1.0, size - 1.0);
+    const float x = slicePixelSize * 0.5 + color.r * sliceInnerSize;
+    const float y = (color.g * (size - 1.0) + 0.5) / size;
+    const float3 low = table.read(float2(x + lowSlice * sliceSize, y));
+    const float3 high = table.read(float2(x + highSlice * sliceSize, y));
+    return lerp(low, high, frac(color.b * size));
+}

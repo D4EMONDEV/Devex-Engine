@@ -92,6 +92,48 @@ struct BloomData
     float strength = 1.0f;
     float padding = 0.0f;
 };
+// What every step of the lens reads, as webgpu_lens.slang has it, at an offset of its own.
+struct LensData
+{
+    float targetWidth = 0.0f;
+    float targetHeight = 0.0f;
+    float imageWidth = 0.0f;
+    float imageHeight = 0.0f;
+    float aperture = 0.0f;
+    float focalLength = 0.0f;
+    float focusDistance = 0.0f;
+    float amount = 0.0f;
+    float maxRadius = 0.0f;
+    std::uint32_t autoFocus = 0;
+    float shutter = 0.0f;
+    float tileSize = 8.0f;
+    std::uint32_t fromDepthOfField = 0;
+    std::uint32_t frame = 0;
+    float padding[2]{};
+    math::Mat4 inverseViewProjection{1.0f};
+    math::Mat4 previousViewProjection{1.0f};
+    math::Mat4 view{1.0f};
+    math::Mat4 skyInverseViewProjection{1.0f};
+    math::Mat4 previousSkyViewProjection{1.0f};
+};
+static_assert(sizeof(LensData) == 384);
+// The steps of the lens, each at an offset of its own: four for the depth of field and its combination, three for the
+// motion blur.
+constexpr std::uint32_t lensSteps = 8;
+constexpr std::uint64_t lensStride = 512;
+// The images of its chain, as lens_filter.slang numbers them.
+enum LensImage : std::size_t
+{
+    lensCircleOfConfusion,
+    lensHalved,
+    lensBokeh,
+    lensFiltered,
+    lensFocused,
+    lensTiles,
+    lensNeighbours,
+};
+constexpr wgpu::TextureFormat confusionFormat = wgpu::TextureFormat::R16Float;
+constexpr wgpu::TextureFormat motionFormat = wgpu::TextureFormat::RG16Float;
 // What a still pixel keeps of its history, as Vulkan keeps it.
 constexpr float taaBlend = 0.9f;
 // The steps of the bloom: the threshold, four halvings and four additions.
@@ -1311,6 +1353,49 @@ core::Result<void> WebGpuRenderer::createPostPipelines()
     steps.label = "Bloom";
     steps.size = bloomSteps * uniformStride;
     m_bloomBuffer = m_device.CreateBuffer(&steps);
+    // The lens: the scene image, the depth, the seven images of its chain, and the sampler.
+    std::array<wgpu::BindGroupLayoutEntry, 11> lensEntries{};
+    lensEntries[0] = uniformEntry(0, fragment, true, sizeof(LensData));
+    lensEntries[1] = textureEntry(1, fragment);
+    lensEntries[2] = textureEntry(2, fragment);
+    lensEntries[2].texture.sampleType = wgpu::TextureSampleType::Depth;
+    for (std::uint32_t image = 0; image < 7; ++image)
+    {
+        lensEntries[3 + image] = textureEntry(3 + image, fragment);
+    }
+    lensEntries[10] = samplerEntry(10, fragment);
+    m_lensLayout = bindGroupLayout(m_device, "Lens", lensEntries);
+    const wgpu::ShaderModule lens = shaderModule("webgpu_lens");
+    const std::array<std::pair<const char*, wgpu::TextureFormat>, 8> lensFragments{{{"circleOfConfusionFragment", confusionFormat},
+                                                                                   {"prefilterFragment", sceneFormat},
+                                                                                   {"bokehFragment", sceneFormat},
+                                                                                   {"filterFragment", sceneFormat},
+                                                                                   {"combineFragment", sceneFormat},
+                                                                                   {"tilesFragment", motionFormat},
+                                                                                   {"neighboursFragment", motionFormat},
+                                                                                   {"motionFragment", sceneFormat}}};
+    for (std::size_t step = 0; step < lensFragments.size(); ++step)
+    {
+        wgpu::ColorTargetState target;
+        target.format = lensFragments[step].second;
+        wgpu::FragmentState fragmentState;
+        fragmentState.module = lens;
+        fragmentState.entryPoint = lensFragments[step].first;
+        fragmentState.targetCount = 1;
+        fragmentState.targets = &target;
+        const std::array groups{m_lensLayout};
+        wgpu::RenderPipelineDescriptor descriptor;
+        descriptor.label = lensFragments[step].first;
+        descriptor.layout = pipelineLayout(m_device, groups);
+        descriptor.vertex.module = lens;
+        descriptor.vertex.entryPoint = "lensVertex";
+        descriptor.fragment = &fragmentState;
+        m_lensPipelines[step] = m_device.CreateRenderPipeline(&descriptor);
+    }
+    wgpu::BufferDescriptor lensSettings = taa;
+    lensSettings.label = "Lens";
+    lensSettings.size = lensSteps * lensStride;
+    m_lensBuffer = m_device.CreateBuffer(&lensSettings);
     // What the tonemapping reads as its halo without bloom.
     wgpu::TextureDescriptor black;
     black.size = {1, 1, 1};
@@ -1396,6 +1481,124 @@ wgpu::TextureView WebGpuRenderer::resolve(const wgpu::CommandEncoder& encoder, c
     m_historyValid = true;
     m_historyExposure = m_exposure;
     return m_resolvedViews[into];
+}
+
+void WebGpuRenderer::ensureLensTargets(math::Extent2D size)
+{
+    if (m_lensOutput && m_lensSize == size)
+    {
+        return;
+    }
+    m_lensSize = size;
+    // A tile is as wide as the longest blur: a fifty-sixth of the height of the image.
+    m_lensTileSize = static_cast<std::uint32_t>(std::max(8.0f, std::round(static_cast<float>(size.height) / 56.0f)));
+    const math::Extent2D half{std::max((size.width + 1) / 2, 1U), std::max((size.height + 1) / 2, 1U)};
+    const math::Extent2D tiles{(size.width + m_lensTileSize - 1) / m_lensTileSize, (size.height + m_lensTileSize - 1) / m_lensTileSize};
+    const std::array<std::pair<math::Extent2D, wgpu::TextureFormat>, 7> images{
+        {{size, confusionFormat}, {half, sceneFormat}, {half, sceneFormat}, {half, sceneFormat}, {size, sceneFormat}, {tiles, motionFormat}, {tiles, motionFormat}}};
+    wgpu::TextureDescriptor descriptor;
+    descriptor.label = "Lens";
+    descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+    for (std::size_t image = 0; image < images.size(); ++image)
+    {
+        descriptor.size = {images[image].first.width, images[image].first.height, 1};
+        descriptor.format = images[image].second;
+        m_lensChain[image] = m_device.CreateTexture(&descriptor);
+        m_lensViews[image] = m_lensChain[image].CreateView();
+    }
+    descriptor.size = {size.width, size.height, 1};
+    descriptor.format = sceneFormat;
+    m_lensOutput = m_device.CreateTexture(&descriptor);
+    m_lensOutputView = m_lensOutput.CreateView();
+}
+
+wgpu::TextureView WebGpuRenderer::drawLens(const wgpu::CommandEncoder& encoder, const ViewMatrices& matrices, const wgpu::TextureView& source)
+{
+    const RenderCamera& camera = m_world.camera;
+    const bool focusing = camera.depthOfField > 0.0f && camera.aperture > 0.0f && camera.projection == Projection::Perspective;
+    const bool blurring = camera.motionBlur > 0.0f;
+    if (!focusing && !blurring)
+    {
+        return source;
+    }
+    ensureLensTargets(m_sceneSize);
+    const math::Extent2D full = m_sceneSize;
+    const math::Extent2D half{std::max((full.width + 1) / 2, 1U), std::max((full.height + 1) / 2, 1U)};
+    const math::Extent2D tiles{(full.width + m_lensTileSize - 1) / m_lensTileSize, (full.height + m_lensTileSize - 1) / m_lensTileSize};
+    // A full-frame sensor, 24 mm high, behind a lens whose focal length gives the field of view, as Vulkan has it.
+    const float focalLength = 0.012f / std::tan(std::max(camera.verticalFov, 1e-3f) * 0.5f);
+    const LensData base{
+        .imageWidth = static_cast<float>(full.width),
+        .imageHeight = static_cast<float>(full.height),
+        .aperture = focalLength / std::max(camera.aperture, 0.5f),
+        .focalLength = focalLength,
+        .focusDistance = std::max(camera.focusDistance, 0.01f),
+        .amount = std::clamp(camera.depthOfField, 0.0f, 1.0f),
+        .maxRadius = static_cast<float>(full.height) / 60.0f,
+        .autoFocus = camera.autoFocus ? 1U : 0U,
+        .shutter = std::clamp(camera.motionBlur, 0.0f, 1.0f),
+        .tileSize = static_cast<float>(m_lensTileSize),
+        .fromDepthOfField = focusing ? 1U : 0U,
+        .frame = static_cast<std::uint32_t>(m_frameIndex),
+        .inverseViewProjection = matrices.inverseViewProjection,
+        .previousViewProjection = m_previousViewProjection,
+        .view = camera.view,
+        .skyInverseViewProjection = math::inverse(matrices.skyViewProjection),
+        .previousSkyViewProjection = m_previousSkyViewProjection,
+    };
+    std::vector<std::byte> steps(lensSteps * lensStride);
+    std::uint32_t step = 0;
+    const wgpu::TextureView blank = m_black.CreateView();
+    // A step into one image, every image of the chain bound but the one it writes.
+    const auto pass = [&](std::size_t pipeline, const wgpu::TextureView& into, math::Extent2D size, std::optional<std::size_t> written) {
+        LensData data = base;
+        data.targetWidth = static_cast<float>(size.width);
+        data.targetHeight = static_cast<float>(size.height);
+        std::memcpy(steps.data() + std::size_t{step} * lensStride, &data, sizeof(data));
+        std::array<wgpu::BindGroupEntry, 11> entries{};
+        entries[0] = bufferBinding(0, m_lensBuffer, sizeof(LensData));
+        entries[1] = viewBinding(1, source);
+        entries[2] = viewBinding(2, m_depthView);
+        for (std::size_t image = 0; image < m_lensViews.size(); ++image)
+        {
+            entries[3 + image] = viewBinding(static_cast<std::uint32_t>(3 + image), written == image ? blank : m_lensViews[image]);
+        }
+        entries[10] = samplerBinding(10, m_clampSampler);
+        const wgpu::BindGroup group = bindGroup(m_device, m_lensLayout, entries);
+        wgpu::RenderPassColorAttachment color;
+        color.view = into;
+        color.loadOp = wgpu::LoadOp::Clear;
+        color.storeOp = wgpu::StoreOp::Store;
+        wgpu::RenderPassDescriptor descriptor;
+        descriptor.label = "Lens";
+        descriptor.colorAttachmentCount = 1;
+        descriptor.colorAttachments = &color;
+        const wgpu::RenderPassEncoder encoded = encoder.BeginRenderPass(&descriptor);
+        encoded.SetPipeline(m_lensPipelines[pipeline]);
+        const auto offset = static_cast<std::uint32_t>(std::uint64_t{step} * lensStride);
+        encoded.SetBindGroup(0, group, 1, &offset);
+        encoded.Draw(3);
+        encoded.End();
+        ++m_drawCalls;
+        ++step;
+    };
+    if (focusing)
+    {
+        pass(0, m_lensViews[lensCircleOfConfusion], full, lensCircleOfConfusion);
+        pass(1, m_lensViews[lensHalved], half, lensHalved);
+        pass(2, m_lensViews[lensBokeh], half, lensBokeh);
+        pass(3, m_lensViews[lensFiltered], half, lensFiltered);
+        pass(4, blurring ? m_lensViews[lensFocused] : m_lensOutputView, full,
+             blurring ? std::optional<std::size_t>(lensFocused) : std::nullopt);
+    }
+    if (blurring)
+    {
+        pass(5, m_lensViews[lensTiles], tiles, lensTiles);
+        pass(6, m_lensViews[lensNeighbours], tiles, lensNeighbours);
+        pass(7, m_lensOutputView, full, std::nullopt);
+    }
+    m_queue.WriteBuffer(m_lensBuffer, 0, steps.data(), steps.size());
+    return m_lensOutputView;
 }
 
 wgpu::TextureView WebGpuRenderer::drawBloom(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& finished)

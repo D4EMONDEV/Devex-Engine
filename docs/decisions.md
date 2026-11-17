@@ -5982,6 +5982,19 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      sur Android seulement : l'éditeur et les autres plateformes gardent leur image. **Mobile Preset** coupe tout.
      Rien ne baisse encore la taille de l'image ou des ombres du soleil : à mesurer sur un vrai téléphone.
 
+6. **La 3D restante du web**, un commit par morceau. Décidé le 2026-11-17, avant le code : tout ce que Compatibility
+   dessine sous Vulkan, l'air physique restant après la 1.0 : les effets d'image, les décalcomanies, les terrains et
+   l'herbe, puis les shaders du projet, dont le WGSL est **compilé à l'import, pour les projets en Compatibility**,
+   gardé dans le cache comme le SPIR-V : Run in Browser et l'export n'ont rien à recompiler, et les projets en
+   Forward+ ne paient rien.
+   - ✅ **les effets d'image** : la profondeur de champ et le flou de mouvement passent dans `lens_filter.slang`,
+     générique sur les images lues (`ILensImages`), que Vulkan (`lens.slang`) et WebGPU (`webgpu_lens.slang`)
+     appellent, comme le bloom et le TAA ; la table de couleurs passe dans `tonemapping.slang` (`IColorTable`).
+     WebGPU reconstruit le mouvement de chaque pixel à partir de la profondeur et des matrices de l'image d'avant,
+     comme son TAA : il suit la caméra, pas un objet qui bouge seul. Ses sept images de chaque étape sont liées à
+     chaque passe, celle qu'elle écrit remplacée par une image vide, ce que WebGPU exige. Un test compare à Vulkan
+     une caméra qui glisse, mise au point, avec aberration chromatique et table de couleurs ;
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

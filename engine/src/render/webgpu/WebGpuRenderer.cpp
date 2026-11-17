@@ -72,7 +72,8 @@ struct TonemapData
     float saturation = 1.0f;
     float contrast = 1.0f;
     float bloom = 0.0f;
-    float padding[2]{};
+    float chromatic = 0.0f;
+    float colorTableSize = 0.0f;
     math::Vec4 filter{1.0f};
     math::Vec4 balance{1.0f};
 };
@@ -528,7 +529,7 @@ core::Result<void> WebGpuRenderer::createPipelines()
     m_uiLayout = bindGroupLayout(m_device, "Interface", uiEntries);
     const std::array tonemapEntries{uniformEntry(0, wgpu::ShaderStage::Fragment, true, sizeof(TonemapData)),
                                     textureEntry(1, wgpu::ShaderStage::Fragment), samplerEntry(2, wgpu::ShaderStage::Fragment),
-                                    textureEntry(3, wgpu::ShaderStage::Fragment)};
+                                    textureEntry(3, wgpu::ShaderStage::Fragment), textureEntry(4, wgpu::ShaderStage::Fragment)};
     m_tonemapLayout = bindGroupLayout(m_device, "Tonemap", tonemapEntries);
     wgpu::BindGroupLayoutEntry output;
     output.binding = 3;
@@ -1074,6 +1075,12 @@ void WebGpuRenderer::updateExposure()
     m_ev100 = adaptExposure(m_ev100, m_targetEv100, camera.adaptationSpeed, deltaSeconds);
 }
 
+const WebGpuRenderer::GpuTexture* WebGpuRenderer::colorTableOf(TextureHandle handle) const
+{
+    const GpuTexture* const texture = m_textures.find(handle);
+    return texture != nullptr && texture->bindable && texture->size.height > 1 ? texture : nullptr;
+}
+
 void WebGpuRenderer::drawImage(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& target, wgpu::TextureFormat format,
                                math::Extent2D size, bool interface)
 {
@@ -1091,6 +1098,11 @@ void WebGpuRenderer::drawImage(const wgpu::CommandEncoder& encoder, const wgpu::
         .saturation = std::max(m_world.camera.saturation, 0.0f),
         .contrast = std::max(m_world.camera.contrast, 0.01f),
         .bloom = std::max(m_world.camera.bloom, 0.0f),
+        .chromatic = std::max(m_world.camera.chromaticAberration, 0.0f),
+        // A strip of squares is as tall as one step of the table.
+        .colorTableSize = colorTableOf(m_world.camera.colorTable) != nullptr
+                              ? static_cast<float>(colorTableOf(m_world.camera.colorTable)->size.height)
+                              : 0.0f,
         .filter = math::Vec4(math::max(m_world.camera.colorFilter, math::Vec3{0.0f}), 1.0f),
         .balance = math::Vec4(balance, 1.0f),
     };
@@ -1420,11 +1432,14 @@ core::Result<void> WebGpuRenderer::endFrame()
         pass.End();
     }
 
-    // What the antialiasing resolved, and its halo, which the tonemapping reads.
-    const wgpu::TextureView finished = resolve(encoder, matrices);
+    // What the antialiasing resolved, through the lens, and its halo, which the tonemapping reads with the table of
+    // colours.
+    const wgpu::TextureView finished = drawLens(encoder, matrices, resolve(encoder, matrices));
     const wgpu::TextureView halo = drawBloom(encoder, finished);
+    const GpuTexture* const colorTable = colorTableOf(m_world.camera.colorTable);
     const std::array tonemapEntries{bufferBinding(0, m_tonemapBuffer, sizeof(TonemapData)), viewBinding(1, finished),
-                                    samplerBinding(2, m_clampSampler), viewBinding(3, halo ? halo : m_black.CreateView())};
+                                    samplerBinding(2, m_clampSampler), viewBinding(3, halo ? halo : m_black.CreateView()),
+                                    viewBinding(4, colorTable != nullptr ? colorTable->texture.CreateView() : m_black.CreateView())};
     m_tonemapGroup = bindGroup(m_device, m_tonemapLayout, tonemapEntries);
     m_previousViewProjection = matrices.unjitteredViewProjection;
     m_previousSkyViewProjection = matrices.skyViewProjection;
