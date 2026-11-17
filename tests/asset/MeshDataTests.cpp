@@ -233,3 +233,46 @@ TEST_CASE("MikkTSpace tangents follow increasing u with glTF handedness", "[asse
     CHECK(cube.vertices.size() == 24);
     CHECK(devex::asset::validate(cube).has_value());
 }
+
+TEST_CASE("A mesh of the project keeps its triangles and the materials of its submeshes", "[asset][mesh]")
+{
+    MeshData cube = devex::asset::makeCube(2.0f);
+    // Two submeshes, each with its material, as a solid of CSG made of two shapes has.
+    const std::uint32_t half = static_cast<std::uint32_t>(cube.indices.size() / 2);
+    const devex::asset::AssetId stone = devex::asset::AssetId::generate();
+    const devex::asset::AssetId wood = devex::asset::AssetId::generate();
+    cube.submeshes = {{.firstIndex = 0, .indexCount = half, .material = stone},
+                      {.firstIndex = half, .indexCount = static_cast<std::uint32_t>(cube.indices.size()) - half, .material = wood}};
+    const std::vector<std::byte> bytes = devex::asset::encodeMeshFile(cube);
+    const devex::core::Result<MeshData> read = devex::asset::decodeMeshFile(bytes);
+    REQUIRE(read.has_value());
+    CHECK(read->indices == cube.indices);
+    REQUIRE(read->vertices.size() == cube.vertices.size());
+    for (std::size_t vertex = 0; vertex < cube.vertices.size(); ++vertex)
+    {
+        CHECK(read->vertices[vertex].position == cube.vertices[vertex].position);
+        CHECK(read->vertices[vertex].normal == cube.vertices[vertex].normal);
+        CHECK(read->vertices[vertex].uv == cube.vertices[vertex].uv);
+    }
+    REQUIRE(read->submeshes.size() == 2);
+    CHECK(read->submeshes[0].material == stone);
+    CHECK(read->submeshes[1].material == wood);
+    CHECK(read->submeshes[1].firstIndex == half);
+    // Its bounds and tangents are made again.
+    CHECK(read->bounds.max.x > 0.9f);
+    CHECK(devex::asset::validate(*read).has_value());
+
+    // What is cut short, or is something else, or of a later format, is refused.
+    CHECK_FALSE(devex::asset::decodeMeshFile(std::span(bytes).first(bytes.size() - 1)).has_value());
+    CHECK_FALSE(devex::asset::decodeMeshFile(std::span(bytes).subspan(1)).has_value());
+    std::vector<std::byte> later = bytes;
+    later[8] = std::byte{2};
+    const devex::core::Result<MeshData> refused = devex::asset::decodeMeshFile(later);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error().message.find("later version") != std::string::npos);
+    // An index past the vertices is no mesh.
+    std::vector<std::byte> wrong = bytes;
+    const std::size_t firstIndex = 8 + 16 + cube.vertices.size() * 32;
+    wrong[firstIndex + 3] = std::byte{0x7F};
+    CHECK_FALSE(devex::asset::decodeMeshFile(wrong).has_value());
+}

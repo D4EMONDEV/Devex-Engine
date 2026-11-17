@@ -432,6 +432,9 @@ struct DEVEX_API DialogAnswers
     std::optional<std::pair<std::size_t, std::filesystem::path>> scriptEditor;
     // A tool of Editor Settings > Export, by its row, and the folder chosen for it.
     std::optional<std::pair<std::size_t, std::filesystem::path>> exportTool;
+    // The PO file to fill the open table of translations from, and the folder to write it for translators into.
+    std::optional<std::filesystem::path> translationPo;
+    std::optional<std::filesystem::path> translationPoFolder;
     std::optional<std::filesystem::path> installAddon;
     std::optional<std::filesystem::path> exportAddon;
 };
@@ -1391,6 +1394,9 @@ struct DEVEX_API NavMeshSummary
 // Bakes the navigation mesh again from static colliders and current terrain maps, next to the scene
 // file, or forgets it, each as one undoable step; state.navMeshBakeStatus says how it went.
 DEVEX_API void bakeNavMesh(ToolsState& state, scene::Scene& scene, scene::Entity entity);
+// Writes the solid of CSG that the entity is part of as a mesh next to the scene, and creates an entity that draws it
+// beside the solid, with its collision, as one undoable step.
+DEVEX_API void bakeCsgMesh(ToolsState& state, scene::Scene& scene, scene::Entity entity);
 DEVEX_API void clearNavMesh(ToolsState& state, scene::Scene& scene, scene::Entity entity);
 // Bakes the reflection probes of the scene, or that of one entity, over the next frames: each is
 // captured from where it stands, written next to the scene file, and pointed at its capture, all

@@ -31,7 +31,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 - [compatibilité des projets](docs/compatibilite.md) : les fichiers des versions passées s'ouvrent,
   un projet dit sa version, prévient et se copie avant d'être repris ;
 - traductions comme chez Godot : tables `.csv` (une colonne par langue) éditées dans le panneau
-  Translations, textes des interfaces traduits d'eux-mêmes, `Localization.Tr` en C#, langue du
+  Translations, échangées avec les traducteurs en `.pot` et `.po` (gettext, Poedit, Weblate), qui
+  se lisent aussi tels quels, textes des interfaces traduits d'eux-mêmes, `Localization.Tr` en C#, langue du
   joueur ou du système, polices qui cuisent les caractères de toutes les langues traduites.
 
 Le détail, l'architecture des modules et les jalons sont dans

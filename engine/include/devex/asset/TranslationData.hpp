@@ -55,6 +55,23 @@ struct DEVEX_API TranslationData
 [[nodiscard]] DEVEX_API core::Result<TranslationData> readTranslationTable(const CsvTable& table);
 [[nodiscard]] DEVEX_API core::Result<TranslationData> parseTranslationCsv(std::string_view text, char delimiter = 0);
 
+// The translations of one language in the format of gettext, which Poedit and Weblate edit: what translators get
+// and give back, and a table of a project as well.
+inline constexpr std::string_view translationPoExtension = ".po";
+inline constexpr std::string_view translationPotExtension = ".pot";
+// The table of one language of a PO file: msgctxt holds the key, msgid the text of the source language and msgstr the
+// translation; without msgctxt, msgid is the key. The language comes from the header (Language: fr), or else from
+// fallbackLanguage, such as the name of the file says it. A fuzzy entry, which a translator has to check, counts as
+// missing; obsolete entries are left out, and of a plural, only the first form is kept.
+[[nodiscard]] DEVEX_API core::Result<TranslationData> parseTranslationPo(std::string_view text, std::string_view fallbackLanguage = {});
+// A table as gettext writes it: the template (.pot), its keys with the messages of the source language, and the file
+// (.po) of one of its languages. A key whose source message is empty takes the key for msgid.
+[[nodiscard]] DEVEX_API std::string writeTranslationPot(const TranslationData& table, std::size_t sourceLanguage);
+[[nodiscard]] DEVEX_API std::string writeTranslationPo(const TranslationData& table, std::size_t language, std::size_t sourceLanguage);
+// The language a PO file is named after: "fr" for fr.po or game.fr.po, "pt_BR" for pt-BR.po; empty when its name says
+// none.
+[[nodiscard]] DEVEX_API std::string languageOfPoFile(std::string_view fileName);
+
 // Whether a column name is a language code: two or three letters, then regions or scripts after
 // '_' or '-', such as "fr", "pt_BR", "zh-Hant" or "es_419".
 [[nodiscard]] DEVEX_API bool isLanguageCode(std::string_view code) noexcept;

@@ -7,7 +7,10 @@
 #include <devex/math/Math.hpp>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <span>
+#include <string_view>
 #include <vector>
 
 namespace devex::asset {
@@ -95,5 +98,12 @@ DEVEX_API void computeTangents(MeshData& mesh);
 // Builds at most four coarser levels, preserving material boundaries, vertex attributes and skin.
 // Levels that do not reduce geometry are omitted; the original mesh is left unchanged.
 DEVEX_API void generateMeshLods(MeshData& mesh, std::uint32_t levels = 3);
+
+// A mesh of the project, as Bake to Mesh writes a solid of CSG: its vertices, its triangles and the materials of its
+// submeshes, in a layout of its own that the versions after this one keep reading (format 1). Its tangents and bounds
+// are made again when it is imported. The skin and the levels of detail are left out.
+inline constexpr std::string_view meshExtension = ".dvxmesh";
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeMeshFile(const MeshData& mesh);
+[[nodiscard]] DEVEX_API core::Result<MeshData> decodeMeshFile(std::span<const std::byte> bytes);
 
 } // namespace devex::asset

@@ -91,6 +91,8 @@ struct Section
     scene::Entity navStatus;
     PanelButton bake;
     PanelButton clear;
+    // Bake to Mesh, under a shape of CSG.
+    PanelButton bakeMesh;
     // The capture of a reflection probe, the buttons that bake it or every probe of the scene, and
     // what the last bake said.
     scene::Entity probeInfo;

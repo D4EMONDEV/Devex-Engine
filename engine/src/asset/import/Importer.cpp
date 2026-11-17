@@ -521,6 +521,47 @@ core::Result<ImportResult> importTranslationFile(ImportContext& context)
     return result;
 }
 
+// A mesh of the project that Bake to Mesh wrote: its tangents and bounds are made again, and its materials kept.
+core::Result<ImportResult> importMeshFile(ImportContext& context)
+{
+    const core::Result<std::vector<std::byte>> bytes = core::readBinaryFile(context.source);
+    if (!bytes)
+    {
+        return std::unexpected(bytes.error());
+    }
+    core::Result<MeshData> mesh = decodeMeshFile(*bytes);
+    if (!mesh)
+    {
+        return std::unexpected(mesh.error());
+    }
+    if (context.boolOption("generate_lods", false))
+    {
+        generateMeshLods(*mesh);
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Mesh, context.name, encodeMesh(*mesh)});
+    return result;
+}
+
+// The translations of one language that a PO file of gettext holds, its language said by its header or its name.
+core::Result<ImportResult> importTranslationPoFile(ImportContext& context)
+{
+    const core::Result<std::string> text = core::readTextFile(context.source);
+    if (!text)
+    {
+        return std::unexpected(text.error());
+    }
+    const core::Result<TranslationData> translation =
+        parseTranslationPo(*text, languageOfPoFile(core::toUtf8(context.source.filename())));
+    if (!translation)
+    {
+        return std::unexpected(translation.error());
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Translation, context.name, encodeTranslation(*translation)});
+    return result;
+}
+
 core::Result<ImportResult> importSpriteFramesFile(ImportContext& context)
 {
     const core::Result<std::string> text = core::readTextFile(context.source);
@@ -784,6 +825,21 @@ std::span<const Importer> importers()
             .extensions = {translationExtension},
             .defaultOptions = {{"delimiter", TextValue(std::string("auto"))}},
             .run = &importTranslationFile,
+        },
+        Importer{
+            .name = "mesh",
+            .version = 1,
+            .mainType = AssetType::Mesh,
+            .extensions = {meshExtension},
+            .defaultOptions = {{"generate_lods", TextValue(false)}},
+            .run = &importMeshFile,
+        },
+        Importer{
+            .name = "translation_po",
+            .version = 1,
+            .mainType = AssetType::Translation,
+            .extensions = {translationPoExtension},
+            .run = &importTranslationPoFile,
         },
         Importer{
             .name = "theme",

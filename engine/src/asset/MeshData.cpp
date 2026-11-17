@@ -3,6 +3,7 @@
 #include <mikktspace.h>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <string_view>
@@ -280,6 +281,149 @@ void computeTangents(MeshData& mesh)
     }
     mesh.vertices = std::move(vertices);
     mesh.skin = std::move(skin);
+}
+
+} // namespace devex::asset
+
+namespace devex::asset {
+namespace {
+
+// The layout of a .dvxmesh, little-endian: "DVXMESH" and a zero, the format, the counts of vertices, indices and
+// submeshes; then each vertex as its position, normal and texture coordinates, 8 floats; the indices; each submesh as
+// its first index, its count of indices and the 16 bytes of the UUID of its material.
+constexpr std::string_view meshFileMagic{"DVXMESH\0", 8};
+constexpr std::uint32_t meshFileFormat = 1;
+constexpr std::size_t meshFileHeader = 8 + 4 * 4;
+constexpr std::size_t meshFileVertex = 8 * 4;
+constexpr std::size_t meshFileSubmesh = 2 * 4 + 16;
+
+void putNumber(std::vector<std::byte>& bytes, std::uint32_t value)
+{
+    for (int shift = 0; shift < 32; shift += 8)
+    {
+        bytes.push_back(static_cast<std::byte>(value >> shift));
+    }
+}
+
+void putFloat(std::vector<std::byte>& bytes, float value)
+{
+    putNumber(bytes, std::bit_cast<std::uint32_t>(value));
+}
+
+struct MeshFileReader
+{
+    std::span<const std::byte> bytes;
+    std::size_t at = 0;
+
+    [[nodiscard]] std::uint32_t number() noexcept
+    {
+        std::uint32_t value = 0;
+        for (int shift = 0; shift < 32; shift += 8)
+        {
+            value |= std::to_integer<std::uint32_t>(bytes[at++]) << shift;
+        }
+        return value;
+    }
+
+    [[nodiscard]] float real() noexcept
+    {
+        return std::bit_cast<float>(number());
+    }
+};
+
+} // namespace
+
+std::vector<std::byte> encodeMeshFile(const MeshData& mesh)
+{
+    std::vector<std::byte> bytes;
+    bytes.reserve(meshFileHeader + mesh.vertices.size() * meshFileVertex + mesh.indices.size() * 4 + mesh.submeshes.size() * meshFileSubmesh);
+    for (const char character : meshFileMagic)
+    {
+        bytes.push_back(static_cast<std::byte>(character));
+    }
+    putNumber(bytes, meshFileFormat);
+    putNumber(bytes, static_cast<std::uint32_t>(mesh.vertices.size()));
+    putNumber(bytes, static_cast<std::uint32_t>(mesh.indices.size()));
+    putNumber(bytes, static_cast<std::uint32_t>(mesh.submeshes.size()));
+    for (const Vertex& vertex : mesh.vertices)
+    {
+        for (const float value : {vertex.position.x, vertex.position.y, vertex.position.z, vertex.normal.x, vertex.normal.y, vertex.normal.z,
+                                  vertex.uv.x, vertex.uv.y})
+        {
+            putFloat(bytes, value);
+        }
+    }
+    for (const std::uint32_t index : mesh.indices)
+    {
+        putNumber(bytes, index);
+    }
+    for (const Submesh& submesh : mesh.submeshes)
+    {
+        putNumber(bytes, submesh.firstIndex);
+        putNumber(bytes, submesh.indexCount);
+        for (const std::uint8_t byte : submesh.material.uuid.bytes())
+        {
+            bytes.push_back(static_cast<std::byte>(byte));
+        }
+    }
+    return bytes;
+}
+
+core::Result<MeshData> decodeMeshFile(std::span<const std::byte> bytes)
+{
+    const auto damaged = [] { return core::makeError(core::ErrorCode::Parse, "this is not a mesh of Devex, or a damaged one"); };
+    if (bytes.size() < meshFileHeader ||
+        !std::ranges::equal(bytes.first(meshFileMagic.size()), meshFileMagic, [](std::byte byte, char character) { return byte == static_cast<std::byte>(character); }))
+    {
+        return damaged();
+    }
+    MeshFileReader reader{.bytes = bytes, .at = meshFileMagic.size()};
+    if (const std::uint32_t format = reader.number(); format != meshFileFormat)
+    {
+        return core::makeError(core::ErrorCode::Unsupported, "this mesh is of format {}, which a later version of Devex wrote", format);
+    }
+    const std::size_t vertices = reader.number();
+    const std::size_t indices = reader.number();
+    const std::size_t submeshes = reader.number();
+    // The size that the counts say, checked before anything is made of them.
+    if (bytes.size() != meshFileHeader + vertices * meshFileVertex + indices * 4 + submeshes * meshFileSubmesh)
+    {
+        return damaged();
+    }
+    MeshData mesh;
+    mesh.vertices.resize(vertices);
+    for (Vertex& vertex : mesh.vertices)
+    {
+        vertex.position = {reader.real(), reader.real(), reader.real()};
+        vertex.normal = {reader.real(), reader.real(), reader.real()};
+        vertex.uv = {reader.real(), reader.real()};
+    }
+    mesh.indices.resize(indices);
+    for (std::uint32_t& index : mesh.indices)
+    {
+        index = reader.number();
+    }
+    mesh.submeshes.resize(submeshes);
+    for (Submesh& submesh : mesh.submeshes)
+    {
+        submesh.firstIndex = reader.number();
+        submesh.indexCount = reader.number();
+        std::uint64_t high = 0;
+        std::uint64_t low = 0;
+        for (std::size_t byte = 0; byte < 16; ++byte)
+        {
+            std::uint64_t& half = byte < 8 ? high : low;
+            half = (half << 8) | std::to_integer<std::uint64_t>(bytes[reader.at++]);
+        }
+        submesh.material = AssetId{core::Uuid::fromParts(high, low)};
+    }
+    if (core::Result<void> valid = validate(mesh); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    computeTangents(mesh);
+    mesh.bounds = computeBounds(mesh);
+    return mesh;
 }
 
 } // namespace devex::asset

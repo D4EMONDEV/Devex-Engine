@@ -188,6 +188,100 @@ TEST_CASE("A key shows in the language, then the fallback one, then as it is wri
     CHECK(localization.translate("{{literal}} {points} {missing}", values) == "{literal} 12 {missing}");
 }
 
+TEST_CASE("PO files read as gettext writes them, and a table writes back as one", "[asset][translation]")
+{
+    const std::string po = R"(# What a translator gives back.
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: fr-fr\n"
+
+#: menu.csv
+msgctxt "MENU_PLAY"
+msgid "Play"
+msgstr "Jouer"
+
+msgctxt "MENU_QUOTE"
+msgid "Say \"hi\""
+msgstr ""
+"Dis \"salut\"\n"
+"à tous"
+
+#, fuzzy
+msgctxt "MENU_FUZZY"
+msgid "Maybe"
+msgstr "Peut-être"
+
+msgid "NO_CONTEXT"
+msgstr "Sans contexte"
+
+msgid "One apple"
+msgid_plural "%d apples"
+msgstr[0] "Une pomme"
+msgstr[1] "%d pommes"
+
+#~ msgctxt "OLD"
+#~ msgid "Old"
+#~ msgstr "Vieux"
+)";
+    // msgctxt is the key, msgid when there is none; a fuzzy translation counts as missing, and a plural keeps its first form.
+    const devex::core::Result<TranslationData> read = devex::asset::parseTranslationPo(po);
+    REQUIRE(read.has_value());
+    CHECK(read->languages == std::vector<std::string>{"fr_FR"});
+    CHECK(read->keys == std::vector<std::string>{"MENU_PLAY", "MENU_QUOTE", "MENU_FUZZY", "NO_CONTEXT", "One apple"});
+    CHECK(read->messages == std::vector<std::string>{"Jouer", "Dis \"salut\"\nà tous", "", "Sans contexte", "Une pomme"});
+
+    // Without a language in its header, the one of its name; neither, or no quotes, and it says so.
+    const devex::core::Result<TranslationData> named = devex::asset::parseTranslationPo("msgid \"A\"\nmsgstr \"B\"\n", "de");
+    REQUIRE(named.has_value());
+    CHECK(named->languages == std::vector<std::string>{"de"});
+    CHECK_FALSE(devex::asset::parseTranslationPo("msgid \"A\"\nmsgstr \"B\"\n").has_value());
+    CHECK_FALSE(devex::asset::parseTranslationPo("msgid A\n", "de").has_value());
+    CHECK(devex::asset::languageOfPoFile("fr.po") == "fr");
+    CHECK(devex::asset::languageOfPoFile("menu.pt-br.po") == "pt_BR");
+    CHECK(devex::asset::languageOfPoFile("menu.po").empty());
+
+    // A table goes to translators and comes back the same; a key with no source message is its own msgid.
+    const std::shared_ptr<const TranslationData> menu = table("keys,en,fr\nHELLO,Hello,Bonjour\nLINE,Two\\nlines,Deux\\nlignes\nEMPTY,,Vide\n");
+    const std::string pot = devex::asset::writeTranslationPot(*menu, 0);
+    CHECK(pot.find("Language:") == std::string::npos);
+    CHECK(pot.find("msgctxt \"LINE\"\nmsgid \"Two\\nlines\"\nmsgstr \"\"") != std::string::npos);
+    const std::string fr = devex::asset::writeTranslationPo(*menu, 1, 0);
+    CHECK(fr.find("\"Language: fr\\n\"") != std::string::npos);
+    CHECK(fr.find("msgctxt \"EMPTY\"\nmsgid \"EMPTY\"\nmsgstr \"Vide\"") != std::string::npos);
+    const devex::core::Result<TranslationData> back = devex::asset::parseTranslationPo(fr);
+    REQUIRE(back.has_value());
+    CHECK(back->languages == std::vector<std::string>{"fr"});
+    CHECK(back->keys == menu->keys);
+    CHECK(back->messages == std::vector<std::string>{"Bonjour", "Deux\nlignes", "Vide"});
+}
+
+TEST_CASE("A PO file of the project is a table of translations of its language", "[asset][database][translation]")
+{
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / ("devex-po-" + devex::core::Uuid::generate().toString());
+    {
+        const devex::asset::Project project = *devex::asset::createProject(root, "Translated");
+        REQUIRE(devex::core::writeTextFile(project.assetsDirectory() / "menu.de.po", "msgctxt \"HELLO\"\nmsgid \"Hello\"\nmsgstr \"Hallo\"\n"));
+        devex::core::JobSystem jobs(2);
+        auto database = devex::asset::AssetDatabase::open(project, jobs, {.watchFiles = false});
+        REQUIRE(database.has_value());
+        (*database)->waitForImports();
+        static_cast<void>((*database)->update());
+        const auto translation = (*database)->findByPath("res://assets/menu.de.po");
+        REQUIRE(translation.has_value());
+        CHECK((*database)->find(*translation)->type == devex::asset::AssetType::Translation);
+        const auto bytes = (*database)->loadArtifact(*translation);
+        REQUIRE(bytes.has_value());
+        const devex::core::Result<TranslationData> data = devex::asset::decodeTranslation(*bytes);
+        REQUIRE(data.has_value());
+        CHECK(data->languages == std::vector<std::string>{"de"});
+        CHECK(data->message(0, 0) == "Hallo");
+    }
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
+}
+
 TEST_CASE("Projects keep the fallback and test languages of their translations", "[asset][project][translation]")
 {
     devex::asset::Project project{.name = "Game", .root = "D:/game", .file = "D:/game/Game.dvxproj"};

@@ -67,6 +67,11 @@ Le résultat se recalcule dès qu'une forme change, dans l'éditeur comme en jeu
 C'est rapide pour des blocs ordinaires, mais à éviter à chaque image sur de grands ensembles. Déplacer la racine ne recalcule
 rien. L'arène du bac à sable en a un exemple : **Arch**, un mur percé d'une porte et d'une fenêtre, et **Rail band**.
 
+Une fois la forme trouvée, **Bake to Mesh**, sous n'importe quelle forme du solide dans l'inspecteur, le fige : le mesh est
+écrit à côté de la scène (`<scène> <racine>.dvxmesh`), avec les matières de ses faces, et une entité **<racine> Mesh** le
+dessine à la même place, avec sa collision quand la racine en avait. Le solide reste là : supprimez-le quand le mesh vous
+convient. La scène doit avoir été enregistrée, et l'étape s'annule comme les autres.
+
 ## Les chemins
 
 Un **Path3D** est une courbe dessinée dans la scène : un rail, le trajet d'une patrouille, le mouvement d'une caméra. Un

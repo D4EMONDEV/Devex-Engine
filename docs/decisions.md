@@ -5907,6 +5907,18 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
    vont dans `editor.dvx`, section `[export_tools]`, que l'export en ligne de commande lit aussi. Le module `platform`
    les tient (`ExportTools.hpp`), parce que l'éditeur ne voit pas le runtime ; la fenêtre d'export redemande donc ce
    qui manque pour Android à chaque fois, au lieu de le savoir une fois pour toutes au démarrage.
+2. ✅ **Les petits restes**. Décidé le 2026-11-17, avant le code :
+   - **les traductions en PO, la clé dans `msgctxt`**, `msgid` portant le texte de la langue source et `msgstr` la
+     traduction, comme Poedit et Weblate l'attendent ; sans `msgctxt`, `msgid` est la clé. Le CSV reste la table que le
+     panneau Translations édite ; le PO est ce qu'on échange avec les traducteurs : **Export PO** écrit un `.pot` et un
+     `.po` par langue dans un dossier, **Import PO** remplit la colonne de la langue du fichier, sans effacer ce que le
+     traducteur a laissé vide. Un `.po` posé dans le projet est lu aussi, comme une table d'une langue. Une entrée
+     `fuzzy` compte comme manquante, et d'un pluriel seule la première forme est gardée : Devex n'a pas de pluriels.
+   - **un maillage Devex pour figer un bloc CSG** : **Bake to Mesh** écrit un `.dvxmesh` à côté de la scène et crée
+     une entité qui le dessine à la place du solide, avec un RigidBody statique et un MeshCollider si la racine avait sa
+     collision, comme Bake Mesh Instance de Godot ; le solide reste. Le `.dvxmesh` a sa propre disposition (format 1),
+     pas celle des caches d'import, qui change : il se lit dans les versions suivantes. Le glTF, écarté, aurait perdu
+     les matières du projet.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

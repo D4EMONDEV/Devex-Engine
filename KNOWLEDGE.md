@@ -4001,6 +4001,15 @@ public:
   par la profondeur (`m_previousViewProjection`) : il n'y a pas de pré-passe. Ce que la tonemapping lit est l'image
   résolue (`resolve()`) ; le bloom lit la même et écrit son halo dans le niveau 0 de la chaîne.
 
+## Formats ajoutés après les formats figés
+
+- `.dvxmesh` (Bake to Mesh, `asset::encodeMeshFile`) : « DVXMESH\0 », format 1, nombres de sommets, d'indices et de
+  sous-maillages, puis position, normale et UV par sommet, les indices, et par sous-maillage son premier indice, son
+  nombre et les 16 octets de l'UUID de sa matière. Le test de compatibilité des formats (`FormatCompatibilityTests`) ne
+  le connaît pas encore : à la prochaine version figée, lui ajouter son lecteur en même temps qu'on copie un `.dvxmesh`
+  dans `tests/data/formats/<version>`.
+- `.po` et `.pot` (traductions) sont du texte de gettext, pas un format de Devex.
+
 ## Les threads sur le web
 
 - Le préréglage `web-threads` (`/root/build/web-threads` dans WSL) prend le triplet `wasm32-emscripten-threads`, qui

@@ -1051,6 +1051,7 @@ target_sources(devex_tools
         src/tools/ShaderGraphPanel.cpp
         src/tools/ModelInspector.cpp
         src/tools/NavigationTools.cpp
+        src/tools/CsgTools.cpp
         src/tools/LightingTools.cpp
         src/tools/ProjectList.cpp
         src/tools/ProjectList.hpp

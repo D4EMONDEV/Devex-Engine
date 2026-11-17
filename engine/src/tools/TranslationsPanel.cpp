@@ -91,6 +91,8 @@ struct TranslationsUi : PanelBuilder
     Button keyButton;
     Button languageButton;
     Button missingButton;
+    Button importPo;
+    Button exportPo;
     Entity table;
     Row header;
     Entity list;
@@ -154,6 +156,10 @@ struct TranslationsUi : PanelBuilder
     [[nodiscard]] std::optional<std::pair<std::size_t, std::size_t>> cellAt(Entity element);
     void addKey(ToolsState& state);
     void addColumn(std::string code);
+    // What a translator gives back, a PO file of one language, into its column; and the table for translators, a .pot
+    // template and a .po file per language.
+    void importPoFile(const std::filesystem::path& po);
+    void exportPoFiles(ToolsState& state, const std::filesystem::path& folder);
     void update(ToolsState& state, EditorUiKit& kit, core::Duration delta);
 };
 
@@ -199,6 +205,11 @@ void TranslationsUi::build(EditorUiKit& kit)
     tooltip(languageButton.entity, "Adds a column for a language");
     missingButton = button(kit, toolbar, Icon::TriangleAlert, "Missing", "flat", 0.0f, line);
     tooltip(missingButton.entity, "Shows only the keys a language does not translate yet");
+    importPo = button(kit, toolbar, Icon::ArrowDownToLine, "Import PO", "flat", 0.0f, line);
+    tooltip(importPo.entity, "Fills the column of a language from the PO file a translator gives back, which says its language");
+    exportPo = button(kit, toolbar, Icon::ExternalLink, "Export PO", "flat", 0.0f, line);
+    tooltip(exportPo.entity, "Writes the table for translators into a folder: a .pot template, and a .po file per language, "
+                             "which Poedit and Weblate edit");
     search = searchField(kit, toolbar, grow(line), "", "Filter Keys");
 
     // The header of the columns, and the rows under it in a list that has entities for those in view.
@@ -279,7 +290,12 @@ void TranslationsUi::listTables(ToolsState& state)
     tableNames.clear();
     for (const asset::AssetInfo& info : state.database->assets(asset::AssetType::Translation))
     {
+        // The tables edited here are those of CSV; a PO file is edited by the tools of translators.
         const std::optional<asset::SourceFile> source = state.database->sourceOf(info.id);
+        if (source && !source->path.ends_with(asset::translationExtension))
+        {
+            continue;
+        }
         std::string name = source ? source->path : info.name;
         if (name.starts_with("res://assets/"))
         {
@@ -490,6 +506,91 @@ void TranslationsUi::addKey(ToolsState& state)
     scene().get<scene::UiText>(search).text.clear();
     onlyMissing = false;
     startEdit(csv.rows.size() - 1, 0);
+}
+
+void TranslationsUi::importPoFile(const std::filesystem::path& po)
+{
+    if (csv.rows.empty())
+    {
+        return;
+    }
+    const core::Result<std::string> text = core::readTextFile(po);
+    const core::Result<asset::TranslationData> read =
+        text ? asset::parseTranslationPo(*text, asset::languageOfPoFile(core::toUtf8(po.filename())))
+             : core::Result<asset::TranslationData>(std::unexpected(text.error()));
+    if (!read)
+    {
+        DEVEX_LOG_ERROR("Cannot import {}: {}", core::toUtf8(po.filename()), read.error());
+        return;
+    }
+    const asset::CsvTable before = csv;
+    const std::string& language = read->languages.front();
+    std::vector<std::string>& names = csv.rows.front();
+    if (std::ranges::find(names, language) == names.end())
+    {
+        names.push_back(language);
+    }
+    const auto column = static_cast<std::size_t>(std::ranges::find(names, language) - names.begin());
+    std::size_t filled = 0;
+    std::size_t added = 0;
+    for (std::size_t key = 0; key < read->keys.size(); ++key)
+    {
+        // What the translator left out stays as the table had it.
+        const std::string& message = read->messages[key];
+        if (message.empty())
+        {
+            continue;
+        }
+        auto row = std::ranges::find_if(csv.rows.begin() + 1, csv.rows.end(),
+                                        [&](const std::vector<std::string>& cells) { return !cells.empty() && cells.front() == read->keys[key]; });
+        if (row == csv.rows.end())
+        {
+            csv.rows.push_back({read->keys[key]});
+            row = std::prev(csv.rows.end());
+            ++added;
+        }
+        row->resize(std::max(row->size(), names.size()));
+        (*row)[column] = message;
+        ++filled;
+    }
+    for (std::vector<std::string>& row : csv.rows)
+    {
+        row.resize(std::max(row.size(), csv.rows.front().size()));
+    }
+    change(before);
+    DEVEX_LOG_INFO("{} translations into {} from {}{}", filled, asset::languageName(language), core::toUtf8(po.filename()),
+                   added > 0 ? std::format(", with {} new keys", added) : std::string{});
+}
+
+void TranslationsUi::exportPoFiles(ToolsState& state, const std::filesystem::path& folder)
+{
+    const core::Result<asset::TranslationData> data = asset::readTranslationTable(csv);
+    if (!data)
+    {
+        DEVEX_LOG_ERROR("Cannot export {} for translators: {}", core::toUtf8(file.filename()), data.error());
+        return;
+    }
+    // The text translators start from: that of the fallback language of the project, or of the first column.
+    const auto fallback = std::ranges::find(data->languages, state.database->project().localization.fallbackLanguage);
+    const auto source = static_cast<std::size_t>(fallback != data->languages.end() ? fallback - data->languages.begin() : 0);
+    const std::string stem = core::toUtf8(file.stem());
+    std::vector<std::pair<std::filesystem::path, std::string>> files{
+        {folder / core::pathFromUtf8(stem + std::string(asset::translationPotExtension)), asset::writeTranslationPot(*data, source)}};
+    for (std::size_t language = 0; language < data->languages.size(); ++language)
+    {
+        files.emplace_back(folder / core::pathFromUtf8(std::format("{}.{}{}", stem, data->languages[language], asset::translationPoExtension)),
+                           asset::writeTranslationPo(*data, language, source));
+    }
+    for (const auto& [path, text] : files)
+    {
+        if (core::Result<void> written = core::writeTextFile(path, text); !written)
+        {
+            DEVEX_LOG_ERROR("Cannot export {} for translators: {}", core::toUtf8(file.filename()), written.error());
+            return;
+        }
+    }
+    DEVEX_LOG_INFO("Exported {} for translators to {}: {}.pot and {} PO files", core::toUtf8(file.filename()), core::toUtf8(folder), stem,
+                   data->languages.size());
 }
 
 void TranslationsUi::addColumn(std::string code)
@@ -774,6 +875,40 @@ void TranslationsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration 
     if (world.wasClicked(missingButton.entity))
     {
         onlyMissing = !onlyMissing;
+    }
+    if (world.wasClicked(importPo.entity) && !file.empty())
+    {
+        const std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
+        state.platform.showFileDialog(dialogParent(state),
+                                      {.type = platform::FileDialogType::OpenFile,
+                                       .filters = {{"PO file of gettext", "po"}},
+                                       .defaultLocation = file.parent_path()},
+                                      [answers](std::optional<std::filesystem::path> chosen) {
+                                          if (const auto inbox = answers.lock(); inbox && chosen)
+                                          {
+                                              inbox->translationPo = std::move(*chosen);
+                                          }
+                                      });
+    }
+    if (world.wasClicked(exportPo.entity) && !file.empty())
+    {
+        const std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
+        state.platform.showFileDialog(dialogParent(state),
+                                      {.type = platform::FileDialogType::OpenFolder, .defaultLocation = file.parent_path()},
+                                      [answers](std::optional<std::filesystem::path> chosen) {
+                                          if (const auto inbox = answers.lock(); inbox && chosen)
+                                          {
+                                              inbox->translationPoFolder = std::move(*chosen);
+                                          }
+                                      });
+    }
+    if (std::optional<std::filesystem::path> po = std::exchange(state.dialogAnswers->translationPo, std::nullopt))
+    {
+        importPoFile(*po);
+    }
+    if (std::optional<std::filesystem::path> folder = std::exchange(state.dialogAnswers->translationPoFolder, std::nullopt))
+    {
+        exportPoFiles(state, *folder);
     }
     if (world.wasClicked(languageButton.entity))
     {

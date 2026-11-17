@@ -6,6 +6,8 @@
 #include <array>
 #include <cctype>
 #include <format>
+#include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -473,6 +475,296 @@ std::string nativeLanguageName(std::string_view code)
 std::span<const std::string_view> commonLanguages() noexcept
 {
     return common;
+}
+
+namespace {
+
+// A string of a PO file, between its quotes, with its escapes undone; none when it is not one.
+[[nodiscard]] std::optional<std::string> poString(std::string_view quoted)
+{
+    if (quoted.size() < 2 || quoted.front() != '"' || quoted.back() != '"')
+    {
+        return std::nullopt;
+    }
+    std::string text;
+    for (std::size_t index = 1; index + 1 < quoted.size(); ++index)
+    {
+        const char character = quoted[index];
+        if (character != '\\' || index + 2 >= quoted.size())
+        {
+            text += character;
+            continue;
+        }
+        const char escaped = quoted[++index];
+        switch (escaped)
+        {
+        case 'n':
+            text += '\n';
+            break;
+        case 't':
+            text += '\t';
+            break;
+        case 'r':
+            text += '\r';
+            break;
+        case '"':
+        case '\\':
+            text += escaped;
+            break;
+        default:
+            text += '\\';
+            text += escaped;
+            break;
+        }
+    }
+    return text;
+}
+
+[[nodiscard]] std::string poQuoted(std::string_view text)
+{
+    std::string quoted = "\"";
+    for (const char character : text)
+    {
+        switch (character)
+        {
+        case '\n':
+            quoted += "\\n";
+            break;
+        case '\t':
+            quoted += "\\t";
+            break;
+        case '\r':
+            quoted += "\\r";
+            break;
+        case '"':
+            quoted += "\\\"";
+            break;
+        case '\\':
+            quoted += "\\\\";
+            break;
+        default:
+            quoted += character;
+            break;
+        }
+    }
+    return quoted + "\"";
+}
+
+[[nodiscard]] std::string_view trimmed(std::string_view text) noexcept
+{
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())) != 0)
+    {
+        text.remove_prefix(1);
+    }
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())) != 0)
+    {
+        text.remove_suffix(1);
+    }
+    return text;
+}
+
+struct PoEntry
+{
+    std::string context;
+    std::string id;
+    std::string translation;
+    bool hasContext = false;
+    bool hasId = false;
+    bool fuzzy = false;
+};
+
+// What every PO file of Devex begins with: no key, and how its text is written.
+[[nodiscard]] std::string poHeader(std::string_view language)
+{
+    std::string header = "msgid \"\"\nmsgstr \"\"\n\"Content-Type: text/plain; charset=UTF-8\\n\"\n";
+    if (!language.empty())
+    {
+        header += std::format("\"Language: {}\\n\"\n", language);
+    }
+    return header + "\"X-Generator: Devex\\n\"\n";
+}
+
+[[nodiscard]] std::string poEntries(const TranslationData& table, std::optional<std::size_t> language, std::size_t sourceLanguage)
+{
+    std::string text;
+    for (std::size_t key = 0; key < table.keys.size(); ++key)
+    {
+        const std::string& source = sourceLanguage < table.languages.size() ? table.message(key, sourceLanguage) : table.keys[key];
+        text += std::format("\nmsgctxt {}\nmsgid {}\nmsgstr {}\n", poQuoted(table.keys[key]), poQuoted(source.empty() ? table.keys[key] : source),
+                            poQuoted(language ? table.message(key, *language) : std::string{}));
+    }
+    return text;
+}
+
+} // namespace
+
+core::Result<TranslationData> parseTranslationPo(std::string_view text, std::string_view fallbackLanguage)
+{
+    std::vector<PoEntry> entries;
+    PoEntry entry;
+    bool started = false;
+    bool fuzzyNext = false;
+    bool plurals = false;
+    // Where a string on a line of its own goes, after the keyword that began it.
+    std::string* field = nullptr;
+    std::string ignored;
+    const auto begin = [&] {
+        if (started)
+        {
+            entries.push_back(std::move(entry));
+        }
+        entry = PoEntry{.fuzzy = std::exchange(fuzzyNext, false)};
+        started = true;
+    };
+    std::size_t lineNumber = 0;
+    while (!text.empty())
+    {
+        const std::size_t end = text.find('\n');
+        const std::string_view line = trimmed(text.substr(0, end));
+        text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
+        ++lineNumber;
+        if (line.empty() || line.starts_with("#~"))
+        {
+            continue;
+        }
+        if (line.starts_with("#,"))
+        {
+            fuzzyNext = fuzzyNext || line.find("fuzzy") != std::string_view::npos;
+            continue;
+        }
+        if (line.starts_with('#'))
+        {
+            continue;
+        }
+        const std::size_t space = line.find_first_of(" \t");
+        const std::string_view keyword = line.starts_with('"') ? std::string_view{} : line.substr(0, space);
+        const std::string_view rest = trimmed(keyword.empty() ? line : line.substr(std::min(space, line.size())));
+        const std::optional<std::string> value = poString(rest);
+        if (!value)
+        {
+            return core::makeError(core::ErrorCode::Parse, "line {} of the PO file holds no string between quotes", lineNumber);
+        }
+        if (keyword.empty())
+        {
+            if (field == nullptr)
+            {
+                return core::makeError(core::ErrorCode::Parse, "line {} of the PO file continues no keyword", lineNumber);
+            }
+            *field += *value;
+            continue;
+        }
+        if (keyword == "msgctxt")
+        {
+            begin();
+            entry.hasContext = true;
+            field = &entry.context;
+        }
+        else if (keyword == "msgid")
+        {
+            if (!started || entry.hasId)
+            {
+                begin();
+            }
+            entry.hasId = true;
+            field = &entry.id;
+        }
+        else if (keyword == "msgid_plural")
+        {
+            plurals = true;
+            field = &ignored;
+        }
+        else if (keyword == "msgstr" || keyword == "msgstr[0]")
+        {
+            field = &entry.translation;
+        }
+        else if (keyword.starts_with("msgstr["))
+        {
+            field = &ignored;
+        }
+        else
+        {
+            return core::makeError(core::ErrorCode::Parse, "line {} of the PO file has an unknown keyword: {}", lineNumber, keyword);
+        }
+        field->clear();
+        *field += *value;
+    }
+    if (started)
+    {
+        entries.push_back(std::move(entry));
+    }
+    if (plurals)
+    {
+        DEVEX_LOG_WARNING("Plural forms of the PO file are not read: each message keeps its first form");
+    }
+
+    // The language of the header, or the one the file is named after.
+    std::string language;
+    for (const PoEntry& found : entries)
+    {
+        if (!found.hasContext && found.id.empty())
+        {
+            std::string_view header = found.translation;
+            while (!header.empty())
+            {
+                const std::size_t end = header.find('\n');
+                const std::string_view line = trimmed(header.substr(0, end));
+                header.remove_prefix(end == std::string_view::npos ? header.size() : end + 1);
+                if (line.size() > 9 && std::ranges::equal(line.substr(0, 9), std::string_view("language:"),
+                                                          [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; }))
+                {
+                    language = std::string(trimmed(line.substr(9)));
+                }
+            }
+        }
+    }
+    if (!isLanguageCode(language))
+    {
+        language = std::string(fallbackLanguage);
+    }
+    if (!isLanguageCode(language))
+    {
+        return core::makeError(core::ErrorCode::Parse,
+                               "the PO file says no language: write Language: in its header, or name the file after it, as fr.po");
+    }
+    TranslationData table;
+    table.languages.push_back(normalizeLanguage(language));
+    std::unordered_map<std::string, std::size_t> seen;
+    for (PoEntry& found : entries)
+    {
+        std::string key = found.hasContext ? std::move(found.context) : std::move(found.id);
+        if (key.empty() || !seen.emplace(key, table.keys.size()).second)
+        {
+            continue;
+        }
+        table.keys.push_back(std::move(key));
+        table.messages.push_back(found.fuzzy ? std::string{} : std::move(found.translation));
+    }
+    return table;
+}
+
+std::string writeTranslationPot(const TranslationData& table, std::size_t sourceLanguage)
+{
+    return poHeader({}) + poEntries(table, std::nullopt, sourceLanguage);
+}
+
+std::string writeTranslationPo(const TranslationData& table, std::size_t language, std::size_t sourceLanguage)
+{
+    return poHeader(language < table.languages.size() ? std::string_view(table.languages[language]) : std::string_view{}) +
+           poEntries(table, language < table.languages.size() ? std::optional(language) : std::nullopt, sourceLanguage);
+}
+
+std::string languageOfPoFile(std::string_view fileName)
+{
+    std::string_view name = fileName;
+    if (const std::size_t dot = name.rfind('.'); dot != std::string_view::npos)
+    {
+        name = name.substr(0, dot);
+    }
+    if (const std::size_t dot = name.rfind('.'); dot != std::string_view::npos)
+    {
+        name = name.substr(dot + 1);
+    }
+    return isLanguageCode(name) ? normalizeLanguage(name) : std::string{};
 }
 
 std::vector<std::uint32_t> translationCharacters(const TranslationData& table)

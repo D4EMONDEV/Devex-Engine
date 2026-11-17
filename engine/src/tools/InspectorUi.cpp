@@ -853,6 +853,19 @@ void InspectorUi::addExtras(EditorUiKit& kit, Section& section, int group)
         section.lines.push_back(Line{.entity = controls, .group = group});
         return;
     }
+    if (section.name == "CsgCombiner" || section.name == "CsgBox" || section.name == "CsgSphere" || section.name == "CsgCylinder" ||
+        section.name == "CsgPath")
+    {
+        const Entity actions = add(section.card, "Bake to Mesh", wide(line));
+        scene().add<scene::UiLayout>(actions, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                              .spacing = font * 0.4f,
+                                                              .padding = {font * 0.35f, 0.0f, 0.0f, 0.0f},
+                                                              .align = scene::TextAlign::Left});
+        section.bakeMesh = button(kit, actions, Icon::Cuboid, "Bake to Mesh", "button", 0.0f, line - 4.0f);
+        tooltip(section.bakeMesh.entity, "Writes the solid as a mesh next to the scene, and puts an entity that draws it beside the "
+                                         "solid, with its collision. The solid stays, to delete once the mesh is right.");
+        section.lines.push_back(Line{.entity = actions, .group = group});
+    }
     if (section.name == "NavMeshSurface")
     {
         section.navInfo = text(section.card, wide(line), "", "dim");
@@ -2008,6 +2021,10 @@ void InspectorUi::answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
             {
                 state.particleWorld->stop(active, true);
             }
+        }
+        if (section.bakeMesh.entity.isValid() && world.wasClicked(section.bakeMesh.entity))
+        {
+            bakeCsgMesh(state, edited, active);
         }
         if (section.bake.entity.isValid())
         {
