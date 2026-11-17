@@ -867,9 +867,22 @@ public enum MouseButton
     X2 = 4,
 }
 
+// A finger on the screen, in pixels of the window as the mouse.
+public readonly struct Touch
+{
+    public readonly ulong Id;        // the same while the finger stays on the screen
+    public readonly Vec2 Position;
+    public readonly Vec2 Delta;      // how far it moved since the previous frame
+    public readonly bool Pressed;    // put down this frame
+    public readonly bool Released;   // lifted this frame: it is gone the next
+}
+
 // Keyboard and mouse of the current frame. "Pressed" is true only on the frame of the press.
 public static unsafe class Input
 {
+    // The fingers on the screen this frame, in the order they touched it, with those lifted this frame. The first one
+    // is also the mouse while Project Settings > Application emulates the mouse from touch.
+    public static Touch[] Touches { get; }
     public static bool IsKeyDown(Key key);
     public static bool WasKeyPressed(Key key);
     public static bool IsMouseButtonDown(MouseButton button);
@@ -912,6 +925,10 @@ public static unsafe class Input
     public static void ResetBindings();
 }
 ```
+
+Sur un téléphone, les composants d'interface **Touch button** (`UiTouchButton`) et **Touch joystick** (`UiTouchStick`)
+tiennent ou poussent une action du projet tant qu'un doigt les touche : le jeu lit ses actions comme avec un clavier ou
+une manette, sans code de plus. Ils ne s'affichent que sur un écran tactile, et dans l'éditeur.
 
 
 ---
@@ -3662,9 +3679,22 @@ public enum MouseButton
     X2 = 4,
 }
 
+// A finger on the screen, in pixels of the window as the mouse.
+public readonly struct Touch
+{
+    public readonly ulong Id;        // the same while the finger stays on the screen
+    public readonly Vec2 Position;
+    public readonly Vec2 Delta;      // how far it moved since the previous frame
+    public readonly bool Pressed;    // put down this frame
+    public readonly bool Released;   // lifted this frame: it is gone the next
+}
+
 // Keyboard and mouse of the current frame. "Pressed" is true only on the frame of the press.
 public static unsafe class Input
 {
+    // The fingers on the screen this frame, in the order they touched it, with those lifted this frame. The first one
+    // is also the mouse while Project Settings > Application emulates the mouse from touch.
+    public static Touch[] Touches { get; }
     public static bool IsKeyDown(Key key);
     public static bool WasKeyPressed(Key key);
     public static bool IsMouseButtonDown(MouseButton button);
@@ -3716,7 +3746,7 @@ une **table de pointeurs de fonctions** (`NativeApi`, des `delegate* unmanaged<.
 C++ dans `engine/src/runtime/ManagedGame.cpp`, et reçoit en retour la table des fonctions managées.
 Les deux tables ont le même ordre des deux côtés : une nouvelle fonction s'ajoute **à la fin** de
 `NativeApi` dans `ManagedGame.cpp` et dans `Interop.cs`, et `bootstrapVersion` (C++) et
-`Bootstrap.Version` (C#) augmentent ensemble (27 aujourd'hui) ; un runtime d'une autre version est
+`Bootstrap.Version` (C#) augmentent ensemble (38 aujourd'hui) ; un runtime d'une autre version est
 refusé au chargement. Les composants passent par leur mémoire même : le C# lit et écrit les champs
 des composants du moteur à leur place dans les pools de la scène, d'après une disposition que le
 moteur hache (`ComponentLayoutHash`) pour refuser un assemblage compilé contre une autre.

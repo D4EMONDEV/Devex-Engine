@@ -6040,6 +6040,12 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      web : ils comptent des secondes, comme sous Vulkan. Deux tests comparent à Vulkan des sprites d'un shader 2D
      (pliés, teintés, avec un uniforme d'instance, éclairés ou non) et un ciel de shader qui éclaire une sphère,
      avec des particules de shader.
+7. ✅ **Le guide du web et la relecture de la doc**. `docs/web.md` dit ce qu'il faut (Compatibility, Emscripten pour le
+   C++, un navigateur avec WebGPU), comment exporter, essayer avec Run in Browser, choisir Thread Support et mettre en
+   ligne sur itch.io ou ailleurs, ce que le navigateur change et ce qui diffère encore du bureau ; il renvoie à caniuse
+   pour les navigateurs plutôt que de figer leurs versions. La relecture a mis le web dans le README (direction,
+   renderer, construction, CI), le guide de démarrage et la page des versions publiées, et le tactile dans le README et
+   l'API C# ; elle a retiré ce qui était annoncé pour plus tard et qui est fait (les add-ons en zip, l'export web).
 
 ## Outils de level design — plan décidé le 2026-11-04
 

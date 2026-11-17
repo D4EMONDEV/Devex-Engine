@@ -2,8 +2,9 @@
 
 Un addon Devex est un dossier de sources réutilisables : scènes, textures, matériaux et scripts,
 avec un fichier `addon.dvxaddon` qui donne son identité. Il peut aussi proposer des commandes C#
-dans l'éditeur. Cette version crée, installe, exporte, met à jour et désinstalle des dossiers
-locaux. Les archives, le catalogue en ligne et la résolution de dépendances viendront ensuite.
+dans l'éditeur. Cette version crée, installe, exporte, met à jour et désinstalle des addons, en
+dossiers ou en `.zip`, et liste leurs dépendances. Le catalogue en ligne, qui irait chercher celles
+qui manquent, viendra ensuite.
 
 Tout se passe dans **Project > Addons...**, qui ouvre la page Addons de Project Settings.
 

@@ -22,10 +22,11 @@ git tag v0.9.0
 git push origin v0.9.0
 ```
 
-La CI fait ses vérifications habituelles sur Windows, Linux et Android. Si toutes passent, le job *Draft the release* :
+La CI fait ses vérifications habituelles sur Windows, Linux, Android et le web. Si toutes passent, le job *Draft the release* :
 
 - vérifie que le tag, `CMakeLists.txt`, le bac à sable, les formats figés et le journal disent la même version ;
-- met dans chaque paquet le moteur de l'autre système, dans `platforms/`, avec ce qu'un jeu demande et rien de plus ;
+- met dans chaque paquet le moteur de l'autre système, dans `platforms/`, avec ce qu'un jeu demande et rien de plus, et
+  le lecteur web, avec et sans threads, dans `platforms/web` ;
 - construit le zip et l'installateur pour Windows, et le `.tar.gz` pour Linux ;
 - ajoute `SHA256SUMS.txt`, et crée la release en brouillon.
 

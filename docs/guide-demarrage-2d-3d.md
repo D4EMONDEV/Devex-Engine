@@ -46,7 +46,7 @@ La programmation C++ demande aussi les outils de compilation configurés pour De
 2. Cliquer sur **Create**.
 3. Nommer le projet `MonPremierJeu`.
 4. Choisir le dossier parent et laisser **Create Folder** activé pour isoler le projet. Le message sous le chemin dit en vert où ira le projet, ou en rouge ce qui manque.
-5. Choisir le **Renderer** : **Forward+** a tous les effets ; **Compatibility** se limite à ce qui tourne partout, et sera demandé par l'export web. Il se change ensuite dans **Project Settings > Rendering**.
+5. Choisir le **Renderer** : **Forward+** a tous les effets ; **Compatibility** se limite à ce qui tourne partout, et l'export web le demande ([publier sur le web](web.md)). Il se change ensuite dans **Project Settings > Rendering**.
 6. Laisser **Version Control Metadata** sur **Git** pour un dépôt Git : un `.gitignore` et un `.gitattributes` sont écrits. Puis **Create**, avec **Edit Now** coché pour ouvrir le projet tout de suite.
 
 ![Dialogue de création d'un projet](images/guide-demarrage/02-creer-projet.jpg)
@@ -644,6 +644,8 @@ Les matériaux standard suffisent au prototype. Pour un effet (eau, objet qui se
 3. Sélectionner le shader puis **New Material**, ou **Create New > Material** puis choisir le shader dans l'inspecteur du matériau. Les `uniform` du shader y apparaissent comme réglages.
 4. Glisser le matériau sur le MeshRenderer de l'objet. Un shader **Canvas Item** se donne de la même façon au champ Material d'un SpriteRenderer en 2D.
 
+Dans un projet en Compatibility, chaque shader se compile aussi pour le navigateur : il y dessine comme sur le bureau, avec au plus huit textures par matériau (voir [publier sur le web](web.md)).
+
 Sans écrire de code, un **graphe de shader** donne le même résultat, avec des nœuds comme les shaders visuels de Godot :
 
 1. **Create New > Shader Graph**, type **Spatial (meshes)**. Le panneau **Shader Graph** s'ouvre en bas, sur l'onglet **Fragment** et son nœud de sortie.
@@ -744,10 +746,12 @@ coupe en plus les actions du joueur.
 1. Arrêter Play et sauvegarder les scènes.
 2. Compiler le code ; résoudre les erreurs avant d'exporter.
 3. Définir la bonne scène de démarrage.
-4. Ouvrir **Project > Export Game…**. Sa liste de gauche propose Windows, Linux et Android, chacune avec ses réglages dans l'onglet **Options**. Les problèmes qui empêchent d'exporter s'écrivent en rouge en bas, et **Export All** exporte pour chaque plateforme qui a ce qu'il lui faut, l'une après l'autre. Depuis Windows, un jeu pour Linux sort en `.tar.gz`, à extraire sous Linux ; depuis Linux, un jeu pour Windows sort en dossier. Le premier export d'un jeu en C# télécharge .NET pour ce système. Le code C++ ne se compile que sur le système où il tourne : le module d'un nouveau projet, qui n'enregistre rien, est laissé de côté, et un jeu dont le C++ fait quelque chose s'exporte depuis l'éditeur de ce système. **Terminal** ouvre, pour un jeu Windows, un terminal avec le jeu pour voir son journal, qui reste dans un fichier de toute façon. Android demande le moteur
+4. Ouvrir **Project > Export Game…**. Sa liste de gauche propose Windows, Linux, Android et Web, chacune avec ses réglages dans l'onglet **Options**. Les problèmes qui empêchent d'exporter s'écrivent en rouge en bas, et **Export All** exporte pour chaque plateforme qui a ce qu'il lui faut, l'une après l'autre. Depuis Windows, un jeu pour Linux sort en `.tar.gz`, à extraire sous Linux ; depuis Linux, un jeu pour Windows sort en dossier. Le premier export d'un jeu en C# télécharge .NET pour ce système. Le code C++ ne se compile que sur le système où il tourne : le module d'un nouveau projet, qui n'enregistre rien, est laissé de côté, et un jeu dont le C++ fait quelque chose s'exporte depuis l'éditeur de ce système. **Terminal** ouvre, pour un jeu Windows, un terminal avec le jeu pour voir son journal, qui reste dans un fichier de toute façon. Android demande le moteur
    construit pour Android à côté de l'éditeur (voir le README) : nom de paquet, version, orientation,
    téléphones ou émulateur, APK ou AAB, clé de publication, et installation sur l'appareil branché. Le
-   C# n'y tourne pas encore.
+   C# n'y tourne pas encore. **Web** produit une page et son lecteur, avec un ZIP prêt pour itch.io, et
+   **Run in Browser** l'essaie dans le navigateur ; le projet doit être en Compatibility, et le C# n'y
+   tourne pas encore non plus : voir [publier sur le web](web.md).
 5. Dans **Export Path**, choisir un dossier de sortie dédié, par exemple `export/windows` (`export/linux` sous Linux, le dossier proposé).
 6. Choisir **Release** pour distribuer le jeu. Devex doit disposer d'un build Release du moteur ; consulter le README pour le produire si seul le build Debug existe.
 7. Dans l'onglet **Resources**, inclure les autres scènes utilisées par le jeu. Pour les assets chargés uniquement par chemin à l'exécution, utiliser les dossiers à inclure afin de ne pas dépendre seulement des références directes.

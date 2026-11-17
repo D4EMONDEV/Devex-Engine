@@ -8,8 +8,10 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 ## Direction technique
 
 - C++23 (C++26 en expérimentation), CMake + Ninja, dépendances via vcpkg ;
-- Vulkan 1.3 (volk + VMA), shaders Slang, cible de rendu forward+ clustered PBR ;
-- SDL3 pour la fenêtre et les entrées, Windows d'abord avec un code portable ;
+- Vulkan 1.3 (volk + VMA), shaders Slang, cible de rendu forward+ clustered PBR ; WebGPU dans le
+  navigateur, qui dessine ce que montre la méthode Compatibility ;
+- SDL3 pour la fenêtre et les entrées ; l'éditeur sous Windows et Linux, les jeux exportés pour
+  Windows, Linux, Android et le [web](docs/web.md) ;
 - scènes en entités + composants, stockées de façon data-oriented ;
 - repère Y-up main droite, formats de projet texte `.dvx*` ;
 - gameplay en C++ (composants et systèmes) **ou en C#** (.NET hébergé), compilé et rechargé à
@@ -44,13 +46,15 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
 Le [guide de Devex Script](docs/script-editor.md) explique la configuration LSP C#/C++, la
 complétion, les diagnostics en direct, les définitions, les références et le formatage.
 
+Pour mettre un jeu dans un navigateur, sur itch.io ou ailleurs : [publier sur le web](docs/web.md).
+
 ## État actuel
 
 - `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions, `SlotMap`, `Uuid`,
   hachage XXH64, pool de jobs, profileur (zones nommées par thread, rassemblées par image) ;
 - `Devex::Math` : types GLM sous `devex::math`, projection reverse-Z infinie, TRS ;
-- `Devex::Platform` : fenêtre, événements et entrées clavier, souris et manette (sources nommées
-  pour les actions), saisie de texte et presse-papiers, dialogues de fichiers, bibliothèques
+- `Devex::Platform` : fenêtre, événements et entrées clavier, souris, manette (sources nommées
+  pour les actions) et doigts d'un écran tactile (la souris émulée par le premier, ou l'inverse), saisie de texte et presse-papiers, dialogues de fichiers, bibliothèques
   partagées et processus sur SDL3 (barre de titre de libdecor sous GNOME, extensions X11), entrée
   des programmes parmi les applications d'un bureau Linux ;
 - `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`), listes et
@@ -97,7 +101,9 @@ complétion, les diagnostics en direct, les définitions, les références et le
   une texture, d'autres caméras dessinées dans des images à elles dans la même image (le jeu à
   côté de la scène dans l'éditeur), sélection sur le
   GPU, contours et lignes d'outils, temps GPU de chaque passe, copies vers le GPU sans attente et
-  dans un budget par image ;
+  dans un budget par image ; renderer WebGPU (Dawn) pour le navigateur, qui dessine ce que
+  Compatibility montre comme Vulkan, depuis des shaders partagés avec lui, et les shaders des
+  projets compilés en WGSL à leur import ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
   instanciation de modèles, composants de physique, d'animation et d'interface, cartes de
   tuiles (`Tilemap`, cellules par blocs, tilesets `.dvxtileset`, terrains et collisions dessinées
@@ -137,7 +143,8 @@ complétion, les diagnostics en direct, les définitions, les références et le
   (`TrailRenderer`) ;
 - `Devex::Ui` : interfaces faites d'entités (`Canvas`, `UiRect`, `UiImage`, `UiText`, `UiButton`,
   `UiInput`, `UiSlider`, `UiToggle`, `UiScroll`, `UiLayout`, `UiBinding`, `UiNumberField`,
-  `UiColorPicker`, `UiPlot`, `UiLine`, `UiTextArea`), placement par ancrages
+  `UiColorPicker`, `UiPlot`, `UiLine`, `UiTextArea`, et les commandes tactiles `UiTouchButton` et
+  `UiTouchStick`, qui tiennent les actions du projet), placement par ancrages
   et marges puis par conteneurs, texte dessiné à sa taille par FreeType (net, sur des pixels
   entiers) ou tiré d'un atlas de distances signées quand il est contourné ou agrandi, avec
   crénage et texte riche, champs de saisie avec sélection, presse-papiers et mot de passe, curseurs et cases à
@@ -365,8 +372,22 @@ cmake --build --preset build-android-x86_64
 out\build\x64-release\bin\devex-editor-console.exe --export <Jeu>.dvxproj --platform android --abi x86_64 --install
 ```
 
+Pour le web, le moteur et le lecteur se compilent en WebAssembly sous Linux (WSL convient), avec
+Emscripten 7.0.0 installé par emsdk et désigné par `EMSDK` : `web` sur un thread, `web-threads`
+pour **Thread Support**. Ses tests de ce que fait un jeu tournent dans Node. Les releases livrent
+ce lecteur avec l'éditeur, dans `platforms/web` : exporter un jeu pour le web ne demande pas de le
+construire (voir [publier sur le web](docs/web.md)). Le build Debug de Windows contient aussi le
+renderer WebGPU, par Dawn, dont des tests comparent les images à celles de Vulkan.
+
+```bash
+source "$EMSDK/emsdk_env.sh"
+cmake --preset web
+cmake --build out/build/web
+ctest --test-dir out/build/web --label-exclude "gpu|noweb"
+```
+
 Chaque push sur `main` ou `ci` est construit et testé par GitHub Actions (Windows et Linux, Debug
-et Release ; Android arm64 construit seulement) : voir [.github/workflows/ci.yml](.github/workflows/ci.yml) et l'onglet *Actions* du
+et Release ; Android arm64 construit seulement ; le web, avec et sans threads, testé dans Node) : voir [.github/workflows/ci.yml](.github/workflows/ci.yml) et l'onglet *Actions* du
 dépôt. Sous Linux, les tests marqués `[gpu]` y tournent sur lavapipe, et le bac à sable, exporté par
 le moteur empaqueté, est joué dans une Ubuntu 24.04 vierge ; sous Windows, ils se lancent
 localement avec `ctest`.
