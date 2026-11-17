@@ -166,6 +166,21 @@ TEST_CASE("The script client initializes synchronizes unsaved buffers and surviv
         else
             CHECK(replies[0].locations[0].path == path);
     }
+    // A rename: every place the server names, in this file and in another.
+    REQUIRE(service.request(LanguageFeature::Rename, documents[0], 2, "Renamed"));
+    REQUIRE(until(service, project, settings, documents,
+                  [&]
+                  {
+                      replies = service.takeReplies();
+                      return !replies.empty();
+                  }));
+    CHECK(replies[0].feature == LanguageFeature::Rename);
+    REQUIRE(replies[0].renames.size() == 3);
+    CHECK(replies[0].renames[0].path == path);
+    CHECK(replies[0].renames[0].text == "Renamed");
+    CHECK(replies[0].renames[1].start == devex::tools::detail::LspPosition{0, 4});
+    CHECK(replies[0].renames[2].path == path.parent_path() / "Other.cs");
+    CHECK(replies[0].renames[2].end == devex::tools::detail::LspPosition{1, 3});
     service.restart();
     REQUIRE(until(service, project, settings, documents, [&] { return service.ready(path); }));
     settings.languageServers[0].enabled = false;

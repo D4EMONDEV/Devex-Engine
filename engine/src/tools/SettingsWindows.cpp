@@ -626,6 +626,7 @@ struct EditorSettingsUi : SettingsUi
     std::array<std::filesystem::path, 2> detectedServers;
     bool serversDetected = false;
     Button restartServers;
+    Entity wrapLines;
     Entity playMode;
     Entity terminalMode;
     std::array<Entity, viewportNumbers.size()> viewportNumberFields{};
@@ -787,6 +788,10 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     Section& help = pageCard(kit, scriptsPage, "Opening Files");
     note(&help, "Double-click a script to open it with the chosen editor. Edit in Devex Script always uses the built-in editor.", "dim", 3.0f);
     note(&help, "Devex Files selects the text editor for .dvx files. Scenes and assets keep their visual editors.", "dim", 3.0f);
+    Section& writing = pageCard(kit, scriptsPage, "Devex Script");
+    wrapLines = toggle(formRow(writing, "Wrap Lines").editor);
+    note(&writing, "Cuts the lines too long for the text editor at its right edge, between words when it can, instead of scrolling across.", "dim",
+         3.0f);
     for (std::size_t i = 0; i < servers.size(); ++i)
     {
         Section& language =
@@ -977,6 +982,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     scene().get<scene::UiText>(detectionStatus).text = installedEditors.empty() ? "No supported IDE found. You can choose a custom executable below." :
         std::format("{} installed editors found. Choose one for each file type below.", installedEditors.size());
     setChoice(automaticCompilation, {"Automatic", "Manual (Ctrl+B)"}, state.scripts.automaticCompilation ? 0 : 1);
+    setToggle(wrapLines, state.scripts.wrapLines);
     for (std::size_t i = 0; i < servers.size(); ++i)
     {
         const auto& server = state.scripts.languageServers[i];
@@ -1029,6 +1035,8 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     }
 
     ScriptSettings scripts = state.scripts;
+    if (world.wasChanged(wrapLines))
+        scripts.wrapLines = scene().get<scene::UiToggle>(wrapLines).value;
     for (std::size_t i = 0; i < servers.size(); ++i)
     {
         auto& server = scripts.languageServers[i];
@@ -1210,6 +1218,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         {
             scripts.editors = ScriptSettings{}.editors;
             scripts.languageServers = ScriptSettings{}.languageServers;
+            scripts.wrapLines = false;
         }
         else if (selected == compilationPage)
         {

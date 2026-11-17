@@ -13,6 +13,7 @@
 #include <devex/core/Profiler.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/ui/TextArea.hpp>
 
 #include <algorithm>
 #include <array>
@@ -285,6 +286,8 @@ void indexDocument(TextEditState& edit, const TextDocument& document)
     entries.push_back(MenuEntry::line());
     entries.push_back({.icon = Icon::ArrowDownToLine, .label = "Go to Line...", .shortcut = "Ctrl+G", .enabled = open,
                        .action = [](ToolsState& tools, scene::Scene&) { tools.textEdit.openGoTo = true; }});
+    entries.push_back({.icon = Icon::Pencil, .label = "Rename Symbol...", .shortcut = "F2", .enabled = open,
+                       .action = [](ToolsState& tools, scene::Scene&) { tools.textEdit.openRename = true; }});
     return entries;
 }
 
@@ -368,6 +371,16 @@ struct ScriptUi : FormUi
     Entity replaceField;
     Button replaceOne;
     Button replaceEvery;
+    // F2: the new name of what is under the cursor, which the language server writes everywhere.
+    Entity renameRow;
+    Entity renameField;
+    Button renameButton;
+    Button renameClose;
+    bool renaming = false;
+    int renameCursor = 0;
+    std::filesystem::path renamePath;
+    // A rename that came back, applied once the replies are read: it may open documents.
+    std::optional<LanguageReply> pendingRename;
     Entity goRow;
     Entity goField;
     Entity goCount;
@@ -441,6 +454,8 @@ struct ScriptUi : FormUi
     void colorLines(ToolsState& state, const TextDocument& document, Entity area);
     void showCompletions(ToolsState& state, Entity area, bool focused);
     void receiveLanguageReplies(ToolsState& state);
+    // Writes what the language server answered to a rename into every file it names.
+    void applyRename(ToolsState& state, const LanguageReply& reply);
     void fillResults(ToolsState& state, EditorUiKit& kit);
     void languageActions(ToolsState& state, EditorUiKit& kit, TextDocument& document, Entity area,
                          bool typing);
@@ -552,6 +567,12 @@ void ScriptUi::build(EditorUiKit& kit)
     replaceField = field(replaceRow, middle({font * 16.0f, inner}), "", "Replace with");
     replaceOne = button(kit, replaceRow, Icon::Pencil, "Replace", "button", 0.0f, inner);
     replaceEvery = button(kit, replaceRow, Icon::Layers, "Replace All", "button", 0.0f, inner);
+    renameRow = strip("Rename symbol");
+    text(renameRow, middle({std::ceil(kit.textWidth(EditorUiKit::regularFont(), "Rename to", font)) + 2.0f, tall}), "Rename to", "text");
+    renameField = field(renameRow, middle({font * 16.0f, inner}), "", "");
+    renameButton = button(kit, renameRow, Icon::Pencil, "Rename", "button", 0.0f, inner);
+    text(renameRow, grow(tall), "Everywhere the language server finds it, in every file", "dim");
+    renameClose.entity = closeButton(kit, renameRow, middle({inner, inner}), "Close Rename (Escape)");
     // Ctrl+G: the line to jump to.
     goRow = strip("Go to line");
     text(goRow, middle({std::ceil(kit.textWidth(EditorUiKit::regularFont(), "Go to line", font)) + 2.0f, tall}), "Go to line", "text");
@@ -896,7 +917,67 @@ void ScriptUi::receiveLanguageReplies(ToolsState& state)
         }
         else if (reply.feature == LanguageFeature::Hover && reply.cursor == hoverRequestCursor)
             hoverMessage = std::move(reply.message);
+        else if (reply.feature == LanguageFeature::Rename)
+            pendingRename = std::move(reply);
     }
+    if (std::optional<LanguageReply> rename = std::exchange(pendingRename, std::nullopt))
+        applyRename(state, *rename);
+}
+
+void ScriptUi::applyRename(ToolsState& state, const LanguageReply& reply)
+{
+    if (reply.renames.empty())
+    {
+        languageMessage = reply.message.empty() ? "Nothing to rename here" : reply.message;
+        return;
+    }
+    // The files in the order the server names them, each with what to write in it.
+    std::vector<std::filesystem::path> files;
+    for (const LanguageReply::Rename& rename : reply.renames)
+        if (std::ranges::none_of(files, [&](const std::filesystem::path& file) { return sameTextPath(file, rename.path); }))
+            files.push_back(rename.path);
+    std::size_t changed = 0;
+    std::size_t opened = 0;
+    for (const std::filesystem::path& file : files)
+    {
+        // A file that is not open opens, changed and not saved, for the rename to be checked and undone.
+        TextDocument* document = findTextDocument(state, file);
+        if (document == nullptr)
+        {
+            core::Result<TextDocument> read = TextDocument::open(file);
+            if (!read)
+            {
+                DEVEX_LOG_WARNING("Cannot rename in {}: {}", core::toUtf8(file), read.error());
+                continue;
+            }
+            state.textDocuments.push_back(std::move(*read));
+            document = &state.textDocuments.back();
+            ++opened;
+        }
+        std::vector<CodeTextEdit> edits;
+        for (const LanguageReply::Rename& rename : reply.renames)
+            if (sameTextPath(rename.path, file))
+                edits.push_back({.begin = static_cast<int>(lspOffset(document->text, rename.start)),
+                                 .end = static_cast<int>(lspOffset(document->text, rename.end)),
+                                 .text = rename.text});
+        // From the end, so that each leaves the places before it where they were.
+        std::ranges::sort(edits, std::greater{}, &CodeTextEdit::begin);
+        changed += edits.size();
+        if (sameTextPath(state.activeText, file))
+        {
+            // The open one through its area, as one change to go back on.
+            state.textEdit.edits.insert(state.textEdit.edits.end(), edits.begin(), edits.end());
+            continue;
+        }
+        for (const CodeTextEdit& edit : edits)
+        {
+            const auto begin = static_cast<std::size_t>(std::clamp(edit.begin, 0, static_cast<int>(document->text.size())));
+            const auto end = static_cast<std::size_t>(std::clamp(edit.end, static_cast<int>(begin), static_cast<int>(document->text.size())));
+            document->text.replace(begin, end - begin, edit.text);
+        }
+    }
+    languageMessage = std::format("Renamed {} places in {} files{}: save them to keep it, Ctrl+Z undoes it in each", changed, files.size(),
+                                  opened > 0 ? std::format(", {} of them opened", opened) : std::string{});
 }
 
 void ScriptUi::fillResults(ToolsState& state, EditorUiKit& kit)
@@ -997,6 +1078,8 @@ void ScriptUi::languageActions(ToolsState& state, EditorUiKit& kit, TextDocument
         else
             languageMessage.clear();
     };
+    if (typing && state.input.pressed(Key::F2, false))
+        edit.openRename = true;
     if (typing && state.input.pressed(Key::F12, false))
         ask(state.input.shift() ? LanguageFeature::References : LanguageFeature::Definition,
             edit.cursor);
@@ -1181,6 +1264,7 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
     for (const OpenText& entry : open)
     {
         scene().get<UiRect>(entry.area).visible = &entry == shown;
+        scene().get<scene::UiTextArea>(entry.area).wrap = state.scripts.wrapLines;
     }
     const Entity area = shown != nullptr ? shown->area : Entity{};
     if (document != nullptr && !sameTextPath(shownPath, document->path))
@@ -1290,6 +1374,16 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
         world.startEditing(scene(), goField, true);
     }
     going = going && document != nullptr;
+    if (std::exchange(edit.openRename, false) && document != nullptr)
+    {
+        renaming = true;
+        renameCursor = edit.cursor;
+        renamePath = document->path;
+        const auto [begin, end] = ui::wordAround(document->text, static_cast<std::size_t>(std::max(edit.cursor, 0)));
+        scene().get<scene::UiText>(renameField).text = document->text.substr(begin, end - begin);
+        world.startEditing(scene(), renameField, true);
+    }
+    renaming = renaming && document != nullptr && sameTextPath(document->path, renamePath);
     const float tall = rowHeight();
     float top = 0.0f;
     const auto place = [&](Entity row, bool visible) {
@@ -1302,6 +1396,7 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
     place(findRow, searching);
     place(replaceRow, replacing);
     place(goRow, going);
+    place(renameRow, renaming);
     scene().get<UiRect>(areas).offsetMin.y = top;
     scene().get<UiRect>(areas).visible = document != nullptr;
     scene().get<UiRect>(status).visible = document != nullptr;
@@ -1382,6 +1477,7 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
 
     styleCloseButton(findClose.entity);
     styleCloseButton(goClose.entity);
+    styleCloseButton(renameClose.entity);
     panel.update(kit, delta, UiPanel::zoomFor(font));
     answerForm();
     if (world.wasClicked(problemsButton.entity) ||
@@ -1556,6 +1652,25 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
             edit.showFind = false;
             edit.showReplace = false;
             edit.matches.clear();
+            focusText = true;
+        }
+    }
+    if (renaming)
+    {
+        if (world.wasSubmitted(renameField) || world.wasClicked(renameButton.entity))
+        {
+            const std::string& wanted = scene().get<scene::UiText>(renameField).text;
+            if (wanted.empty() || !state.languageServices ||
+                !state.languageServices->request(LanguageFeature::Rename, *document, renameCursor, wanted))
+                languageMessage = "This language server is unavailable or cannot rename";
+            else
+                languageMessage = "Renaming...";
+            renaming = false;
+            focusText = true;
+        }
+        else if (world.wasClicked(renameClose.entity) || keys.cancel)
+        {
+            renaming = false;
             focusText = true;
         }
     }

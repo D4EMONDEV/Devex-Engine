@@ -376,13 +376,13 @@ class Session
                    {{"textDocument", {{"uri", uri}}}, {"text", document.text}});
         }
     }
-    bool request(LanguageFeature feature, const TextDocument& document, int cursor)
+    bool request(LanguageFeature feature, const TextDocument& document, int cursor, const std::string& newName)
     {
         if (!initialized || requests.size() >= 16)
             return false;
         constexpr std::array providers{"completionProvider", "definitionProvider",
                                        "referencesProvider", "hoverProvider",
-                                       "documentFormattingProvider"};
+                                       "documentFormattingProvider", "renameProvider"};
         if (!provided(field(capabilities, providers[static_cast<std::size_t>(feature)])))
             return false;
         std::erase_if(requests,
@@ -396,13 +396,15 @@ class Session
         synchronize(document, true);
         constexpr std::array methods{"textDocument/completion", "textDocument/definition",
                                      "textDocument/references", "textDocument/hover",
-                                     "textDocument/formatting"};
+                                     "textDocument/formatting", "textDocument/rename"};
         Json params = {
             {"textDocument", {{"uri", lspUri(document.path)}}},
             {"position",
              json(lspPosition(document.text, static_cast<std::size_t>(std::max(cursor, 0))))}};
         if (feature == LanguageFeature::References)
             params["context"] = {{"includeDeclaration", true}};
+        if (feature == LanguageFeature::Rename)
+            params["newName"] = newName;
         if (feature == LanguageFeature::Format)
         {
             params.erase("position");
@@ -558,6 +560,34 @@ class Session
             reply.message = markup(field(result, "contents"));
         else if (request.feature == LanguageFeature::Format)
             reply.edits = edits(result, request.text);
+        else if (request.feature == LanguageFeature::Rename)
+        {
+            // A WorkspaceEdit: its changes by file, or its changes of documents; what it creates, moves or
+            // deletes is left out.
+            const auto add = [&](const std::string& uri, const Json& changes)
+            {
+                const auto path = lspPath(uri);
+                if (!path || !changes.is_array())
+                    return;
+                for (const auto& change : changes)
+                {
+                    const auto& range = field(change, "range");
+                    if (range.is_object() && reply.renames.size() < 10000)
+                        reply.renames.push_back({*path, position(field(range, "start")),
+                                                 position(field(range, "end")), string(change, "newText")});
+                }
+            };
+            const auto& changes = field(result, "changes");
+            if (changes.is_object())
+                for (const auto& [uri, edits] : changes.items())
+                    add(uri, edits);
+            const auto& documentChanges = field(result, "documentChanges");
+            if (documentChanges.is_array())
+                for (const auto& change : documentChanges)
+                    add(string(field(change, "textDocument"), "uri"), field(change, "edits"));
+            if (reply.renames.empty())
+                reply.message = "Nothing to rename here";
+        }
         else
         {
             const auto add = [&](const Json& location)
@@ -748,11 +778,11 @@ void ScriptLanguageServices::update(const std::filesystem::path& project,
     }
 }
 bool ScriptLanguageServices::request(LanguageFeature feature, const TextDocument& document,
-                                     int cursor)
+                                     int cursor, std::string newName)
 {
     const auto kind = category(document.path);
     auto* session = kind ? m_impl->sessions[*kind].get() : nullptr;
-    return session && session->request(feature, document, cursor);
+    return session && session->request(feature, document, cursor, newName);
 }
 std::vector<LanguageReply> ScriptLanguageServices::takeReplies()
 {

@@ -52,6 +52,8 @@ struct ScriptSettings
     // another by themselves: the first hosts and the others join.
     std::uint32_t playInstances = 1;
     bool connectPlayInstances = true;
+    // Devex Script cuts the lines too long for it at its right edge instead of scrolling across.
+    bool wrapLines = false;
 
     // Several games cannot all play inside the editor.
     [[nodiscard]] bool playsSeparately() const noexcept

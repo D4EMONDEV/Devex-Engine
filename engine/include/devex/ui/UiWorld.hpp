@@ -599,7 +599,10 @@ private:
         // The text as the area last saw it, which tells a change made from outside.
         std::string known;
         std::vector<std::uint32_t> lineStarts;
-        // The width of the longest line, in units.
+        // Its rows when it wraps, and the width they were cut for; empty when each line is one row.
+        std::vector<TextAreaRow> rows;
+        float wrappedWidth = -1.0f;
+        // The width of the longest line, in units; none when it wraps, which leaves nothing to scroll across.
         float contentWidth = 0.0f;
         std::size_t caret = 0;
         std::size_t anchor = 0;
@@ -622,6 +625,8 @@ private:
     [[nodiscard]] TextAreaState* areaState(scene::Entity entity) noexcept;
     [[nodiscard]] const TextAreaState* areaState(scene::Entity entity) const noexcept;
     [[nodiscard]] TextAreaState& ensureAreaState(scene::Entity entity, const std::string& text);
+    // Cuts the rows of an area that wraps for the width it has, or forgets them when it does not wrap.
+    void wrapArea(const scene::Scene& scene, TextAreaState& state, const std::string& text);
     // What an area of the scene keeps, made for one not updated yet; null for what is no area.
     [[nodiscard]] TextAreaState* areaStateOf(const scene::Scene& scene, scene::Entity entity);
     [[nodiscard]] const TextAreaView* textAreaView(scene::Entity entity) const noexcept;

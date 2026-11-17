@@ -198,6 +198,9 @@ struct DEVEX_API UiTextArea
     math::Vec2 scroll{0.0f, 0.0f};
     // The number of each line, at its left.
     bool lineNumbers = false;
+    // Cuts the lines too long for the area at its right edge, between words when it can, rather than scrolling
+    // across: prose, and code read in a narrow panel.
+    bool wrap = false;
     math::Vec4 lineNumberColor{1.0f, 1.0f, 1.0f, 0.4f};
     // Behind the line the cursor is on, while the area takes what is typed.
     math::Vec4 currentLineColor{1.0f, 1.0f, 1.0f, 0.04f};

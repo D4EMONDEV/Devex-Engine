@@ -1786,6 +1786,7 @@ Devex.UiTextArea: Boolean& AutoIndent
 Devex.UiTextArea: Boolean& Interactable
 Devex.UiTextArea: Boolean& LineNumbers
 Devex.UiTextArea: Boolean& ReadOnly
+Devex.UiTextArea: Boolean& Wrap
 Devex.UiTextArea: Devex.UiTextArea At(Void*)
 Devex.UiTextArea: Devex.Vec2& Padding
 Devex.UiTextArea: Devex.Vec2& Scroll

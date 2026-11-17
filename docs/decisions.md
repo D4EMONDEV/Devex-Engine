@@ -5928,6 +5928,20 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
    prennent un `.zip` ou le `addon.dvxaddon` d'un dossier, **Export...** écrit un `.zip` dont le dossier `<id>` est la
    racine, comme on le partage. Le zip se lit par le décodeur deflate de stb_image, déjà dans le moteur, plutôt qu'avec
    une dépendance de plus ; son écriture passe du runtime au module d'import, que l'export web appelle.
+4. **L'éditeur de scripts**, en trois commits. Décidé le 2026-11-17, avant le code, comme Godot :
+   - ✅ **le renommage et le retour à la ligne** : **F2** (et Rename Symbol... au clic droit) demande au serveur de
+     langage `textDocument/rename` ; Devex écrit sa réponse (`changes` ou `documentChanges`) dans chaque fichier,
+     ouvre ceux qui ne l'étaient pas, sans les sauvegarder, et le fichier affiché le reçoit comme une seule
+     modification qu'on annule. Le retour à la ligne est une case de `UiTextArea` (`wrap`), pas une option du seul
+     éditeur : la zone de texte découpe ses lignes en rangées (`TextAreaRow`) à la largeur de sa vue, recoupées quand
+     elle change ; le curseur, la sélection, le dessin et la marge passent par les rangées, et une zone qui ne coupe
+     rien en a une par ligne, sans rien garder de plus. Devex Script la règle par **Wrap Lines**, une préférence de
+     l'éditeur ;
+   - **le repli du code par l'indentation et les accolades** : une ligne se replie quand la suivante est plus indentée
+     ou qu'elle ouvre une accolade qui se ferme plus bas ; la flèche dans la marge, comme Godot ;
+   - **les curseurs multiples et la sélection en colonnes, avec les raccourcis de Godot** : Alt+clic ajoute un
+     curseur, Ctrl+D l'occurrence suivante, Maj+Alt+Haut/Bas un curseur au-dessus ou en dessous, Alt+glisser une
+     colonne, Échap revient à un seul curseur.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

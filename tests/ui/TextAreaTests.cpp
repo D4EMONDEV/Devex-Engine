@@ -476,3 +476,86 @@ TEST_CASE("The lines of an area keep their letters from a drawing to the next un
     static_cast<void>(draw());
     CHECK(cache.placed() == 7);
 }
+
+TEST_CASE("An area that wraps cuts its long lines into rows between words, and moves through them", "[ui][textarea]")
+{
+    const std::string longLine = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen";
+    const std::string text = longLine + "\nend";
+    std::vector<std::uint32_t> starts;
+    devex::ui::indexLines(text, starts);
+    // Without rows, each line is one.
+    CHECK(devex::ui::areaRowCount({}, starts) == 2);
+    CHECK(devex::ui::areaRowOf({}, starts, longLine.size() + 2) == 1);
+    CHECK(devex::ui::areaRow({}, starts, text.size(), 1).begin == longLine.size() + 1);
+    CHECK(devex::ui::areaRow({}, starts, text.size(), 0).end == longLine.size());
+
+    // Cut for 200 units: every row but the last of a line ends after a space, and none passes the width.
+    std::vector<devex::ui::TextAreaRow> rows;
+    devex::ui::wrapAreaRows(bakedFont(), text, starts, 20.0f, 4, 200.0f, rows);
+    REQUIRE(rows.size() >= 4);
+    CHECK(rows.back().line == 1);
+    CHECK(rows.back().begin == longLine.size() + 1);
+    std::size_t next = 0;
+    devex::ui::TextAreaLine placed;
+    for (std::size_t row = 0; row + 1 < rows.size(); ++row)
+    {
+        CHECK(rows[row].begin == next);
+        const std::string_view part = std::string_view(text).substr(rows[row].begin, rows[row].end - rows[row].begin);
+        devex::ui::layoutAreaLine(bakedFont(), part, 20.0f, 4, Vec2{0.0f}, placed);
+        CHECK(placed.xOf(part.size()) <= 200.01f);
+        if (rows[row + 1].line == rows[row].line)
+        {
+            CHECK(part.back() == ' ');
+            next = rows[row].end;
+        }
+        else
+        {
+            next = rows[row].end + 1;
+        }
+    }
+    CHECK(devex::ui::areaRowOf(rows, starts, longLine.size() - 1) == rows.size() - 2);
+
+    // In an area, Down goes to the next row of the same line, at the same place across, and on to the next line
+    // after its last row; a point on any row of a line names that line.
+    Notes notes(text, UiTextArea{.padding = {0.0f, 0.0f}, .wrap = true, .scrollbarSize = 0.0f});
+    notes.world.startEditing(notes.scene, notes.area);
+    notes.world.selectText(notes.scene, notes.area, 0, 0);
+    const std::optional<UiWorld::CaretPlace> start = notes.world.textCaretPlace(notes.scene, notes.area);
+    notes.send(UiInput{.downPressed = true});
+    CHECK(notes.caret() > 0);
+    CHECK(notes.caret() < longLine.size());
+    const std::optional<UiWorld::CaretPlace> below = notes.world.textCaretPlace(notes.scene, notes.area);
+    REQUIRE(start.has_value());
+    REQUIRE(below.has_value());
+    CHECK(below->position.y > start->position.y);
+    CHECK(below->position.x == Catch::Approx(start->position.x));
+    CHECK(notes.world.textLineAt(notes.scene, notes.area, Vec2{below->position.x + 5.0f, below->position.y + below->height * 0.5f}) == 0);
+    int downs = 1;
+    while (notes.caret() <= longLine.size() && downs < 10)
+    {
+        notes.send(UiInput{.downPressed = true});
+        ++downs;
+    }
+    CHECK(downs >= 3);
+    CHECK(notes.caret() == longLine.size() + 1);
+    const std::optional<UiWorld::CaretPlace> last = notes.world.textCaretPlace(notes.scene, notes.area);
+    REQUIRE(last.has_value());
+    CHECK(notes.world.textLineAt(notes.scene, notes.area, Vec2{last->position.x + 5.0f, last->position.y + last->height * 0.5f}) == 1);
+    CHECK(notes.world.visibleTextLines(notes.scene, notes.area) == std::pair<std::size_t, std::size_t>{0, 2});
+    CHECK(notes.draw().uiVertices.size() > 0);
+    // Emptied, it has one row, and draws nothing of what it held.
+    notes.text() = "\n";
+    notes.send(UiInput{});
+    CHECK(notes.world.visibleTextLines(notes.scene, notes.area) == std::pair<std::size_t, std::size_t>{0, 2});
+    CHECK(notes.draw().uiVertices.size() < 40);
+    notes.text() = text;
+    notes.send(UiInput{});
+
+    // Without it, the long line is one row again, and its end on the row of its start.
+    notes.settings().wrap = false;
+    notes.send(UiInput{});
+    notes.world.selectText(notes.scene, notes.area, longLine.size(), longLine.size());
+    const std::optional<UiWorld::CaretPlace> unwrapped = notes.world.textCaretPlace(notes.scene, notes.area);
+    REQUIRE(unwrapped.has_value());
+    CHECK(unwrapped->position.y == Catch::Approx(start->position.y));
+}

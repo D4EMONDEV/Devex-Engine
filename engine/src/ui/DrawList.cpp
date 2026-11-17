@@ -1245,12 +1245,16 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
     {
         return;
     }
-    const TextAreaMetrics metrics = textAreaMetrics(*font.data, text, area, rect, starts.size());
+    // Its rows: the parts of its lines when it wraps, its lines otherwise.
+    const std::span<const TextAreaRow> rowList = view != nullptr ? view->rows : std::span<const TextAreaRow>{};
+    const std::size_t rowCount = areaRowCount(rowList, starts);
+    const auto rowAt = [&](std::size_t row) { return areaRow(rowList, starts, text.text.size(), row); };
+    const TextAreaMetrics metrics = textAreaMetrics(*font.data, text, area, rect, starts.size(), rowCount);
     const TextAreaBars bars = textAreaBars(metrics, text, area, rect, view != nullptr ? view->contentWidth : 0.0f);
     const math::Vec2 scroll{std::clamp(area.scroll.x, 0.0f, bars.maxScroll.x), std::clamp(area.scroll.y, 0.0f, bars.maxScroll.y)};
-    const std::size_t first = std::min(static_cast<std::size_t>((scroll.y + 0.01f) / metrics.lineHeight), starts.size() - 1);
-    const std::size_t last = std::min(first + static_cast<std::size_t>(std::ceil(metrics.viewSize().y / metrics.lineHeight)) + 1, starts.size());
-    const auto topOf = [&](std::size_t line) { return metrics.origin.y - scroll.y + static_cast<float>(line) * metrics.lineHeight; };
+    const std::size_t first = std::min(static_cast<std::size_t>((scroll.y + 0.01f) / metrics.lineHeight), rowCount - 1);
+    const std::size_t last = std::min(first + static_cast<std::size_t>(std::ceil(metrics.viewSize().y / metrics.lineHeight)) + 1, rowCount);
+    const auto topOf = [&](std::size_t row) { return metrics.origin.y - scroll.y + static_cast<float>(row) * metrics.lineHeight; };
 
     const math::Vec4 outer = builder.clip;
     const auto cut = [&](math::Vec2 min, math::Vec2 max) {
@@ -1262,53 +1266,69 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
     const math::Vec2 lettersMax = rect.max;
     cut(lettersMin, lettersMax);
 
-    // The lines in view, placed from the origin once for everything drawn over and under them, and
+    // The rows in view, placed from the origin once for everything drawn over and under them, and
     // kept from a frame to the next while their text stays the same. `left` moves them across.
     const float left = metrics.origin.x - scroll.x;
     static thread_local std::vector<TextAreaLine> placedHere;
     static thread_local std::vector<const TextAreaLine*> lines;
+    static thread_local std::vector<TextAreaRow> shownRows;
     lines.resize(last - first);
-    for (std::size_t line = first; line < last; ++line)
+    shownRows.resize(last - first);
+    for (std::size_t row = first; row < last; ++row)
     {
-        const std::string_view content = lineText(text.text, starts, line);
+        const TextAreaRow& part = shownRows[row - first] = rowAt(row);
+        // Rows a frame behind a text written since are cut to it.
+        const std::size_t begin = std::min<std::size_t>(part.begin, text.text.size());
+        const std::string_view content = std::string_view(text.text).substr(begin, std::max<std::size_t>(part.end, begin) - begin);
         if (context.textCache != nullptr)
         {
-            lines[line - first] = &context.textCache->areaLine(rect.entity, line, false, *font.data, content, text.size, area.tabSize);
+            lines[row - first] = &context.textCache->areaLine(rect.entity, row, false, *font.data, content, text.size, area.tabSize);
             continue;
         }
         if (placedHere.size() < last - first)
         {
             placedHere.resize(last - first);
         }
-        layoutAreaLine(*font.data, content, text.size, area.tabSize, math::Vec2{0.0f}, placedHere[line - first]);
-        lines[line - first] = &placedHere[line - first];
+        layoutAreaLine(*font.data, content, text.size, area.tabSize, math::Vec2{0.0f}, placedHere[row - first]);
+        lines[row - first] = &placedHere[row - first];
     }
-    const auto endOf = [&](std::size_t line) { return starts[line] + lines[line - first]->length; };
-    // A run of the text behind its letters, on every line in view it crosses.
+    const auto beginOf = [&](std::size_t row) { return static_cast<std::size_t>(shownRows[row - first].begin); };
+    const auto endOf = [&](std::size_t row) { return beginOf(row) + lines[row - first]->length; };
+    // Whether a row ends its line, which the new line after it then belongs to.
+    const auto endsLine = [&](std::size_t row) { return row + 1 >= rowCount || rowAt(row + 1).line != shownRows[row - first].line; };
+    // A run of the text behind its letters, on every row in view it crosses.
     const auto behind = [&](std::size_t begin, std::size_t end, math::Vec4 color) {
         if (end <= begin || color.w <= 0.0f)
         {
             return;
         }
-        for (std::size_t line = std::max(lineOfOffset(starts, begin), first); line < last && starts[line] < end; ++line)
+        for (std::size_t row = std::max(areaRowOf(rowList, starts, begin), first); row < last && beginOf(row) < end; ++row)
         {
-            const TextAreaLine& placed = *lines[line - first];
-            const float from = left + placed.xOf(std::max<std::size_t>(begin, starts[line]) - starts[line]);
-            float right = left + placed.xOf(std::min(end, endOf(line)) - starts[line]);
-            if (end > endOf(line))
+            const TextAreaLine& placed = *lines[row - first];
+            const float from = left + placed.xOf(std::max<std::size_t>(begin, beginOf(row)) - beginOf(row));
+            float right = left + placed.xOf(std::min(end, endOf(row)) - beginOf(row));
+            if (end > endOf(row) && endsLine(row))
             {
                 // The new line that ends it is taken too.
                 right += text.size * 0.45f;
             }
-            fill(builder, math::Vec2{from, topOf(line)}, math::Vec2{right, topOf(line) + metrics.lineHeight}, color);
+            fill(builder, math::Vec2{from, topOf(row)}, math::Vec2{right, topOf(row) + metrics.lineHeight}, color);
         }
     };
 
+    const std::size_t caretRow = view != nullptr ? areaRowOf(rowList, starts, view->caret) : 0;
     const std::size_t caretLine = view != nullptr ? lineOfOffset(starts, view->caret) : 0;
-    if (view != nullptr && view->focused && caretLine >= first && caretLine < last)
+    if (view != nullptr && view->focused)
     {
-        fill(builder, math::Vec2{lettersMin.x, topOf(caretLine)}, math::Vec2{lettersMax.x, topOf(caretLine) + metrics.lineHeight},
-             withOpacity(area.currentLineColor, rect.opacity));
+        // Behind every row of the line of the cursor.
+        for (std::size_t row = first; row < last; ++row)
+        {
+            if (shownRows[row - first].line == caretLine)
+            {
+                fill(builder, math::Vec2{lettersMin.x, topOf(row)}, math::Vec2{lettersMax.x, topOf(row) + metrics.lineHeight},
+                     withOpacity(area.currentLineColor, rect.opacity));
+            }
+        }
     }
     if (view != nullptr)
     {
@@ -1317,13 +1337,21 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
             behind(highlight.begin, highlight.end, withOpacity(highlight.color, rect.opacity));
         }
         behind(view->selectionMin, view->selectionMax, withOpacity(area.selectionColor, rect.opacity));
-        for (const TextLineMark& mark : view->marks)
+        // A line marked is underlined under its last row.
+        for (std::size_t row = first; row < last; ++row)
         {
-            if (mark.line >= first && mark.line < last)
+            if (!endsLine(row))
             {
-                const float bottom = topOf(mark.line) + metrics.lineHeight;
-                fill(builder, math::Vec2{lettersMin.x, bottom - 1.0f}, math::Vec2{lettersMax.x, bottom},
-                     withOpacity(math::Vec4{mark.color.x, mark.color.y, mark.color.z, mark.color.w * 0.35f}, rect.opacity));
+                continue;
+            }
+            for (const TextLineMark& mark : view->marks)
+            {
+                if (mark.line == shownRows[row - first].line)
+                {
+                    const float bottom = topOf(row) + metrics.lineHeight;
+                    fill(builder, math::Vec2{lettersMin.x, bottom - 1.0f}, math::Vec2{lettersMax.x, bottom},
+                         withOpacity(math::Vec4{mark.color.x, mark.color.y, mark.color.z, mark.color.w * 0.35f}, rect.opacity));
+                }
             }
         }
     }
@@ -1334,11 +1362,11 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
     const std::span<const TextSpan> spans = view != nullptr ? view->spans : std::span<const TextSpan>{};
     std::size_t span = 0;
     {
-        for (std::size_t line = first; line < last; ++line)
+        for (std::size_t row = first; row < last; ++row)
         {
-            const TextAreaLine& placed = *lines[line - first];
+            const TextAreaLine& placed = *lines[row - first];
             const std::vector<CaretStop>& stops = placed.layout.stops;
-            const math::Vec2 step{left, topOf(line)};
+            const math::Vec2 step{left, topOf(row)};
             std::size_t stop = 0;
             for (const GlyphQuad& glyph : placed.layout.glyphs)
             {
@@ -1348,7 +1376,7 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
                 {
                     ++stop;
                 }
-                const std::size_t offset = starts[line] + (stops.empty() ? 0 : placed.sourceOf(stops[stop].offset));
+                const std::size_t offset = beginOf(row) + (stops.empty() ? 0 : placed.sourceOf(stops[stop].offset));
                 while (span < spans.size() && spans[span].end <= offset)
                 {
                     ++span;
@@ -1359,47 +1387,55 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
             }
         }
     }
-    if (view != nullptr && view->caretVisible && caretLine >= first && caretLine < last)
+    if (view != nullptr && view->caretVisible && caretRow >= first && caretRow < last)
     {
-        const float x = left + lines[caretLine - first]->xOf(view->caret - starts[caretLine]);
-        fill(builder, math::Vec2{x, topOf(caretLine)}, math::Vec2{x + std::max(text.size * 0.09f, 1.0f), topOf(caretLine) + metrics.lineHeight},
+        const float x = left + lines[caretRow - first]->xOf(view->caret - beginOf(caretRow));
+        fill(builder, math::Vec2{x, topOf(caretRow)}, math::Vec2{x + std::max(text.size * 0.09f, 1.0f), topOf(caretRow) + metrics.lineHeight},
              withOpacity(area.caretColor, rect.opacity));
     }
 
-    // The gutter: the number of each line, the one of the cursor in the colour of the text, and a
-    // bar for the lines that are marked.
+    // The gutter: the number of each line on its first row, the one of the cursor in the colour of the text, and a
+    // bar beside every row of the lines that are marked.
     cut(rect.min, rect.max);
     if (metrics.gutter > 0.0f)
     {
         if (view != nullptr)
         {
-            for (const TextLineMark& mark : view->marks)
+            for (std::size_t row = first; row < last; ++row)
             {
-                if (mark.line >= first && mark.line < last)
+                for (const TextLineMark& mark : view->marks)
                 {
-                    fill(builder, math::Vec2{rect.min.x, topOf(mark.line)}, math::Vec2{rect.min.x + 3.0f, topOf(mark.line) + metrics.lineHeight},
-                         withOpacity(mark.color, rect.opacity));
+                    if (mark.line == shownRows[row - first].line)
+                    {
+                        fill(builder, math::Vec2{rect.min.x, topOf(row)}, math::Vec2{rect.min.x + 3.0f, topOf(row) + metrics.lineHeight},
+                             withOpacity(mark.color, rect.opacity));
+                    }
                 }
             }
         }
         static thread_local TextAreaLine number;
         static thread_local std::string digits;
         const float digit = metrics.gutter / static_cast<float>(std::to_string(starts.size()).size() + 2);
-        for (std::size_t line = first; line < last; ++line)
+        for (std::size_t row = first; row < last; ++row)
         {
-            digits = std::to_string(line + 1);
+            const TextAreaRow& part = shownRows[row - first];
+            if (part.begin != starts[part.line])
+            {
+                continue;
+            }
+            digits = std::to_string(part.line + 1);
             const TextAreaLine* placed = &number;
             if (context.textCache != nullptr)
             {
-                placed = &context.textCache->areaLine(rect.entity, line, true, *font.data, digits, text.size, 0);
+                placed = &context.textCache->areaLine(rect.entity, part.line, true, *font.data, digits, text.size, 0);
             }
             else
             {
                 layoutAreaLine(*font.data, digits, text.size, 0, math::Vec2{0.0f}, number);
             }
             // Against the right of the gutter, a digit away from the text.
-            const math::Vec2 step{rect.min.x + metrics.gutter - digit - placed->layout.size.x, topOf(line)};
-            const math::Vec4 color = view != nullptr && view->focused && line == caretLine ? plain : withOpacity(area.lineNumberColor, rect.opacity);
+            const math::Vec2 step{rect.min.x + metrics.gutter - digit - placed->layout.size.x, topOf(row)};
+            const math::Vec4 color = view != nullptr && view->focused && part.line == caretLine ? plain : withOpacity(area.lineNumberColor, rect.opacity);
             for (const GlyphQuad& glyph : placed->layout.glyphs)
             {
                 drawLetter(builder, context, font, glyph, step, color, sharpness);

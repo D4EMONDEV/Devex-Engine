@@ -37,11 +37,23 @@ struct DEVEX_API TextLineMark
     math::Vec4 color{1.0f};
 };
 
+// A row of an area: the part of a line it shows, as bytes of the text. Every line is one row, unless the
+// area wraps it over several.
+struct DEVEX_API TextAreaRow
+{
+    std::uint32_t line = 0;
+    std::uint32_t begin = 0;
+    // Where it ends, its new line left out.
+    std::uint32_t end = 0;
+};
+
 // What an area that is being used shows beside its text, which the drawing asks the interface world
 // for. Offsets are bytes of the text.
 struct DEVEX_API TextAreaView
 {
     std::span<const std::uint32_t> lineStarts;
+    // Its rows when it wraps; empty when each line is one row.
+    std::span<const TextAreaRow> rows;
     std::size_t caret = 0;
     std::size_t selectionMin = 0;
     std::size_t selectionMax = 0;
@@ -61,6 +73,12 @@ DEVEX_API void indexLines(std::string_view text, std::vector<std::uint32_t>& sta
 // The line a byte of the text is on, from 0, and the bytes of a line without its new line.
 [[nodiscard]] DEVEX_API std::size_t lineOfOffset(std::span<const std::uint32_t> starts, std::size_t offset) noexcept;
 [[nodiscard]] DEVEX_API std::string_view lineText(std::string_view text, std::span<const std::uint32_t> starts, std::size_t line) noexcept;
+// The rows of an area, its lines when it does not wrap: how many, the row a byte is on (the last of its line that
+// starts at it or before), and one of them.
+[[nodiscard]] DEVEX_API std::size_t areaRowCount(std::span<const TextAreaRow> rows, std::span<const std::uint32_t> starts) noexcept;
+[[nodiscard]] DEVEX_API std::size_t areaRowOf(std::span<const TextAreaRow> rows, std::span<const std::uint32_t> starts, std::size_t offset) noexcept;
+[[nodiscard]] DEVEX_API TextAreaRow areaRow(std::span<const TextAreaRow> rows, std::span<const std::uint32_t> starts, std::size_t textSize,
+                                            std::size_t row) noexcept;
 
 // Where an area puts things inside its rectangle, in units of its canvas.
 struct DEVEX_API TextAreaMetrics
@@ -81,8 +99,9 @@ struct DEVEX_API TextAreaMetrics
         return math::Vec2{std::max(viewMax.x - viewMin.x, 0.0f), std::max(viewMax.y - viewMin.y, 0.0f)};
     }
 };
+// The gutter is as wide as the number of the last line; the content as tall as the rows, its lines when 0.
 [[nodiscard]] DEVEX_API TextAreaMetrics textAreaMetrics(const asset::FontData& font, const scene::UiText& text, const scene::UiTextArea& area,
-                                                        const LaidOutRect& rect, std::size_t lineCount);
+                                                        const LaidOutRect& rect, std::size_t lineCount, std::size_t rowCount = 0);
 
 // How far an area scrolls, and the thumbs of its bars, in units of its canvas. A thumb is empty while
 // the text fits that way.
@@ -136,6 +155,10 @@ DEVEX_API void layoutAreaLine(const asset::FontData& font, std::string_view line
 // The start and the end of the word around a byte of a text: letters, digits and underscores, or
 // whatever single character stands there.
 [[nodiscard]] DEVEX_API std::pair<std::size_t, std::size_t> wordAround(std::string_view text, std::size_t offset) noexcept;
+// The rows of an area that wraps: each line cut where it would pass `width`, after the last space before it when
+// there is one, and else before the letter that passes it.
+DEVEX_API void wrapAreaRows(const asset::FontData& font, std::string_view text, std::span<const std::uint32_t> starts, float size,
+                            std::int32_t tabSize, float width, std::vector<TextAreaRow>& rows);
 // Where the word before an offset starts, and where the one after it ends, skipping the spaces on
 // the way: where Ctrl and an arrow take the cursor.
 [[nodiscard]] DEVEX_API std::size_t previousWord(std::string_view text, std::size_t offset) noexcept;

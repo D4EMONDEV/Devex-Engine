@@ -75,8 +75,103 @@ std::string_view lineText(std::string_view text, std::span<const std::uint32_t> 
     return text.substr(begin, end > begin ? end - begin : 0);
 }
 
+std::size_t areaRowCount(std::span<const TextAreaRow> rows, std::span<const std::uint32_t> starts) noexcept
+{
+    return rows.empty() ? starts.size() : rows.size();
+}
+
+std::size_t areaRowOf(std::span<const TextAreaRow> rows, std::span<const std::uint32_t> starts, std::size_t offset) noexcept
+{
+    if (rows.empty())
+    {
+        return lineOfOffset(starts, offset);
+    }
+    const auto after = std::ranges::upper_bound(rows, offset, {}, [](const TextAreaRow& row) { return static_cast<std::size_t>(row.begin); });
+    return after == rows.begin() ? 0 : static_cast<std::size_t>(after - rows.begin()) - 1;
+}
+
+TextAreaRow areaRow(std::span<const TextAreaRow> rows, std::span<const std::uint32_t> starts, std::size_t textSize, std::size_t row) noexcept
+{
+    if (!rows.empty())
+    {
+        return rows[std::min(row, rows.size() - 1)];
+    }
+    if (starts.empty())
+    {
+        return {};
+    }
+    const std::size_t line = std::min(row, starts.size() - 1);
+    const std::size_t end = line + 1 < starts.size() ? starts[line + 1] - 1 : textSize;
+    return TextAreaRow{.line = static_cast<std::uint32_t>(line), .begin = starts[line], .end = static_cast<std::uint32_t>(end)};
+}
+
+void wrapAreaRows(const asset::FontData& font, std::string_view text, std::span<const std::uint32_t> starts, float size, std::int32_t tabSize,
+                  float width, std::vector<TextAreaRow>& rows)
+{
+    rows.clear();
+    TextAreaLine placed;
+    for (std::size_t line = 0; line < starts.size(); ++line)
+    {
+        const std::string_view content = lineText(text, starts, line);
+        const std::uint32_t start = starts[line];
+        const auto row = [&](std::size_t begin, std::size_t end) {
+            rows.push_back(TextAreaRow{.line = static_cast<std::uint32_t>(line),
+                                       .begin = start + static_cast<std::uint32_t>(begin),
+                                       .end = start + static_cast<std::uint32_t>(end)});
+        };
+        if (content.empty())
+        {
+            row(0, 0);
+            continue;
+        }
+        layoutAreaLine(font, content, size, tabSize, math::Vec2{0.0f}, placed);
+        // Too narrow to hold a letter or two: one row a line, as it would scroll.
+        if (placed.layout.size.x <= width || width <= size)
+        {
+            row(0, content.size());
+            continue;
+        }
+        std::size_t begin = 0;
+        while (begin < content.size())
+        {
+            const float left = placed.xOf(begin);
+            // The last byte that starts a letter and still fits, one letter at least.
+            std::size_t fits = begin;
+            for (std::size_t at = begin + 1; at <= content.size(); ++at)
+            {
+                if (at < content.size() && (static_cast<unsigned char>(content[at]) & 0xC0U) == 0x80U)
+                {
+                    continue;
+                }
+                if (placed.xOf(at) - left > width && fits > begin)
+                {
+                    break;
+                }
+                fits = at;
+            }
+            if (fits >= content.size())
+            {
+                row(begin, content.size());
+                break;
+            }
+            // After the last space of the row, when one leaves something on it.
+            std::size_t cut = fits;
+            for (std::size_t at = fits; at > begin + 1; --at)
+            {
+                if (content[at - 1] == ' ' || content[at - 1] == '\t')
+                {
+                    cut = at;
+                    break;
+                }
+            }
+            row(begin, cut);
+            begin = cut;
+        }
+    }
+}
+
 TextAreaMetrics textAreaMetrics(const asset::FontData& font, const scene::UiText& text, const scene::UiTextArea& area, const LaidOutRect& rect,
-                                std::size_t lineCount)
+                                std::size_t lineCount, std::size_t rowCount)
 {
     TextAreaMetrics metrics;
     const float scale = font.bakedSize > 0.0f ? text.size / font.bakedSize : 1.0f;
@@ -98,7 +193,7 @@ TextAreaMetrics textAreaMetrics(const asset::FontData& font, const scene::UiText
     metrics.viewMin = math::Vec2{std::min(rect.min.x + metrics.gutter + padding.x, rect.max.x), std::min(rect.min.y + padding.y, rect.max.y)};
     metrics.viewMax = math::Vec2{std::max(rect.max.x - bar, metrics.viewMin.x), std::max(rect.max.y - padding.y, metrics.viewMin.y)};
     metrics.origin = metrics.viewMin;
-    metrics.contentHeight = metrics.lineHeight * static_cast<float>(std::max<std::size_t>(lineCount, 1));
+    metrics.contentHeight = metrics.lineHeight * static_cast<float>(std::max<std::size_t>(rowCount > 0 ? rowCount : lineCount, 1));
     return metrics;
 }
 

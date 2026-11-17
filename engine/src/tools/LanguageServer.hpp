@@ -18,7 +18,8 @@ enum class LanguageFeature
     Definition,
     References,
     Hover,
-    Format
+    Format,
+    Rename
 };
 struct LspDiagnostic
 {
@@ -41,6 +42,16 @@ struct LanguageReply
     std::vector<CompletionItem> completions;
     std::vector<CodeTextEdit> edits;
     std::vector<LspLocation> locations;
+    // A rename: what to write in each file, in the positions of the server, which the text of each file turns into
+    // bytes.
+    struct Rename
+    {
+        std::filesystem::path path;
+        LspPosition start;
+        LspPosition end;
+        std::string text;
+    };
+    std::vector<Rename> renames;
     std::string message;
 };
 
@@ -55,7 +66,8 @@ class DEVEX_API ScriptLanguageServices
     ScriptLanguageServices& operator=(const ScriptLanguageServices&) = delete;
     void update(const std::filesystem::path& project, const ScriptSettings& settings,
                 std::span<const TextDocument> documents);
-    bool request(LanguageFeature feature, const TextDocument& document, int cursor);
+    // A rename gives the new name.
+    bool request(LanguageFeature feature, const TextDocument& document, int cursor, std::string newName = {});
     [[nodiscard]] std::vector<LanguageReply> takeReplies();
     [[nodiscard]] const std::vector<LspDiagnostic>&
     diagnostics(const std::filesystem::path& path) const;

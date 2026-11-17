@@ -83,6 +83,7 @@ compilation reste nécessaire pour les macros et dépendances propres au jeu.
 | Fermer les propositions | **Échap** |
 | Aller à la définition | **F12** ou **Ctrl+clic** sur le symbole |
 | Trouver les références | **Maj+F12** |
+| Renommer un symbole | **F2**, ou clic droit > **Rename Symbol...** |
 | Informations sur un symbole | Survol, ou **Ctrl+I** au curseur |
 | Formater le document | **Alt+Maj+F** |
 | Afficher les problèmes | Bouton **Problems** ou **Ctrl+Maj+M** |
@@ -97,6 +98,18 @@ fin d'un identifiant déjà saisi. Les imports supplémentaires et le formatage
 modifient le **texte en mémoire** ; une annulation revient sur l'opération et
 la sauvegarde reste explicite. Si un serveur propose un snippet, Devex insère
 son texte avec ses valeurs par défaut, sans navigation entre placeholders.
+
+**F2** ouvre une barre sous le texte, avec le nom sous le curseur : **Entrée**
+demande au serveur de langage de le renommer partout où il le trouve, dans ce
+fichier et dans les autres. Les fichiers qui n'étaient pas ouverts s'ouvrent,
+modifiés et non sauvegardés : on relit, on sauvegarde, et **Ctrl+Z** revient
+sur le renommage dans chacun. Le message de la barre d'état dit combien de
+places et de fichiers ont changé.
+
+**Editor Settings > Script Editors > Devex Script > Wrap Lines** coupe les
+lignes trop longues au bord droit du panneau, entre deux mots quand c'est
+possible, au lieu de défiler en largeur. Le numéro d'une ligne reste sur sa
+première rangée ; **Haut** et **Bas** passent d'une rangée à l'autre.
 
 Les erreurs et avertissements apparaissent dans la marge et sur les plages de
 texte concernées. Le survol en donne le message. **Problems** rassemble les
@@ -132,9 +145,9 @@ UTF-8 du champ, y compris en présence d'accents ou d'emoji.
 
 La coloration et la liste de méthodes utilisent encore les analyseurs locaux
 de Devex. LSP ajoute complétion, diagnostics, informations au survol,
-définitions, références et formatage selon les capacités du serveur. Les code
-actions, le renommage sémantique, la coloration par semantic tokens, le repli
-du code et les curseurs multiples ne sont pas encore implémentés. CMake, JSON,
+définitions, références, renommage et formatage selon les capacités du
+serveur. Les code actions, la coloration par semantic tokens, le repli du code
+et les curseurs multiples ne sont pas encore implémentés. CMake, JSON,
 shaders et fichiers `.dvx*` conservent leurs outils locaux.
 
 Les serveurs sont des outils de développement facultatifs : ils ne sont pas

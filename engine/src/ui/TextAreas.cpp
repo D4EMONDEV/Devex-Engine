@@ -47,6 +47,28 @@ constexpr double repeatedPress = 0.4;
     return kept;
 }
 
+// An offset at the end of a row that is not the last of its line would stand at the start of the next one: before its
+// last letter, it stays on its row.
+[[nodiscard]] std::size_t insideRow(std::span<const TextAreaRow> rows, std::string_view text, std::size_t row, std::size_t offset) noexcept
+{
+    if (rows.empty() || row + 1 >= rows.size() || rows[row + 1].line != rows[row].line || offset < rows[row].end ||
+        rows[row].end <= rows[row].begin)
+    {
+        return offset;
+    }
+    std::size_t before = rows[row].end - 1;
+    while (before > rows[row].begin && (static_cast<unsigned char>(text[before]) & 0xC0U) == 0x80U)
+    {
+        --before;
+    }
+    return before;
+}
+
+[[nodiscard]] std::string_view rowText(std::string_view text, const TextAreaRow& row) noexcept
+{
+    return text.substr(row.begin, row.end - row.begin);
+}
+
 void clampScroll(scene::UiTextArea& area, const TextAreaBars& bars) noexcept
 {
     area.scroll.x = std::clamp(area.scroll.x, 0.0f, bars.maxScroll.x);
@@ -91,6 +113,7 @@ const TextAreaView* UiWorld::textAreaView(scene::Entity entity) const noexcept
     }
     const bool focused = entity == m_areaFocus;
     state->view = TextAreaView{.lineStarts = state->lineStarts,
+                               .rows = state->rows,
                                .caret = state->caret,
                                .selectionMin = std::min(state->caret, state->anchor),
                                .selectionMax = std::max(state->caret, state->anchor),
@@ -122,18 +145,36 @@ void UiWorld::indexArea(const scene::Scene& scene, TextAreaState& state, const s
     state.contentWidth = 0.0f;
     const auto* const shown = scene.tryGet<scene::UiText>(state.entity);
     const auto* const area = scene.tryGet<scene::UiTextArea>(state.entity);
-    if (shown == nullptr || area == nullptr || !m_fonts || length == 0)
+    const FontRef font = shown != nullptr && m_fonts ? m_fonts(shown->font.isValid() ? shown->font : m_defaultFont) : FontRef{};
+    if (area != nullptr && font.data != nullptr && length > 0)
+    {
+        TextAreaLine placed;
+        layoutAreaLine(*font.data, lineText(text, state.lineStarts, longest), shown->size, area->tabSize, math::Vec2{0.0f}, placed);
+        state.contentWidth = placed.layout.size.x;
+    }
+    // The rows go with the lines, even when no line has a letter left.
+    wrapArea(scene, state, text);
+}
+
+void UiWorld::wrapArea(const scene::Scene& scene, TextAreaState& state, const std::string& text)
+{
+    state.rows.clear();
+    state.wrappedWidth = -1.0f;
+    const auto* const area = scene.tryGet<scene::UiTextArea>(state.entity);
+    const auto* const shown = scene.tryGet<scene::UiText>(state.entity);
+    const asset::FontData* font = nullptr;
+    TextAreaMetrics metrics;
+    const LaidOutRect* rect = nullptr;
+    float scale = 1.0f;
+    if (area == nullptr || shown == nullptr || !area->wrap || !areaPlace(scene, state.entity, font, metrics, rect, scale))
     {
         return;
     }
-    const FontRef font = m_fonts(shown->font.isValid() ? shown->font : m_defaultFont);
-    if (font.data == nullptr)
-    {
-        return;
-    }
-    TextAreaLine placed;
-    layoutAreaLine(*font.data, lineText(text, state.lineStarts, longest), shown->size, area->tabSize, math::Vec2{0.0f}, placed);
-    state.contentWidth = placed.layout.size.x;
+    const float width = metrics.viewSize().x;
+    wrapAreaRows(*font, text, state.lineStarts, shown->size, area->tabSize, width, state.rows);
+    state.wrappedWidth = width;
+    // Nothing passes its right edge.
+    state.contentWidth = 0.0f;
 }
 
 void UiWorld::syncArea(TextAreaState& state, std::string& text)
@@ -268,7 +309,8 @@ bool UiWorld::areaPlace(const scene::Scene& scene, scene::Entity entity, const a
         return false;
     }
     const TextAreaState* const state = areaState(entity);
-    metrics = textAreaMetrics(*font, *shown, *area, *rect, state != nullptr ? state->lineStarts.size() : 1);
+    metrics = textAreaMetrics(*font, *shown, *area, *rect, state != nullptr ? state->lineStarts.size() : 1,
+                              state != nullptr ? areaRowCount(state->rows, state->lineStarts) : 0);
     scale = canvas->layout.scale > 0.0f ? canvas->layout.scale : 1.0f;
     return true;
 }
@@ -286,11 +328,12 @@ std::size_t UiWorld::areaOffsetAt(const scene::Scene& scene, const TextAreaState
     const auto& shown = scene.get<scene::UiText>(state.entity);
     const auto& area = scene.get<scene::UiTextArea>(state.entity);
     const float down = (point.y - metrics.origin.y + area.scroll.y) / metrics.lineHeight;
-    const auto line = static_cast<std::size_t>(std::clamp(std::floor(down), 0.0f, static_cast<float>(state.lineStarts.size() - 1)));
+    const std::size_t rows = areaRowCount(state.rows, state.lineStarts);
+    const auto index = static_cast<std::size_t>(std::clamp(std::floor(down), 0.0f, static_cast<float>(rows - 1)));
+    const TextAreaRow row = areaRow(state.rows, state.lineStarts, shown.text.size(), index);
     TextAreaLine placed;
-    layoutAreaLine(*font, lineText(shown.text, state.lineStarts, line), shown.size, area.tabSize, math::Vec2{metrics.origin.x - area.scroll.x, 0.0f},
-                   placed);
-    return state.lineStarts[line] + placed.offsetAt(point.x);
+    layoutAreaLine(*font, rowText(shown.text, row), shown.size, area.tabSize, math::Vec2{metrics.origin.x - area.scroll.x, 0.0f}, placed);
+    return insideRow(state.rows, shown.text, index, row.begin + placed.offsetAt(point.x));
 }
 
 void UiWorld::revealCaret(scene::Scene& scene, TextAreaState& state)
@@ -306,8 +349,9 @@ void UiWorld::revealCaret(scene::Scene& scene, TextAreaState& state)
     const auto& shown = scene.get<scene::UiText>(state.entity);
     auto& area = scene.get<scene::UiTextArea>(state.entity);
     const math::Vec2 view = metrics.viewSize();
-    const std::size_t line = lineOfOffset(state.lineStarts, state.caret);
-    const float top = static_cast<float>(line) * metrics.lineHeight;
+    const std::size_t index = areaRowOf(state.rows, state.lineStarts, state.caret);
+    const TextAreaRow row = areaRow(state.rows, state.lineStarts, shown.text.size(), index);
+    const float top = static_cast<float>(index) * metrics.lineHeight;
     if (top < area.scroll.y)
     {
         area.scroll.y = top;
@@ -317,11 +361,16 @@ void UiWorld::revealCaret(scene::Scene& scene, TextAreaState& state)
         area.scroll.y = top + metrics.lineHeight - view.y;
     }
     TextAreaLine placed;
-    layoutAreaLine(*font, lineText(shown.text, state.lineStarts, line), shown.size, area.tabSize, math::Vec2{0.0f}, placed);
-    const float across = placed.xOf(state.caret - state.lineStarts[line]);
-    // A few letters of room ahead of the cursor, so that it never rides the edge.
+    layoutAreaLine(*font, rowText(shown.text, row), shown.size, area.tabSize, math::Vec2{0.0f}, placed);
+    const float across = placed.xOf(state.caret - row.begin);
+    // A few letters of room ahead of the cursor, so that it never rides the edge; an area that wraps does not
+    // scroll across.
     const float room = std::min(shown.size * 2.0f, view.x * 0.25f);
-    if (across < area.scroll.x + room * 0.5f)
+    if (area.wrap)
+    {
+        area.scroll.x = 0.0f;
+    }
+    else if (across < area.scroll.x + room * 0.5f)
     {
         area.scroll.x = across - room;
     }
@@ -333,7 +382,7 @@ void UiWorld::revealCaret(scene::Scene& scene, TextAreaState& state)
     {
         indexArea(scene, state, shown.text);
     }
-    clampScroll(area, textAreaBars(metrics, shown, area, *rect, std::max(state.contentWidth, across)));
+    clampScroll(area, textAreaBars(metrics, shown, area, *rect, area.wrap ? 0.0f : std::max(state.contentWidth, across)));
 }
 
 bool UiWorld::scrollTextArea(scene::Scene& scene, const UiInput& input)
@@ -386,7 +435,22 @@ void UiWorld::updateTextAreas(scene::Scene& scene, const UiInput& input, core::D
         {
             indexArea(scene, state, shown.text);
         }
-        static_cast<void>(area);
+        // Rows cut again for another width, and lines again once it stops wrapping.
+        if (area.wrap || state.wrappedWidth >= 0.0f)
+        {
+            const asset::FontData* font = nullptr;
+            TextAreaMetrics metrics;
+            const LaidOutRect* rect = nullptr;
+            float scale = 1.0f;
+            if (!area.wrap)
+            {
+                indexArea(scene, state, shown.text);
+            }
+            else if (areaPlace(scene, entity, font, metrics, rect, scale) && std::abs(metrics.viewSize().x - state.wrappedWidth) > 0.5f)
+            {
+                wrapArea(scene, state, shown.text);
+            }
+        }
     }
     std::erase_if(m_areas, [](const TextAreaState& state) { return !state.seen; });
     if (m_areaFocus.isValid())
@@ -563,40 +627,42 @@ void UiWorld::editTextArea(scene::Scene& scene, TextAreaState& state, const UiIn
         return line + 1 < state.lineStarts.size() ? static_cast<std::size_t>(state.lineStarts[line + 1]) - 1 : text.size();
     };
     const FontRef fontRef = m_fonts ? m_fonts(shown->font.isValid() ? shown->font : m_defaultFont) : FontRef{};
-    // Where the cursor stands across in a line, and the byte of a line nearest to a place across.
+    // Where the cursor stands across in a row, and the byte of a row nearest to a place across: the rows of an area
+    // that wraps, its lines otherwise.
     const auto acrossOf = [&](std::size_t offset) {
-        const std::size_t line = lineOfOffset(state.lineStarts, offset);
+        const TextAreaRow row = areaRow(state.rows, state.lineStarts, text.size(), areaRowOf(state.rows, state.lineStarts, offset));
         if (fontRef.data == nullptr)
         {
-            return static_cast<float>(offset - state.lineStarts[line]);
+            return static_cast<float>(offset - row.begin);
         }
         TextAreaLine placed;
-        layoutAreaLine(*fontRef.data, lineText(text, state.lineStarts, line), shown->size, area->tabSize, math::Vec2{0.0f}, placed);
-        return placed.xOf(offset - state.lineStarts[line]);
+        layoutAreaLine(*fontRef.data, rowText(text, row), shown->size, area->tabSize, math::Vec2{0.0f}, placed);
+        return placed.xOf(offset - row.begin);
     };
-    const auto offsetIn = [&](std::size_t line, float across) {
-        const std::string_view content = lineText(text, state.lineStarts, line);
+    const auto offsetIn = [&](std::size_t index, float across) {
+        const TextAreaRow row = areaRow(state.rows, state.lineStarts, text.size(), index);
+        const std::string_view content = rowText(text, row);
         if (fontRef.data == nullptr)
         {
-            return state.lineStarts[line] + std::min(static_cast<std::size_t>(std::max(across, 0.0f)), content.size());
+            return static_cast<std::size_t>(row.begin) + std::min(static_cast<std::size_t>(std::max(across, 0.0f)), content.size());
         }
         TextAreaLine placed;
         layoutAreaLine(*fontRef.data, content, shown->size, area->tabSize, math::Vec2{0.0f}, placed);
-        return state.lineStarts[line] + placed.offsetAt(across);
+        return insideRow(state.rows, text, index, row.begin + placed.offsetAt(across));
     };
-    // Up or down by lines, the cursor keeping the place across it started from.
+    // Up or down by rows, the cursor keeping the place across it started from.
     const auto moveLines = [&](std::ptrdiff_t lines) {
         if (state.wantedX < 0.0f)
         {
             state.wantedX = acrossOf(state.caret);
         }
-        const auto line = static_cast<std::ptrdiff_t>(lineOfOffset(state.lineStarts, state.caret));
+        const auto line = static_cast<std::ptrdiff_t>(areaRowOf(state.rows, state.lineStarts, state.caret));
         const std::ptrdiff_t target = line + lines;
         if (target < 0)
         {
             moveTo(0, input.selecting);
         }
-        else if (target >= static_cast<std::ptrdiff_t>(state.lineStarts.size()))
+        else if (target >= static_cast<std::ptrdiff_t>(areaRowCount(state.rows, state.lineStarts)))
         {
             moveTo(text.size(), input.selecting);
         }
@@ -893,10 +959,14 @@ std::pair<std::size_t, std::size_t> UiWorld::visibleTextLines(const scene::Scene
         return {0, 0};
     }
     const float moved = std::max(scene.get<scene::UiTextArea>(area).scroll.y, 0.0f);
-    // A hair more, so that a line moved to the very top counts as the first.
-    const std::size_t first = std::min(static_cast<std::size_t>((moved + 0.01f) / metrics.lineHeight), state->lineStarts.size() - 1);
+    // A hair more, so that a row moved to the very top counts as the first; the lines of the rows in view.
+    const std::size_t rows = areaRowCount(state->rows, state->lineStarts);
+    const std::size_t first = std::min(static_cast<std::size_t>((moved + 0.01f) / metrics.lineHeight), rows - 1);
     const auto count = static_cast<std::size_t>(std::ceil(metrics.viewSize().y / metrics.lineHeight)) + 1;
-    return {first, std::min(count, state->lineStarts.size() - first)};
+    const std::size_t last = std::min(first + count, rows) - 1;
+    const std::size_t size = scene.get<scene::UiText>(area).text.size();
+    const std::size_t firstLine = areaRow(state->rows, state->lineStarts, size, first).line;
+    return {firstLine, areaRow(state->rows, state->lineStarts, size, last).line - firstLine + 1};
 }
 
 std::pair<std::size_t, std::size_t> UiWorld::textSelection(scene::Entity area) const noexcept
@@ -992,11 +1062,12 @@ std::optional<UiWorld::CaretPlace> UiWorld::textCaretPlace(const scene::Scene& s
     }
     const auto& shown = scene.get<scene::UiText>(area);
     const auto& component = scene.get<scene::UiTextArea>(area);
-    const std::size_t line = lineOfOffset(state->lineStarts, state->caret);
-    const math::Vec2 origin{metrics.origin.x - component.scroll.x, metrics.origin.y - component.scroll.y + static_cast<float>(line) * metrics.lineHeight};
+    const std::size_t index = areaRowOf(state->rows, state->lineStarts, state->caret);
+    const TextAreaRow row = areaRow(state->rows, state->lineStarts, shown.text.size(), index);
+    const math::Vec2 origin{metrics.origin.x - component.scroll.x, metrics.origin.y - component.scroll.y + static_cast<float>(index) * metrics.lineHeight};
     TextAreaLine placed;
-    layoutAreaLine(*font, lineText(shown.text, state->lineStarts, line), shown.size, component.tabSize, origin, placed);
-    return CaretPlace{.position = math::Vec2{placed.xOf(state->caret - state->lineStarts[line]), origin.y}, .height = metrics.lineHeight};
+    layoutAreaLine(*font, rowText(shown.text, row), shown.size, component.tabSize, origin, placed);
+    return CaretPlace{.position = math::Vec2{placed.xOf(state->caret - row.begin), origin.y}, .height = metrics.lineHeight};
 }
 
 std::int32_t UiWorld::textLineAt(const scene::Scene& scene, scene::Entity area, math::Vec2 point) const
@@ -1016,7 +1087,11 @@ std::int32_t UiWorld::textLineAt(const scene::Scene& scene, scene::Entity area, 
         return -1;
     }
     const float down = (placed.y - metrics.origin.y + scene.get<scene::UiTextArea>(area).scroll.y) / metrics.lineHeight;
-    return down >= 0.0f && down < static_cast<float>(state->lineStarts.size()) ? static_cast<std::int32_t>(down) : -1;
+    if (down < 0.0f || down >= static_cast<float>(areaRowCount(state->rows, state->lineStarts)))
+    {
+        return -1;
+    }
+    return static_cast<std::int32_t>(areaRow(state->rows, state->lineStarts, scene.get<scene::UiText>(area).text.size(), static_cast<std::size_t>(down)).line);
 }
 
 scene::Entity UiWorld::editedTextArea() const noexcept

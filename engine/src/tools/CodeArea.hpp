@@ -48,6 +48,8 @@ struct DEVEX_API TextEditState
 
     // Go to line.
     bool openGoTo = false;
+    // F2: rename what is under the cursor, through the language server.
+    bool openRename = false;
     int goToLine = 1;
 
     // Completion.

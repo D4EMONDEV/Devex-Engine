@@ -52,7 +52,8 @@ int main()
                       {"definitionProvider", true},
                       {"referencesProvider", true},
                       {"hoverProvider", true},
-                      {"documentFormattingProvider", true}}}}}});
+                      {"documentFormattingProvider", true},
+                      {"renameProvider", true}}}}}});
             send({{"jsonrpc", "2.0"},
                   {"id", "configuration"},
                   {"method", "workspace/configuration"},
@@ -106,6 +107,20 @@ int main()
                                        {"range",
                                         {{"start", {{"line", 0}, {"character", 1}}},
                                          {"end", {{"line", 0}, {"character", 2}}}}}}});
+            else if (method == "textDocument/rename")
+            {
+                // Two places in this file, as "changes", and one in another, as "documentChanges".
+                const std::string name = params.value("newName", "");
+                const auto edit = [&](int line, int from, int to) {
+                    return Json{{"range", {{"start", {{"line", line}, {"character", from}}}, {"end", {{"line", line}, {"character", to}}}}},
+                                {"newText", name}};
+                };
+                std::string other = uri;
+                other.replace(other.rfind('/') + 1, std::string::npos, "Other.cs");
+                result = {{"changes", {{uri, Json::array({edit(0, 0, 2), edit(0, 4, 6)})}}},
+                          {"documentChanges",
+                           Json::array({{{"textDocument", {{"uri", other}, {"version", nullptr}}}, {"edits", Json::array({edit(1, 0, 3)})}}})}};
+            }
             else if (method == "textDocument/formatting")
                 result = Json::array({{{"range",
                                         {{"start", {{"line", 0}, {"character", 0}}},
