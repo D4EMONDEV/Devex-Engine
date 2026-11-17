@@ -4000,6 +4000,17 @@ public:
 - Le TAA de WebGPU tourne le saut de `temporalJitter` (Y vers le bas de Vulkan) vers son Y, et reconstruit le mouvement
   par la profondeur (`m_previousViewProjection`) : il n'y a pas de pré-passe. Ce que la tonemapping lit est l'image
   résolue (`resolve()`) ; le bloom lit la même et écrit son halo dans le niveau 0 de la chaîne.
+- Les shaders des projets sur WebGPU : l'import d'un projet en Compatibility génère un second code par shader
+  (`webSpatialTemplate`, `webCanvasTemplate`, `webParticlesTemplate`, `webSkyTemplate` de `ShaderFile.cpp`), que slangc
+  compile en WGSL (`ShaderData::wgsl`, précédé de `diagnostic(off, derivative_uniformity)`), avec `DEVEX_CANVAS_ITEM` ou
+  `DEVEX_PARTICLES` pour que `webgpu_custom.slang` lise les textures du dessin (8 et 9, après les 8 du matériau).
+  Groupes : spatial 0 la scène, 1 le matériau (`m_customMaterialLayout` : 64 slots, 8 textures, 8 samplers), 2 le lot ;
+  ses ombres ont leur groupe 0 (`m_customShadowLayout`), sans la scène qu'elles dessinent. Sprites et particules, standard
+  ou non : 0 la scène sans décalcomanies (`m_liteSceneLayout` : WebGPU lie 16 textures par étape), 1 le matériau ou
+  `m_emptyGroup`, 2 les sprites ou les particules, 3 les textures de la série ou le dessin. Ciel : 0 l'uniforme de la
+  scène seul (`m_skySceneLayout`), 1 le matériau ; le ciel déplié en 512 × 256 est cuit par `bakeEnvironmentFrom`.
+- `TIME` et le vent : `m_shaderTime`, en secondes depuis le démarrage, modulo une heure, comme Vulkan ; `m_time` compte les
+  images (le grain).
 
 ## Formats ajoutés après les formats figés
 

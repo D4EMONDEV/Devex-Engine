@@ -4,8 +4,8 @@
 // its images with Vulkan's. It draws what the Compatibility method shows, as Vulkan does and from code shared with it
 // where it can: sprites, tilemaps, text and the interface, the 2D lights; meshes, skinned or not, lit by the sun, the
 // local lights and the environment, with their shadows, decals, terrains and grass, particles and trails, over the
-// sky and in the fog; then bloom, temporal antialiasing, the effects of the lens and the colour table. Spatial shaders
-// of projects draw from the WGSL their import compiles. The air of the atmosphere comes after the 1.0.
+// sky and in the fog; then bloom, temporal antialiasing, the effects of the lens and the colour table. The shaders of
+// projects draw from the WGSL their import compiles. The air of the atmosphere comes after the 1.0.
 #include "../FramePreparation.hpp"
 #include "../GpuTypes.hpp"
 #include "../RenderBackend.hpp"
@@ -113,7 +113,8 @@ private:
         std::uint64_t customEpoch = 0;
     };
     // A shader of the project: what WebGPU draws with it, its module of WGSL, and its pipelines, made when first drawn:
-    // rigid and skinned meshes, and their shadows into the cascades and into the atlas.
+    // rigid and skinned meshes, and their shadows into the cascades and into the atlas; sprites, particles or the sky;
+    // and the sky laid out for the light of the environment. Its revision grows whenever it changes.
     struct GpuShader
     {
         asset::ShaderKind kind = asset::ShaderKind::Spatial;
@@ -124,6 +125,9 @@ private:
         wgpu::ShaderModule module;
         std::array<wgpu::RenderPipeline, 2> meshes;
         std::array<wgpu::RenderPipeline, 4> shadows;
+        wgpu::RenderPipeline draw;
+        wgpu::RenderPipeline bake;
+        std::uint64_t revision = 0;
     };
     // The meshes of the frame that share a mesh, a submesh, a material and a way to be drawn, at once; a blended one
     // alone, in its order from the farthest.
@@ -196,14 +200,18 @@ private:
         math::Extent2D maxSize;
         bool window = false;
     };
-    // A run of sprites that read the same texture and normal map, drawn at once.
+    // A run of sprites that read the same texture and normal map, drawn at once, by the standard shader or by the same
+    // canvas_item shader of the project and material, whose group it binds.
     struct SpriteRun
     {
         std::uint32_t first = 0;
         std::uint32_t count = 0;
         std::uint32_t texture = 0;
         std::uint32_t normalTexture = 0;
+        ShaderHandle shader;
+        std::uint32_t material = 0;
         wgpu::BindGroup group;
+        wgpu::BindGroup custom;
     };
     // A batch of the interface as it is drawn.
     struct UiRun
@@ -237,16 +245,27 @@ private:
     // The 3D, in WebGpuScene.cpp.
     [[nodiscard]] core::Result<void> createScenePipelines();
     [[nodiscard]] wgpu::BindGroup materialGroup(GpuMaterial& material);
-    // The shaders of the project, in WebGpuScene.cpp: the spatial one a material draws with, if WebGPU can; its group,
-    // its pipelines.
-    [[nodiscard]] GpuShader* spatialShaderOf(const MaterialDesc& material);
+    // The shaders of the project, in WebGpuScene.cpp: the one of a kind a material draws with, if WebGPU can; its
+    // group, its pipelines.
+    [[nodiscard]] GpuShader* shaderOf(const MaterialDesc& material, asset::ShaderKind kind);
+    [[nodiscard]] GpuShader* shaderOf(MaterialHandle material, asset::ShaderKind kind);
     [[nodiscard]] wgpu::BindGroup customMaterialGroup(GpuMaterial& material);
     [[nodiscard]] const wgpu::RenderPipeline& customMeshPipeline(GpuShader& shader, bool skinned);
     [[nodiscard]] const wgpu::RenderPipeline& customShadowPipeline(GpuShader& shader, bool skinned, bool atlas);
+    [[nodiscard]] const wgpu::RenderPipeline& customSpritePipeline(GpuShader& shader);
+    [[nodiscard]] const wgpu::RenderPipeline& customParticlePipeline(GpuShader& shader);
+    [[nodiscard]] const wgpu::RenderPipeline& customSkyPipeline(GpuShader& shader, bool bake);
     [[nodiscard]] GpuShader gpuShaderOf(const asset::ShaderData& shader) const;
     [[nodiscard]] wgpu::Texture whiteCube() const;
     void bakeBrdfTable();
     void bakeEnvironment(TextureHandle sky);
+    // The light of the environment from a sky laid out as an equirectangular image `width` pixels wide.
+    void bakeEnvironmentFrom(const wgpu::TextureView& equirectangular, std::uint32_t width);
+    // The sky shader of the world, if WebGPU can draw it; the light of the environment baked from it, once the scene data
+    // of the frame is written, when the shader, its material or the sun changed: the sun at most twice a second. True
+    // when it baked.
+    [[nodiscard]] GpuShader* skyShader();
+    [[nodiscard]] bool updateSkyShader();
     // The meshes of the frame by batches, and the data the scene pass reads of them.
     void prepareMeshes(const ViewMatrices& matrices, const Frustum& frustum);
     void drawSky(const wgpu::RenderPassEncoder& pass);
@@ -433,6 +452,20 @@ private:
     wgpu::TextureView m_depthView;
     wgpu::Texture m_flatNormal;
     wgpu::BindGroupLayout m_sceneLayout;
+    // The scene without the decals, for sprites and particles, which never read them: WebGPU binds sixteen textures to a
+    // stage, and the room goes to the textures of a material and of the draw.
+    wgpu::BindGroupLayout m_liteSceneLayout;
+    wgpu::BindGroup m_liteSceneGroup;
+    // The data of the scene alone, which sky shaders read.
+    wgpu::BindGroupLayout m_skySceneLayout;
+    wgpu::BindGroup m_skySceneGroup;
+    // The sky a sky shader drew, which the light of the environment was baked from, and what it was drawn from: the
+    // shader, its material and uniforms; then the sun, which may change every frame.
+    wgpu::Texture m_shaderSky;
+    std::uint64_t m_shaderSkyKey = 0;
+    std::uint64_t m_shaderSkyLight = 0;
+    std::chrono::steady_clock::time_point m_shaderSkyBaked;
+    std::uint64_t m_shaderRevision = 0;
     wgpu::BindGroupLayout m_materialLayout;
     wgpu::BindGroupLayout m_meshDrawLayout;
     // Rigid or skinned, one side or both, opaque or blended: the index is 1 skinned + 2 both sides + 4 blended.
@@ -536,6 +569,8 @@ private:
     PackedUi m_ui;
     // The handle of the texture at each slot the sprites name.
     std::vector<TextureHandle> m_slotHandles;
+    // The materials of the sprites of the frame, which they name by their index here.
+    std::vector<MaterialHandle> m_spriteMaterials;
     std::vector<SpriteRun> m_spriteRuns;
     std::vector<UiRun> m_uiRuns;
 
@@ -556,7 +591,11 @@ private:
     std::vector<CapturedImage> m_captured;
 
     std::uint32_t m_drawCalls = 0;
+    // The frames, from 0 to 1023, for the grain; and the TIME of shaders and of the wind, in seconds, which starts over
+    // every hour so that it keeps its precision, as Vulkan counts them.
     float m_time = 0.0f;
+    float m_shaderTime = 0.0f;
+    std::chrono::steady_clock::time_point m_startTime = std::chrono::steady_clock::now();
 };
 
 } // namespace devex::render::webgpu

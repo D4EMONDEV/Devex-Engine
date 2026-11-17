@@ -378,6 +378,15 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
                                   samplerEntry(13, fragment), storageEntry(14, fragment), textureEntry(15, fragment),
                                   textureEntry(16, fragment), samplerEntry(17, fragment), storageEntry(18, both)};
     m_sceneLayout = bindGroupLayout(m_device, "Scene", sceneEntries);
+    const std::array liteEntries{uniformEntry(0, both, false, sizeof(SceneData)), storageEntry(1, fragment),
+                                 cubeEntry(4, fragment), cubeEntry(5, fragment), textureEntry(6, fragment), samplerEntry(7, fragment),
+                                 storageEntry(8, fragment), cascades, atlas, comparison, textureEntry(12, fragment),
+                                 samplerEntry(13, fragment), storageEntry(18, both)};
+    m_liteSceneLayout = bindGroupLayout(m_device, "Scene of sprites and particles", liteEntries);
+    const std::array skySceneEntries{uniformEntry(0, both, false, sizeof(SceneData))};
+    m_skySceneLayout = bindGroupLayout(m_device, "Scene of sky shaders", skySceneEntries);
+    m_emptyLayout = bindGroupLayout(m_device, "Empty", std::span<const wgpu::BindGroupLayoutEntry>{});
+    m_emptyGroup = bindGroup(m_device, m_emptyLayout, std::span<const wgpu::BindGroupEntry>{});
     // The shaders of the project: the slots of the uniforms of a material and its textures; and what their shadows
     // read in place of the scene: the instances, the bones, the instance uniforms and the view.
     // Each texture has its sampler, which filters it as the texture asks.
@@ -389,6 +398,36 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
         customEntries[1 + customTextureCount + texture] = samplerEntry(1 + customTextureCount + texture, both);
     }
     m_customMaterialLayout = bindGroupLayout(m_device, "Shader material", customEntries);
+
+    // Sprites lie among the blended surfaces, behind what the meshes drew nearer, without hiding the others: the scene, no
+    // material, the sprites, then the texture and the normal map of a run. Their colours leave premultiplied, which
+    // additive sprites leave with an alpha of zero.
+    wgpu::BlendState premultiplied;
+    premultiplied.color = {.operation = wgpu::BlendOperation::Add, .srcFactor = wgpu::BlendFactor::One,
+                           .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha};
+    premultiplied.alpha = premultiplied.color;
+    const wgpu::ShaderModule spriteModule = shaderModule("webgpu_sprite");
+    wgpu::ColorTargetState spriteTarget;
+    spriteTarget.format = sceneFormat;
+    spriteTarget.blend = &premultiplied;
+    wgpu::FragmentState spriteFragment;
+    spriteFragment.module = spriteModule;
+    spriteFragment.entryPoint = "spriteFragment";
+    spriteFragment.targetCount = 1;
+    spriteFragment.targets = &spriteTarget;
+    const std::array spriteGroups{m_liteSceneLayout, m_emptyLayout, m_spriteLayout, m_spriteTexturesLayout};
+    wgpu::DepthStencilState spriteDepth;
+    spriteDepth.format = depthFormat;
+    spriteDepth.depthWriteEnabled = false;
+    spriteDepth.depthCompare = wgpu::CompareFunction::GreaterEqual;
+    wgpu::RenderPipelineDescriptor sprite;
+    sprite.label = "Sprites";
+    sprite.layout = pipelineLayout(m_device, spriteGroups);
+    sprite.vertex.module = spriteModule;
+    sprite.vertex.entryPoint = "spriteVertex";
+    sprite.depthStencil = &spriteDepth;
+    sprite.fragment = &spriteFragment;
+    m_spritePipeline = m_device.CreateRenderPipeline(&sprite);
     const std::array customShadowEntries{storageEntry(2, wgpu::ShaderStage::Vertex), storageEntry(3, wgpu::ShaderStage::Vertex),
                                          storageEntry(18, both), uniformEntry(19, wgpu::ShaderStage::Vertex, true, sizeof(math::Mat4))};
     m_customShadowLayout = bindGroupLayout(m_device, "Shader shadow", customShadowEntries);
@@ -569,6 +608,8 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
     scene.size = sizeof(SceneData);
     scene.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
     m_sceneBuffer = m_device.CreateBuffer(&scene);
+    const std::array skySceneBindings{bufferBinding(0, m_sceneBuffer, sizeof(SceneData))};
+    m_skySceneGroup = bindGroup(m_device, m_skySceneLayout, skySceneBindings);
 
     // A flat normal, for the normal map of a material without one.
     wgpu::TextureDescriptor flat;
@@ -655,6 +696,11 @@ void WebGpuRenderer::bakeEnvironment(TextureHandle sky)
         m_environment.specularMips = 1;
         return;
     }
+    bakeEnvironmentFrom(source->texture.CreateView(), source->size.width);
+}
+
+void WebGpuRenderer::bakeEnvironmentFrom(const wgpu::TextureView& equirectangular, std::uint32_t width)
+{
     const wgpu::ShaderModule ibl = shaderModule("ibl");
     const auto pipeline = [&](const char* entry) {
         wgpu::ComputePipelineDescriptor descriptor;
@@ -706,12 +752,10 @@ void WebGpuRenderer::bakeEnvironment(TextureHandle sky)
         pass.End();
     };
     // Every level of the radiance cube samples the map at a matching detail.
-    const wgpu::TextureView equirectangular = source->texture.CreateView();
     for (std::uint32_t mip = 0; mip < radianceMips; ++mip)
     {
         const std::uint32_t size = std::max(radianceSize >> mip, 1U);
-        const float sourceLod =
-            std::max(std::log2(static_cast<float>(source->size.width) / (4.0f * static_cast<float>(size))), 0.0f);
+        const float sourceLod = std::max(std::log2(static_cast<float>(width) / (4.0f * static_cast<float>(size))), 0.0f);
         const std::array entries{viewBinding(0, equirectangular), viewBinding(2, facesView(radiance, mip)),
                                  samplerBinding(4, equirectangularSampler)};
         dispatch(toCube, entries, {.size = size, .sourceLod = sourceLod});
@@ -786,10 +830,16 @@ wgpu::BindGroup WebGpuRenderer::materialGroup(GpuMaterial& material)
     return material.group;
 }
 
-WebGpuRenderer::GpuShader* WebGpuRenderer::spatialShaderOf(const MaterialDesc& material)
+WebGpuRenderer::GpuShader* WebGpuRenderer::shaderOf(const MaterialDesc& material, asset::ShaderKind kind)
 {
     GpuShader* const shader = material.shader.isValid() ? m_shaders.find(material.shader) : nullptr;
-    return shader != nullptr && shader->kind == asset::ShaderKind::Spatial && shader->module ? shader : nullptr;
+    return shader != nullptr && shader->kind == kind && shader->module ? shader : nullptr;
+}
+
+WebGpuRenderer::GpuShader* WebGpuRenderer::shaderOf(MaterialHandle material, asset::ShaderKind kind)
+{
+    const GpuMaterial* const found = material.isValid() ? m_materials.find(material) : nullptr;
+    return found != nullptr ? shaderOf(found->description, kind) : nullptr;
 }
 
 wgpu::BindGroup WebGpuRenderer::customMaterialGroup(GpuMaterial& material)
@@ -922,12 +972,201 @@ const wgpu::RenderPipeline& WebGpuRenderer::customShadowPipeline(GpuShader& shad
     return pipeline;
 }
 
+// The pipeline of a canvas_item shader of the project: the scene, its material, the sprites, the texture and the normal
+// map of a run, among the blended surfaces as the sprites are.
+const wgpu::RenderPipeline& WebGpuRenderer::customSpritePipeline(GpuShader& shader)
+{
+    if (shader.draw)
+    {
+        return shader.draw;
+    }
+    wgpu::BlendState premultiplied;
+    premultiplied.color = {.operation = wgpu::BlendOperation::Add, .srcFactor = wgpu::BlendFactor::One,
+                           .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha};
+    premultiplied.alpha = premultiplied.color;
+    wgpu::ColorTargetState target;
+    target.format = sceneFormat;
+    target.blend = &premultiplied;
+    wgpu::FragmentState fragmentState;
+    fragmentState.module = shader.module;
+    fragmentState.entryPoint = "spriteFragment";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &target;
+    wgpu::DepthStencilState depth;
+    depth.format = depthFormat;
+    depth.depthWriteEnabled = false;
+    depth.depthCompare = wgpu::CompareFunction::GreaterEqual;
+    const std::array groups{m_liteSceneLayout, m_customMaterialLayout, m_spriteLayout, m_spriteTexturesLayout};
+    wgpu::RenderPipelineDescriptor descriptor;
+    descriptor.label = "Canvas item shader of the project";
+    descriptor.layout = pipelineLayout(m_device, groups);
+    descriptor.vertex.module = shader.module;
+    descriptor.vertex.entryPoint = "spriteVertex";
+    descriptor.depthStencil = &depth;
+    descriptor.fragment = &fragmentState;
+    shader.draw = m_device.CreateRenderPipeline(&descriptor);
+    return shader.draw;
+}
+
+// The pipeline of a particles shader of the project: the scene, its material, the particles and the draw, as the
+// particles are drawn.
+const wgpu::RenderPipeline& WebGpuRenderer::customParticlePipeline(GpuShader& shader)
+{
+    if (shader.draw)
+    {
+        return shader.draw;
+    }
+    wgpu::BlendState premultiplied;
+    premultiplied.color = {.operation = wgpu::BlendOperation::Add, .srcFactor = wgpu::BlendFactor::One,
+                           .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha};
+    premultiplied.alpha = premultiplied.color;
+    wgpu::ColorTargetState target;
+    target.format = sceneFormat;
+    target.blend = &premultiplied;
+    wgpu::FragmentState fragmentState;
+    fragmentState.module = shader.module;
+    fragmentState.entryPoint = "particleFragment";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &target;
+    wgpu::DepthStencilState depth;
+    depth.format = depthFormat;
+    depth.depthWriteEnabled = false;
+    depth.depthCompare = wgpu::CompareFunction::GreaterEqual;
+    const std::array groups{m_liteSceneLayout, m_customMaterialLayout, m_particleLayout, m_particleDrawLayout};
+    wgpu::RenderPipelineDescriptor descriptor;
+    descriptor.label = "Particles shader of the project";
+    descriptor.layout = pipelineLayout(m_device, groups);
+    descriptor.vertex.module = shader.module;
+    descriptor.vertex.entryPoint = "particleVertex";
+    descriptor.depthStencil = &depth;
+    descriptor.fragment = &fragmentState;
+    shader.draw = m_device.CreateRenderPipeline(&descriptor);
+    return shader.draw;
+}
+
+// The pipelines of a sky shader of the project, which read the data of the scene and their material: behind the scene,
+// or the whole sky laid out for the light of the environment.
+const wgpu::RenderPipeline& WebGpuRenderer::customSkyPipeline(GpuShader& shader, bool bake)
+{
+    wgpu::RenderPipeline& pipeline = bake ? shader.bake : shader.draw;
+    if (pipeline)
+    {
+        return pipeline;
+    }
+    wgpu::ColorTargetState target;
+    target.format = bake ? environmentFormat : sceneFormat;
+    wgpu::FragmentState fragmentState;
+    fragmentState.module = shader.module;
+    fragmentState.entryPoint = bake ? "bakeFragment" : "skyFragment";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &target;
+    wgpu::DepthStencilState depth;
+    depth.format = depthFormat;
+    depth.depthWriteEnabled = false;
+    depth.depthCompare = wgpu::CompareFunction::Always;
+    const std::array groups{m_skySceneLayout, m_customMaterialLayout};
+    wgpu::RenderPipelineDescriptor descriptor;
+    descriptor.label = bake ? "Sky shader of the project, laid out" : "Sky shader of the project";
+    descriptor.layout = pipelineLayout(m_device, groups);
+    descriptor.vertex.module = shader.module;
+    descriptor.vertex.entryPoint = "skyVertex";
+    descriptor.depthStencil = bake ? nullptr : &depth;
+    descriptor.fragment = &fragmentState;
+    pipeline = m_device.CreateRenderPipeline(&descriptor);
+    return pipeline;
+}
+
+WebGpuRenderer::GpuShader* WebGpuRenderer::skyShader()
+{
+    return shaderOf(m_world.environment.skyMaterial, asset::ShaderKind::Sky);
+}
+
+bool WebGpuRenderer::updateSkyShader()
+{
+    GpuShader* const shader = skyShader();
+    GpuMaterial* const material = shader != nullptr ? m_materials.find(m_world.environment.skyMaterial) : nullptr;
+    if (material == nullptr)
+    {
+        return false;
+    }
+    // What the sky is drawn from, and the light it shows, as numbers that change when they do, as Vulkan keeps them.
+    const auto mix = [](std::uint64_t hash, const void* data, std::size_t size) {
+        const auto* const bytes = static_cast<const unsigned char*>(data);
+        for (std::size_t index = 0; index < size; ++index)
+        {
+            hash = (hash ^ bytes[index]) * 1099511628211ULL;
+        }
+        return hash;
+    };
+    const MaterialHandle handle = m_world.environment.skyMaterial;
+    const MaterialDesc& description = material->description;
+    std::uint64_t key = 14695981039346656037ULL;
+    key = mix(key, &handle, sizeof(handle));
+    key = mix(key, &shader->revision, sizeof(shader->revision));
+    if (!description.parameters.empty())
+    {
+        key = mix(key, description.parameters.data(), description.parameters.size() * sizeof(math::Vec4));
+    }
+    for (const MaterialTexture& texture : description.textures)
+    {
+        key = mix(key, &texture.texture, sizeof(texture.texture));
+    }
+    std::uint64_t light = 14695981039346656037ULL;
+    light = mix(light, &m_world.sun.direction, sizeof(m_world.sun.direction));
+    light = mix(light, &m_world.sun.illuminance, sizeof(m_world.sun.illuminance));
+    light = mix(light, &m_world.environment.rotation, sizeof(m_world.environment.rotation));
+    const auto now = std::chrono::steady_clock::now();
+    if (m_shaderSky && key == m_shaderSkyKey && (light == m_shaderSkyLight || now - m_shaderSkyBaked < std::chrono::milliseconds(500)))
+    {
+        return false;
+    }
+
+    // The whole sky laid out as an equirectangular image, as a sky texture is, then baked as one.
+    constexpr math::Extent2D skySize{512, 256};
+    wgpu::TextureDescriptor descriptor;
+    descriptor.label = "Sky of the shader";
+    descriptor.size = {skySize.width, skySize.height, 1};
+    descriptor.format = environmentFormat;
+    descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+    const wgpu::Texture sky = m_device.CreateTexture(&descriptor);
+    const wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
+    {
+        wgpu::RenderPassColorAttachment color;
+        color.view = sky.CreateView();
+        color.loadOp = wgpu::LoadOp::Clear;
+        color.storeOp = wgpu::StoreOp::Store;
+        color.clearValue = {0.0, 0.0, 0.0, 1.0};
+        wgpu::RenderPassDescriptor passDescriptor;
+        passDescriptor.label = "Sky of the shader";
+        passDescriptor.colorAttachmentCount = 1;
+        passDescriptor.colorAttachments = &color;
+        const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&passDescriptor);
+        pass.SetPipeline(customSkyPipeline(*shader, true));
+        pass.SetBindGroup(0, m_skySceneGroup);
+        pass.SetBindGroup(1, customMaterialGroup(*material));
+        pass.Draw(3);
+        pass.End();
+    }
+    const wgpu::CommandBuffer commands = encoder.Finish();
+    m_queue.Submit(1, &commands);
+    bakeEnvironmentFrom(sky.CreateView(), skySize.width);
+    m_environment.sky = {};
+    m_shaderSky = sky;
+    m_shaderSkyKey = key;
+    m_shaderSkyLight = light;
+    m_shaderSkyBaked = now;
+    return true;
+}
+
 void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frustum)
 {
-    // The environment follows the sky texture of the world.
-    if (m_world.environment.sky != m_environment.sky ||
-        (m_environment.sky.isValid() && !m_textures.contains(m_environment.sky)))
+    // The environment follows the sky texture of the world, unless a sky shader lights it; once the shader goes, the
+    // texture lights it again.
+    if (skyShader() == nullptr && (m_shaderSky || m_world.environment.sky != m_environment.sky ||
+                                   (m_environment.sky.isValid() && !m_textures.contains(m_environment.sky))))
     {
+        m_shaderSky = {};
+        m_shaderSkyKey = 0;
         bakeEnvironment(m_world.environment.sky);
     }
 
@@ -998,8 +1237,14 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
     scene.decalCount = m_decalCount;
     scene.viewportWidth = static_cast<float>(m_sceneSize.width);
     scene.viewportHeight = static_cast<float>(m_sceneSize.height);
-    scene.time = m_time;
+    scene.time = m_shaderTime;
     m_queue.WriteBuffer(m_sceneBuffer, 0, &scene, sizeof(scene));
+    // A sky shader lights the scene from what it draws, which reads the data just written.
+    if (updateSkyShader())
+    {
+        scene.specularMipCount = static_cast<float>(m_environment.specularMips);
+        m_queue.WriteBuffer(m_sceneBuffer, 0, &scene, sizeof(scene));
+    }
 
     // The instances the camera sees, by batches of one mesh, submesh, material and way to be drawn; blended ones alone,
     // the farthest first.
@@ -1029,7 +1274,7 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
         const MaterialDesc& description = m_materials.find(material)->description;
         std::uint32_t pipeline = skinned ? skinnedBit : 0;
         // A shader of the project chooses its sides and its blending.
-        if (const GpuShader* const shader = spatialShaderOf(description))
+        if (const GpuShader* const shader = shaderOf(description, asset::ShaderKind::Spatial))
         {
             pipeline |= customBit | (shader->transparent ? blendedBit : 0);
         }
@@ -1126,7 +1371,7 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
             }
             const MaterialHandle material = m_materials.contains(instance.material) ? instance.material : m_defaultMaterial;
             const MaterialDesc& description = m_materials.find(material)->description;
-            const GpuShader* const shader = spatialShaderOf(description);
+            const GpuShader* const shader = shaderOf(description, asset::ShaderKind::Spatial);
             if (shader != nullptr ? shader->transparent || !shader->castsShadows : description.alphaMode == asset::AlphaMode::Blend)
             {
                 continue;
@@ -1223,7 +1468,7 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
     {
         const DrawData data{.first = batch < m_meshBatches.size() ? m_meshBatches[batch].firstInstance
                                                                   : m_shadowBatches[batch - m_meshBatches.size()].firstInstance,
-                            .time = m_time,
+                            .time = m_shaderTime,
                             .cameraPosition = matrices.cameraPosition};
         std::memcpy(draws.data() + batch * uniformStride, &data, sizeof(data));
     }
@@ -1232,7 +1477,8 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
         m_queue.WriteBuffer(m_meshDrawBuffer, 0, draws.data(), draws.size());
     }
 
-    // The sky texture, or white for a sky of one colour, wrapping around but not over the poles.
+    // The sky texture, or the sky a sky shader drew, or white for a sky of one colour, wrapping around but not over the
+    // poles.
     const GpuTexture* const skyTexture = m_textures.find(m_world.environment.sky);
     wgpu::SamplerDescriptor wrap;
     wrap.addressModeU = wgpu::AddressMode::Repeat;
@@ -1248,8 +1494,9 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
                                   viewBinding(6, m_brdfTable.CreateView()), samplerBinding(7, m_clampSampler),
                                   bufferBinding(8, m_shadowViewBuffer, shadowViewBytes), viewBinding(9, cascadeArray),
                                   viewBinding(10, m_atlasMap.CreateView()), samplerBinding(11, m_shadowSampler),
-                                  viewBinding(12, skyTexture != nullptr && skyTexture->bindable ? skyTexture->texture.CreateView()
-                                                                                                : m_white.CreateView()),
+                                  viewBinding(12, m_shaderSky                                         ? m_shaderSky.CreateView()
+                                                  : skyTexture != nullptr && skyTexture->bindable ? skyTexture->texture.CreateView()
+                                                                                                  : m_white.CreateView()),
                                   samplerBinding(13, m_device.CreateSampler(&wrap)),
                                   bufferBinding(14, m_decalBuffer, m_decalCapacity),
                                   viewBinding(15, m_decalColors.view ? m_decalColors.view : m_white.CreateView()),
@@ -1257,6 +1504,10 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
                                   samplerBinding(17, m_clampSampler),
                                   bufferBinding(18, m_instanceParameterBuffer, m_instanceParameterCapacity)};
     m_sceneGroup = bindGroup(m_device, m_sceneLayout, sceneEntries);
+    const std::array liteEntries{sceneEntries[0],  sceneEntries[1],  sceneEntries[4],  sceneEntries[5], sceneEntries[6],
+                                 sceneEntries[7],  sceneEntries[8],  sceneEntries[9],  sceneEntries[10], sceneEntries[11],
+                                 sceneEntries[12], sceneEntries[13], sceneEntries[18]};
+    m_liteSceneGroup = bindGroup(m_device, m_liteSceneLayout, liteEntries);
     const std::array shadowEntries{bufferBinding(0, m_instanceBuffer, instanceBytes), bufferBinding(1, m_boneBuffer, boneBytes),
                                    bufferBinding(2, m_shadowMatrixBuffer, sizeof(math::Mat4))};
     m_shadowGroup = bindGroup(m_device, m_shadowLayout, shadowEntries);
@@ -1266,13 +1517,24 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
     m_customShadowGroup = bindGroup(m_device, m_customShadowLayout, customShadowEntries);
     const std::array drawEntries{bufferBinding(0, m_meshDrawBuffer, sizeof(DrawData))};
     m_meshDrawGroup = bindGroup(m_device, m_meshDrawLayout, drawEntries);
-
 }
 
 void WebGpuRenderer::drawSky(const wgpu::RenderPassEncoder& pass)
 {
-    pass.SetPipeline(m_skyPipeline);
-    pass.SetBindGroup(0, m_sceneGroup);
+    // A sky shader of the project draws the sky in place of the texture.
+    GpuShader* const shader = skyShader();
+    GpuMaterial* const material = shader != nullptr ? m_materials.find(m_world.environment.skyMaterial) : nullptr;
+    if (material != nullptr)
+    {
+        pass.SetPipeline(customSkyPipeline(*shader, false));
+        pass.SetBindGroup(0, m_skySceneGroup);
+        pass.SetBindGroup(1, customMaterialGroup(*material));
+    }
+    else
+    {
+        pass.SetPipeline(m_skyPipeline);
+        pass.SetBindGroup(0, m_sceneGroup);
+    }
     pass.Draw(3);
     ++m_drawCalls;
 }
@@ -1290,7 +1552,8 @@ void WebGpuRenderer::drawShadows(const wgpu::CommandEncoder& encoder)
             {
                 continue;
             }
-            GpuShader* const shader = (drawn.pipeline & customBit) != 0 ? spatialShaderOf(material->description) : nullptr;
+            GpuShader* const shader =
+                (drawn.pipeline & customBit) != 0 ? shaderOf(material->description, asset::ShaderKind::Spatial) : nullptr;
             if (shader != nullptr)
             {
                 pass.SetPipeline(customShadowPipeline(*shader, (drawn.pipeline & skinnedBit) != 0, shadow.atlas));
@@ -1370,7 +1633,8 @@ void WebGpuRenderer::drawMeshBatch(const wgpu::RenderPassEncoder& pass, std::uin
     {
         return;
     }
-    GpuShader* const shader = (drawn.pipeline & customBit) != 0 ? spatialShaderOf(material->description) : nullptr;
+    GpuShader* const shader =
+        (drawn.pipeline & customBit) != 0 ? shaderOf(material->description, asset::ShaderKind::Spatial) : nullptr;
     if (shader != nullptr)
     {
         // Each shader of the project has pipelines of its own.
@@ -1429,13 +1693,14 @@ core::Result<void> WebGpuRenderer::createParticlePipelines()
     const wgpu::ShaderStage both = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
     wgpu::BindGroupLayoutEntry depth = textureEntry(5, wgpu::ShaderStage::Fragment);
     depth.texture.sampleType = wgpu::TextureSampleType::Depth;
+    // The vertex() of a particles shader may read the texture too.
     const std::array particleEntries{storageEntry(0, wgpu::ShaderStage::Vertex), storageEntry(1, wgpu::ShaderStage::Vertex),
-                                     storageEntry(2, wgpu::ShaderStage::Vertex), textureEntry(3, wgpu::ShaderStage::Fragment),
-                                     samplerEntry(4, wgpu::ShaderStage::Fragment), depth};
+                                     storageEntry(2, wgpu::ShaderStage::Vertex), textureEntry(3, both), samplerEntry(4, both), depth};
     m_particleLayout = bindGroupLayout(m_device, "Particles", particleEntries);
     const std::array drawEntries{uniformEntry(0, both, true, sizeof(ParticleDrawData))};
     m_particleDrawLayout = bindGroupLayout(m_device, "Particle draw", drawEntries);
-    const std::array groups{m_sceneLayout, m_particleLayout, m_particleDrawLayout};
+    // The scene without its decals, no material, the particles and the draw, as a particles shader of the project.
+    const std::array groups{m_liteSceneLayout, m_emptyLayout, m_particleLayout, m_particleDrawLayout};
     const wgpu::PipelineLayout layout = pipelineLayout(m_device, groups);
     const wgpu::ShaderModule module = shaderModule("webgpu_particle");
     // Premultiplied colours, which additive particles leave with an alpha of zero.
@@ -1600,10 +1865,19 @@ void WebGpuRenderer::orderTransparent(const ViewMatrices& matrices)
         for (std::uint32_t index = first; index < end; ++index)
         {
             const GpuSprite& sprite = m_spriteFrame.sprites[index];
+            // A canvas_item shader of the project draws a run of one material, whose group it binds.
+            const ShaderHandle shader = index < m_spriteFrame.shaders.size() ? m_spriteFrame.shaders[index] : ShaderHandle{};
+            const std::uint32_t material = shader.isValid() ? sprite.material : 0;
             if (m_spriteRuns.size() == draw.firstRun || m_spriteRuns.back().texture != sprite.texture ||
-                m_spriteRuns.back().normalTexture != sprite.normalTexture)
+                m_spriteRuns.back().normalTexture != sprite.normalTexture || m_spriteRuns.back().shader != shader ||
+                m_spriteRuns.back().material != material)
             {
-                m_spriteRuns.push_back({.first = index, .count = 0, .texture = sprite.texture, .normalTexture = sprite.normalTexture});
+                m_spriteRuns.push_back({.first = index,
+                                        .count = 0,
+                                        .texture = sprite.texture,
+                                        .normalTexture = sprite.normalTexture,
+                                        .shader = shader,
+                                        .material = material});
             }
             ++m_spriteRuns.back().count;
         }
@@ -1625,11 +1899,23 @@ void WebGpuRenderer::drawTransparent(const wgpu::RenderPassEncoder& pass, const 
         case TransparentDraw::Kind::Particles:
         {
             const ParticleDraw& particles = m_world.particleDraws[draw.index];
-            pass.SetPipeline(m_particlePipelines[particles.ribbons ? 1 : 0]);
-            pass.SetBindGroup(0, m_sceneGroup);
-            pass.SetBindGroup(1, m_particleGroups[draw.index]);
+            // A particles shader of the project draws particles, not ribbons.
+            GpuShader* const shader = particles.ribbons ? nullptr : shaderOf(particles.material, asset::ShaderKind::Particles);
+            GpuMaterial* const material = shader != nullptr ? m_materials.find(particles.material) : nullptr;
+            if (material != nullptr)
+            {
+                pass.SetPipeline(customParticlePipeline(*shader));
+                pass.SetBindGroup(1, customMaterialGroup(*material));
+            }
+            else
+            {
+                pass.SetPipeline(m_particlePipelines[particles.ribbons ? 1 : 0]);
+                pass.SetBindGroup(1, m_emptyGroup);
+            }
+            pass.SetBindGroup(0, m_liteSceneGroup);
+            pass.SetBindGroup(2, m_particleGroups[draw.index]);
             const auto offset = static_cast<std::uint32_t>(std::uint64_t{draw.index} * uniformStride);
-            pass.SetBindGroup(2, m_particleDrawGroup, 1, &offset);
+            pass.SetBindGroup(3, m_particleDrawGroup, 1, &offset);
             // Six corners for each particle or segment; the instance says which.
             pass.Draw(6, particles.count);
             ++m_drawCalls;
@@ -1637,13 +1923,16 @@ void WebGpuRenderer::drawTransparent(const wgpu::RenderPassEncoder& pass, const 
             break;
         }
         case TransparentDraw::Kind::Sprites:
-            pass.SetPipeline(m_spritePipeline);
             for (std::uint32_t run = draw.firstRun; run < draw.firstRun + draw.runCount; ++run)
             {
                 const SpriteRun& drawn = m_spriteRuns[run];
+                GpuShader* const shader = drawn.custom ? m_shaders.find(drawn.shader) : nullptr;
+                pass.SetPipeline(shader != nullptr ? customSpritePipeline(*shader) : m_spritePipeline);
+                pass.SetBindGroup(0, m_liteSceneGroup);
+                pass.SetBindGroup(1, shader != nullptr ? drawn.custom : m_emptyGroup);
                 const auto offset = static_cast<std::uint32_t>(std::uint64_t{run} * uniformStride);
-                pass.SetBindGroup(0, sprites, 1, &offset);
-                pass.SetBindGroup(1, drawn.group);
+                pass.SetBindGroup(2, sprites, 1, &offset);
+                pass.SetBindGroup(3, drawn.group);
                 pass.Draw(6, drawn.count);
                 ++m_drawCalls;
             }
@@ -1859,8 +2148,6 @@ void WebGpuRenderer::createTerrainPipelines()
     m_terrainLayout = bindGroupLayout(m_device, "Terrain", entries);
     const std::array drawEntries{uniformEntry(0, vertex, true, sizeof(TerrainDrawData)), uniformEntry(1, vertex, true, sizeof(math::Mat4))};
     m_terrainDrawLayout = bindGroupLayout(m_device, "Terrain draw", drawEntries);
-    m_emptyLayout = bindGroupLayout(m_device, "Empty", std::span<const wgpu::BindGroupLayoutEntry>{});
-    m_emptyGroup = bindGroup(m_device, m_emptyLayout, std::span<const wgpu::BindGroupEntry>{});
 
     const wgpu::ShaderModule terrain = shaderModule("webgpu_terrain");
     const std::array sceneGroups{m_sceneLayout, m_terrainLayout, m_terrainDrawLayout};
@@ -2051,7 +2338,7 @@ void WebGpuRenderer::prepareTerrains(const ViewMatrices& matrices)
     std::vector<GpuTerrainNode> tiles;
     std::vector<std::byte> uniforms;
     // The first draw is that of the blocks; three of grass follow for each terrain.
-    std::vector<TerrainDrawData> draws{TerrainDrawData{.cameraPosition = eye, .time = m_time}};
+    std::vector<TerrainDrawData> draws{TerrainDrawData{.cameraPosition = eye, .time = m_shaderTime}};
     std::vector<std::array<const GpuTexture*, 5>> maps;
     std::vector<std::size_t> layerIndices;
     for (std::size_t index = 0; index < m_world.terrains.size(); ++index)
@@ -2085,7 +2372,7 @@ void WebGpuRenderer::prepareTerrains(const ViewMatrices& matrices)
                              .firstTile = static_cast<std::uint32_t>(tiles.size()),
                              .bladesPerTile = std::max(selection->blades[band], 1U),
                              .bladeWidthScale = selection->bladeWidth[band],
-                             .time = m_time});
+                             .time = m_shaderTime});
             drawing.tileCount[band] = static_cast<std::uint32_t>(selection->tiles[band].size());
             drawing.blades[band] = selection->blades[band];
             tiles.insert(tiles.end(), selection->tiles[band].begin(), selection->tiles[band].end());

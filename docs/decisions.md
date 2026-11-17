@@ -6024,10 +6024,22 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      le modèle d'éclairage (`IWebLight`), pour que `light()` remplace celui de Devex. Les uniformes d'instance sont
      un tampon de l'image ; les ombres ont leur propre groupe, sans la scène qu'elles dessinent. Un test compare à
      Vulkan un cube texturé avec son `light()`, une sphère pliée par `vertex()` et un découpage qui ombre le sol ;
-   - les shaders 2D, de particules et de ciel, avec les sprites éclairés en 3D qu'il manquait au web (décidé le
-     2026-11-18 : tout ce que Vulkan dessine en Compatibility, dans un second commit). WebGPU ne lie que 16
+   - ✅ **les shaders 2D, de particules et de ciel**, avec les sprites éclairés en 3D qu'il manquait au web
+     (décidé le 2026-11-18 : tout ce que Vulkan dessine en Compatibility, dans un second commit). Chaque sorte a
+     son modèle pour WebGPU, qui s'appuie sur `webgpu_canvas.slang` et `webgpu_particles.slang`, les pendants de
+     `canvas.slang` et `particles.slang`, que les sprites et les particules standard lisent aussi. `TEXTURE` et
+     `NORMAL_TEXTURE` nomment les textures du dessin, après celles du matériau : slangc reçoit
+     `DEVEX_CANVAS_ITEM` ou `DEVEX_PARTICLES`, et `webgpu_custom.slang` les lit alors. WebGPU ne lie que 16
      textures par étape : la scène des sprites et des particules laisse de côté les décalcomanies, qu'ils ne lisent
-     pas, pour faire place aux huit du matériau.
+     pas, pour faire place aux huit du matériau. Un shader de ciel lit les données de la scène seules ; il dessine
+     le ciel derrière la scène, et le ciel déplié, dont la lumière de l'environnement est cuite comme d'une texture,
+     quand le shader, son matériau ou le soleil changent (le soleil deux fois par seconde au plus), comme Vulkan.
+     Un ruban reste dessiné par le shader standard, comme sous Vulkan. Le WGSL des shaders du projet commence par
+     `diagnostic(off, derivative_uniformity)` : comme en GLSL et en HLSL, une texture peut être lue dans une
+     branche que les pixels prennent ou non. Au passage, `TIME` et le vent de l'herbe comptaient des images sur le
+     web : ils comptent des secondes, comme sous Vulkan. Deux tests comparent à Vulkan des sprites d'un shader 2D
+     (pliés, teintés, avec un uniforme d'instance, éclairés ou non) et un ciel de shader qui éclaire une sphère,
+     avec des particules de shader.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

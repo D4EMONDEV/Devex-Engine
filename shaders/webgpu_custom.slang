@@ -2,8 +2,16 @@
 // and their constants. WebGPU has no bindless textures: a material binds the textures of its shader in its group, at
 // most eight, each with the sampler that filters it as it asks, and the slot of a texture uniform holds the number of
 // its binding there; the slots of the uniforms are a buffer of the material, and the values objects give their
-// instance uniforms a buffer of the frame.
+// instance uniforms a buffer of the frame. The draw binds its own textures after them: the texture and the normal map
+// of a run of sprites, which TEXTURE and NORMAL_TEXTURE name in canvas_item shaders, compiled with DEVEX_CANVAS_ITEM;
+// the texture of the particles, TEXTURE in particles shaders, compiled with DEVEX_PARTICLES.
 module webgpu_custom;
+
+#if defined(DEVEX_CANVAS_ITEM)
+import webgpu_canvas;
+#elif defined(DEVEX_PARTICLES)
+import webgpu_particles;
+#endif
 
 public static const float PI = 3.14159265358979;
 public static const float TAU = 6.28318530717959;
@@ -11,6 +19,9 @@ public static const float E = 2.71828182845905;
 
 public static const uint customTextureCount = 8;
 public static const uint customSlotCount = 64;
+// The textures of the draw, after those of the material.
+public static const uint drawTexture = 8;
+public static const uint drawNormalTexture = 9;
 
 public struct CustomSlots
 {
@@ -85,6 +96,15 @@ float4 sampleAtLevel(uint index, float2 uv, float lod)
         return customTexture5.SampleLevel(customSampler5, uv, lod);
     case 6:
         return customTexture6.SampleLevel(customSampler6, uv, lod);
+#if defined(DEVEX_CANVAS_ITEM)
+    case 8: // drawTexture
+        return spriteTexture.SampleLevel(spriteSampler, uv, lod);
+    case 9: // drawNormalTexture
+        return normalTexture.SampleLevel(normalSampler, uv, lod);
+#elif defined(DEVEX_PARTICLES)
+    case 8: // drawTexture
+        return particleTexture.SampleLevel(particleSampler, uv, lod);
+#endif
     default:
         return customTexture7.SampleLevel(customSampler7, uv, lod);
     }
@@ -112,6 +132,15 @@ float4 sampleWithSlopes(uint index, float2 uv)
         return customTexture5.SampleGrad(customSampler5, uv, slopeX, slopeY);
     case 6:
         return customTexture6.SampleGrad(customSampler6, uv, slopeX, slopeY);
+#if defined(DEVEX_CANVAS_ITEM)
+    case 8: // drawTexture
+        return spriteTexture.SampleGrad(spriteSampler, uv, slopeX, slopeY);
+    case 9: // drawNormalTexture
+        return normalTexture.SampleGrad(normalSampler, uv, slopeX, slopeY);
+#elif defined(DEVEX_PARTICLES)
+    case 8: // drawTexture
+        return particleTexture.SampleGrad(particleSampler, uv, slopeX, slopeY);
+#endif
     default:
         return customTexture7.SampleGrad(customSampler7, uv, slopeX, slopeY);
     }
@@ -167,6 +196,18 @@ public int2 textureSize(sampler2D sampler, int lod)
     case 6:
         customTexture6.GetDimensions(level, width, height, levels);
         break;
+#if defined(DEVEX_CANVAS_ITEM)
+    case 8: // drawTexture
+        spriteTexture.GetDimensions(level, width, height, levels);
+        break;
+    case 9: // drawNormalTexture
+        normalTexture.GetDimensions(level, width, height, levels);
+        break;
+#elif defined(DEVEX_PARTICLES)
+    case 8: // drawTexture
+        particleTexture.GetDimensions(level, width, height, levels);
+        break;
+#endif
     default:
         customTexture7.GetDimensions(level, width, height, levels);
         break;
@@ -194,6 +235,15 @@ public float4 texelFetch(sampler2D sampler, int2 texel, int lod)
         return customTexture5.Load(at);
     case 6:
         return customTexture6.Load(at);
+#if defined(DEVEX_CANVAS_ITEM)
+    case 8: // drawTexture
+        return spriteTexture.Load(at);
+    case 9: // drawNormalTexture
+        return normalTexture.Load(at);
+#elif defined(DEVEX_PARTICLES)
+    case 8: // drawTexture
+        return particleTexture.Load(at);
+#endif
     default:
         return customTexture7.Load(at);
     }

@@ -522,8 +522,8 @@ core::Result<void> WebGpuRenderer::createPipelines()
     const std::array spriteEntries{uniformEntry(0, both, false, sizeof(FrameData)), sprites,
                                    uniformEntry(2, both, true, sizeof(SpriteDrawData)), lights, shadows};
     m_spriteLayout = bindGroupLayout(m_device, "Sprites", spriteEntries);
-    const std::array spriteTextureEntries{textureEntry(0, wgpu::ShaderStage::Fragment), samplerEntry(1, wgpu::ShaderStage::Fragment),
-                                          textureEntry(2, wgpu::ShaderStage::Fragment), samplerEntry(3, wgpu::ShaderStage::Fragment)};
+    // The vertex() of a canvas_item shader may read them too.
+    const std::array spriteTextureEntries{textureEntry(0, both), samplerEntry(1, both), textureEntry(2, both), samplerEntry(3, both)};
     m_spriteTexturesLayout = bindGroupLayout(m_device, "Sprite textures", spriteTextureEntries);
     const std::array uiEntries{uniformEntry(0, both, true, sizeof(UiDrawData))};
     m_uiLayout = bindGroupLayout(m_device, "Interface", uiEntries);
@@ -539,35 +539,6 @@ core::Result<void> WebGpuRenderer::createPipelines()
                                       textureEntry(1, wgpu::ShaderStage::Compute), samplerEntry(2, wgpu::ShaderStage::Compute),
                                       output};
     m_luminanceLayout = bindGroupLayout(m_device, "Luminance", luminanceEntries);
-
-    // Premultiplied colours, which additive sprites leave with an alpha of zero.
-    wgpu::BlendState premultiplied;
-    premultiplied.color = {.operation = wgpu::BlendOperation::Add, .srcFactor = wgpu::BlendFactor::One,
-                           .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha};
-    premultiplied.alpha = premultiplied.color;
-    const wgpu::ShaderModule spriteModule = shaderModule("webgpu_sprite");
-    wgpu::ColorTargetState spriteTarget;
-    spriteTarget.format = sceneFormat;
-    spriteTarget.blend = &premultiplied;
-    wgpu::FragmentState spriteFragment;
-    spriteFragment.module = spriteModule;
-    spriteFragment.entryPoint = "spriteFragment";
-    spriteFragment.targetCount = 1;
-    spriteFragment.targets = &spriteTarget;
-    const std::array spriteGroups{m_spriteLayout, m_spriteTexturesLayout};
-    // Sprites lie among the blended surfaces: behind what the meshes drew nearer, without hiding the others.
-    wgpu::DepthStencilState spriteDepth;
-    spriteDepth.format = wgpu::TextureFormat::Depth32Float;
-    spriteDepth.depthWriteEnabled = false;
-    spriteDepth.depthCompare = wgpu::CompareFunction::GreaterEqual;
-    wgpu::RenderPipelineDescriptor sprite;
-    sprite.label = "Sprites";
-    sprite.layout = pipelineLayout(m_device, spriteGroups);
-    sprite.vertex.module = spriteModule;
-    sprite.vertex.entryPoint = "spriteVertex";
-    sprite.depthStencil = &spriteDepth;
-    sprite.fragment = &spriteFragment;
-    m_spritePipeline = m_device.CreateRenderPipeline(&sprite);
 
     m_uiModule = shaderModule("webgpu_ui");
     const std::array uiGroups{m_uiLayout, m_textureLayout};
@@ -1022,7 +993,9 @@ WebGpuRenderer::GpuShader WebGpuRenderer::gpuShaderOf(const asset::ShaderData& s
 
 core::Result<ShaderHandle> WebGpuRenderer::createShader(const asset::ShaderData& shader)
 {
-    return m_shaders.insert(gpuShaderOf(shader));
+    GpuShader gpu = gpuShaderOf(shader);
+    gpu.revision = ++m_shaderRevision;
+    return m_shaders.insert(std::move(gpu));
 }
 
 core::Result<void> WebGpuRenderer::updateShader(ShaderHandle handle, const asset::ShaderData& shader)
@@ -1033,6 +1006,7 @@ core::Result<void> WebGpuRenderer::updateShader(ShaderHandle handle, const asset
         return core::makeError(core::ErrorCode::NotFound, "no such shader");
     }
     *stored = gpuShaderOf(shader);
+    stored->revision = ++m_shaderRevision;
     // The materials that draw with it bind it again.
     ++m_textureEpoch;
     return {};
@@ -1261,6 +1235,8 @@ core::Result<void> WebGpuRenderer::endFrame()
     m_drawCalls = 0;
     m_tonemapPass = 0;
     m_time = std::fmod(m_time + 1.0f, 1024.0f);
+    m_shaderTime = static_cast<float>(
+        std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now() - m_startTime).count(), 3600.0));
     ensureSceneTarget(size);
     updateExposure();
     m_exposure = exposureFromEv100(m_ev100);
@@ -1293,8 +1269,22 @@ core::Result<void> WebGpuRenderer::endFrame()
             const GpuTexture* const texture = m_textures.find(handle);
             return texture != nullptr && texture->bindable ? handle.index : noTexture;
         },
-        .materialIndex = [](MaterialHandle) { return 0U; },
-        .canvasShader = [](MaterialHandle) { return ShaderHandle{}; },
+        // The materials of the frame by their index, which the canvas_item shaders of the project bind.
+        .materialIndex =
+            [this](MaterialHandle material) {
+                const auto found = std::ranges::find(m_spriteMaterials, material);
+                if (found != m_spriteMaterials.end())
+                {
+                    return static_cast<std::uint32_t>(found - m_spriteMaterials.begin());
+                }
+                m_spriteMaterials.push_back(material);
+                return static_cast<std::uint32_t>(m_spriteMaterials.size() - 1);
+            },
+        .canvasShader =
+            [this](MaterialHandle material) {
+                return shaderOf(material, asset::ShaderKind::CanvasItem) != nullptr ? m_materials.find(material)->description.shader
+                                                                                     : ShaderHandle{};
+            },
         .sortDistance =
             [this, camera = matrices.cameraPosition](math::Vec3 point) {
                 if (m_world.camera.projection == Projection::Orthographic)
@@ -1308,6 +1298,7 @@ core::Result<void> WebGpuRenderer::endFrame()
     const Frustum frustum = frustumOf(matrices.unjitteredViewProjection);
     prepareMeshes(matrices, frustum);
     prepareTerrains(matrices);
+    m_spriteMaterials.clear();
     gatherSprites(m_world, frustum, resources, m_spriteFrame);
     prepareParticles(matrices);
     orderTransparent(matrices);
@@ -1335,18 +1326,25 @@ core::Result<void> WebGpuRenderer::endFrame()
                                    bufferBinding(3, m_lights2DBuffer, lights2DBytes),
                                    bufferBinding(4, m_shadows2DBuffer, shadows2DBytes)};
     const wgpu::BindGroup spriteGroup = bindGroup(m_device, m_spriteLayout, spriteEntries);
-    // The texture and the normal map of each run; white for what has none.
+    // The texture and the normal map of each run: white and a flat normal for what has none; and the material of a
+    // canvas_item shader of the project.
     for (SpriteRun& run : m_spriteRuns)
     {
         const GpuTexture* const texture = textureAtSlot(run.texture);
         const GpuTexture* const normal = textureAtSlot(run.normalTexture);
-        const auto viewOf = [this](const GpuTexture* found) { return found != nullptr ? found->texture.CreateView() : m_white.CreateView(); };
+        const auto viewOf = [](const GpuTexture* found, const wgpu::Texture& fallback) {
+            return found != nullptr ? found->texture.CreateView() : fallback.CreateView();
+        };
         const auto samplerOf = [this](const GpuTexture* found) {
             return found != nullptr && found->nearest ? m_nearestSampler : m_linearSampler;
         };
-        const std::array entries{viewBinding(0, viewOf(texture)), samplerBinding(1, samplerOf(texture)),
-                                 viewBinding(2, viewOf(normal)), samplerBinding(3, samplerOf(normal))};
+        const std::array entries{viewBinding(0, viewOf(texture, m_white)), samplerBinding(1, samplerOf(texture)),
+                                 viewBinding(2, viewOf(normal, m_flatNormal)), samplerBinding(3, samplerOf(normal))};
         run.group = bindGroup(m_device, m_spriteTexturesLayout, entries);
+        GpuMaterial* const material = run.shader.isValid() && run.material < m_spriteMaterials.size()
+                                          ? m_materials.find(m_spriteMaterials[run.material])
+                                          : nullptr;
+        run.custom = material != nullptr ? customMaterialGroup(*material) : wgpu::BindGroup{};
     }
 
     // The interface, in batches of one texture and one shape, cut to their rectangles.

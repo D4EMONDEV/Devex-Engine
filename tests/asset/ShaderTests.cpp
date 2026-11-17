@@ -464,8 +464,8 @@ TEST_CASE("The shaders of the sandbox compile without warnings, for WebGPU too",
         INFO((shader.diagnostics.empty() ? std::string{} : shader.diagnostics.front().message));
         CHECK(shader.compiled());
         CHECK(shader.diagnostics.empty());
-        // The kinds WebGPU draws have their WGSL.
-        CHECK(shader.wgsl.empty() == (shader.kind != ShaderKind::Spatial));
+        // Every kind has its WGSL, which may sample a texture in a branch.
+        CHECK(shader.wgsl.starts_with("diagnostic(off, derivative_uniformity);"));
         ++count;
     }
     CHECK(count == 9);
