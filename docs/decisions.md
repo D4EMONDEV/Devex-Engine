@@ -5892,6 +5892,22 @@ l'export met **les deux lecteurs**, et la page choisit au chargement : celui ave
 n'importe quel hébergeur. Le serveur de Run in Browser envoie ces en-têtes. Le son reste en ScriptProcessorNode :
 l'AudioWorklet de miniaudio demande ASYNCIFY, bien trop lourd.
 
+## Finitions — plan décidé le 2026-11-17
+
+L'utilisateur veut finir ce qui était resté à moitié, ce qui « fait pas pro ». Choisi avec lui, dans cet ordre, un commit
+par point : les chemins des outils, les petits restes (traductions PO, CSG figé en maillage), les add-ons en zip,
+l'éditeur de scripts (repli du code, curseurs multiples, sélection en colonnes, retour à la ligne, renommage), Android
+tactile (multi-touch, commandes à l'écran, qualité mobile), la 3D de Compatibility laissée après la 1.0, le guide du web
+et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C# sur Android et dans le navigateur.
+
+1. ✅ **Les chemins des outils**. Décidé le 2026-11-17, avant le code : **vide, automatique**. Une page Export dans Editor
+   Settings, avec un champ et Browse par outil : SDK Android, NDK, JDK, emsdk. Vide, l'éditeur cherche comme avant, par
+   les variables d'environnement puis les dossiers habituels, et montre en grisé ce qu'il trouve ; rempli, le chemin
+   passe avant tout, et n'est pas dépassé quand ce n'est pas l'outil : la ligne en dessous le dit en rouge. Les chemins
+   vont dans `editor.dvx`, section `[export_tools]`, que l'export en ligne de commande lit aussi. Le module `platform`
+   les tient (`ExportTools.hpp`), parce que l'éditeur ne voit pas le runtime ; la fenêtre d'export redemande donc ce
+   qui manque pour Android à chaque fois, au lieu de le savoir une fois pour toutes au démarrage.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

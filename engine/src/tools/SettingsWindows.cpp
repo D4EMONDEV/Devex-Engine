@@ -12,10 +12,12 @@
 #include <devex/core/Profiler.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/platform/ExportTools.hpp>
 #include <devex/ui/Color.hpp>
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstring>
@@ -36,12 +38,35 @@ namespace {
 
 constexpr std::array<std::string_view, 1> single = singleNumber;
 constexpr std::array interfaceScales{0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f};
-constexpr std::array<std::string_view, 6> editorPages{"Theme", "Display", "Viewport",
-                                                      "Script Editors", "Compilation", "Network"};
+constexpr std::array<std::string_view, 7> editorPages{"Theme", "Display", "Viewport",
+                                                      "Script Editors", "Compilation", "Network", "Export"};
 constexpr std::size_t viewportPage = 2;
 constexpr std::size_t scriptsPage = 3;
 constexpr std::size_t compilationPage = 4;
 constexpr std::size_t networkPage = 5;
+constexpr std::size_t exportPage = 6;
+
+// The tools of the exports for Android and the web, as Editor Settings > Export lists them.
+struct ExportToolField
+{
+    const char* label;
+    std::filesystem::path platform::ExportToolPaths::*member;
+    const char* tooltip;
+    // What is said when it is found nowhere, and when the folder chosen is not it.
+    const char* missing;
+    const char* wrong;
+};
+constexpr std::array<ExportToolField, 4> exportToolFields{{
+    {"Android SDK", &platform::ExportToolPaths::androidSdk, "The SDK that Android Studio installs, which builds and signs games for Android",
+     "Not found: install Android Studio, which installs the SDK", "This folder is not an Android SDK"},
+    {"Android NDK", &platform::ExportToolPaths::androidNdk, "Builds the C++ of games for Android; empty, the newest of the SDK",
+     "Not found: install it from the SDK Manager of Android Studio. Only games with C++ need it.", "This folder is not an Android NDK"},
+    {"Java (JDK)", &platform::ExportToolPaths::java, "The JDK that runs Gradle, which packs games for Android: Android Studio comes with one",
+     "", "This folder is not a JDK, which holds bin/java"},
+    {"Emscripten (emsdk)", &platform::ExportToolPaths::emsdk, "The emsdk folder, which builds the C++ of games for the web",
+     "Not found: install emsdk, then run emsdk install 7.0.0 and emsdk activate 7.0.0. Only games with C++ need it.",
+     "This folder is not an Emscripten SDK"},
+}};
 // The pages of the project, by the numbers their cards use; those of General are listed by projectTree.
 constexpr std::array<std::string_view, 12> projectPages{
     "Config", "Window",    "Physics",      "Collision", "Sorting",
@@ -57,8 +82,8 @@ struct PageTree
 };
 constexpr std::array<PageTree, 6> projectTree{PageTree{"Application", {0, static_cast<int>(runPage)}}, PageTree{"Display", {1, -1}},
                                               PageTree{"", {2, -1}}, PageTree{"", {5, -1}}, PageTree{"Rendering", {static_cast<int>(rendererPage), -1}}, PageTree{"Layer Names", {3, 4}}};
-constexpr std::array<PageTree, 5> editorTree{PageTree{"Interface", {0, 1}}, PageTree{"", {2, -1}}, PageTree{"", {3, -1}}, PageTree{"", {4, -1}},
-                                             PageTree{"", {5, -1}}};
+constexpr std::array<PageTree, 6> editorTree{PageTree{"Interface", {0, 1}}, PageTree{"", {2, -1}}, PageTree{"", {3, -1}}, PageTree{"", {4, -1}},
+                                             PageTree{"", {5, -1}}, PageTree{"", {6, -1}}};
 
 // The pages of the first tab of the project settings, the others being tabs of their own.
 [[nodiscard]] constexpr bool isGeneralPage(std::size_t page) noexcept
@@ -558,6 +583,16 @@ struct EditorSettingsUi : SettingsUi
     Entity autosaveMinutes;
     Entity checkForUpdates;
     Button reset;
+    // Editor Settings > Export: a folder per tool, and what is found.
+    struct ToolFields
+    {
+        Entity path;
+        Button browse;
+        Entity status;
+    };
+    std::array<ToolFields, exportToolFields.size()> toolFields;
+    // The paths that the lines under the fields tell of: the tools are looked for again once one changes.
+    std::optional<platform::ExportToolPaths> describedTools;
     struct EditorFields
     {
         std::size_t section = 0;
@@ -645,6 +680,28 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     checkForUpdates = toggle(updatesRow.editor);
     tooltip(updatesRow.row, "Tells the project list to say when a newer Devex is out");
     note(&network, "At most once a day, the project list asks GitHub for the versions of Devex. Nothing of your projects is sent, and without a connection it says nothing.", "dim", 2.0f);
+
+    Section& tools = pageCard(kit, exportPage, "");
+    for (std::size_t i = 0; i < exportToolFields.size(); ++i)
+    {
+        ToolFields& fields = toolFields[i];
+        tooltip(note(&tools, exportToolFields[i].label, "dim"), exportToolFields[i].tooltip);
+        const Entity row = actions(&tools);
+        scene().remove<scene::UiLayout>(row);
+        auto pathRect = whole();
+        pathRect.offsetMax.x -= line + gap;
+        const Entity clip = add(row, exportToolFields[i].label, pathRect);
+        scene().get<UiRect>(clip).clipChildren = true;
+        fields.path = textField(clip);
+        fields.browse = toolButton(kit, row, Icon::FolderOpen, rightButton(line, 0.0f));
+        tooltip(fields.browse.entity, "Choose the folder");
+        fields.status = note(&tools, "", "dim", 2.0f);
+    }
+    note(&tools,
+         "Empty, a tool is looked for through the environment (ANDROID_HOME, ANDROID_NDK_HOME, JAVA_HOME, EMSDK) and where it is "
+         "usually installed, and what is found shows dimmed. A folder chosen here passes before all.",
+         "dim", 3.0f);
+    describedTools.reset();
 
     Section& handles = pageCard(kit, viewportPage, "Handles and Lines");
     for (std::size_t i = 0; i < 4; ++i)
@@ -829,6 +886,45 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     setToggle(updateContinuously, theme.updateContinuously);
     setNumber(autosaveMinutes, static_cast<float>(theme.autosaveMinutes));
     setToggle(checkForUpdates, state.updates.check);
+    const platform::ExportToolPaths chosenTools = platform::exportToolPaths();
+    for (std::size_t i = 0; i < exportToolFields.size(); ++i)
+    {
+        setText(toolFields[i].path, core::toUtf8(chosenTools.*exportToolFields[i].member));
+    }
+    if (describedTools != chosenTools)
+    {
+        // Where each tool is, as the exports will find it.
+        describedTools = chosenTools;
+        const std::filesystem::path sdk = platform::findAndroidSdk();
+        std::filesystem::path emsdk;
+        std::string emscripten;
+        for (const std::filesystem::path& candidate : platform::emsdkCandidates())
+        {
+            if (const std::optional<std::string> version = platform::emscriptenVersion(candidate))
+            {
+                emsdk = candidate;
+                emscripten = version->empty() ? std::string("Emscripten") : std::format("Emscripten {}", *version);
+                break;
+            }
+        }
+        const std::array<std::filesystem::path, exportToolFields.size()> found{sdk, platform::findAndroidNdk(sdk), platform::findJava(), emsdk};
+        for (std::size_t i = 0; i < exportToolFields.size(); ++i)
+        {
+            const bool chosen = !(chosenTools.*exportToolFields[i].member).empty();
+            const std::filesystem::path& tool = found[i];
+            // The java of the system, from PATH, cannot be told apart from none.
+            const bool fromPath = !tool.empty() && !tool.has_parent_path();
+            // The field shows where the tool is: the line says whether it was chosen or found, and which Emscripten.
+            const std::string_view how = chosen ? "ready" : "found automatically";
+            std::string status = tool.empty() ? std::string(chosen ? exportToolFields[i].wrong : exportToolFields[i].missing)
+                                 : fromPath   ? std::string("Uses the java of the system, which must be on PATH")
+                                 : i == 3     ? std::format("{}, {}", emscripten, how)
+                                              : std::format("{}{}", static_cast<char>(std::toupper(static_cast<unsigned char>(how.front()))), how.substr(1));
+            scene().get<scene::UiInput>(toolFields[i].path).placeholder = tool.empty() || fromPath ? std::string("Not found") : core::toUtf8(tool);
+            scene().get<scene::UiText>(toolFields[i].status).text = std::move(status);
+            scene().get<UiRect>(toolFields[i].status).style = tool.empty() && chosen ? "error" : "dim";
+        }
+    }
     for (std::size_t i = 0; i < viewportNumbers.size(); ++i)
         setNumber(viewportNumberFields[i], viewport.*viewportNumbers[i].member);
     for (std::size_t i = 0; i < viewportColors.size(); ++i)
@@ -1076,9 +1172,37 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     {
         theme.autosaveMinutes = static_cast<int>(std::round(scene().get<scene::UiNumberField>(autosaveMinutes).value));
     }
+    for (std::size_t i = 0; i < exportToolFields.size(); ++i)
+    {
+        if (endedField == toolFields[i].path)
+        {
+            platform::ExportToolPaths paths = platform::exportToolPaths();
+            paths.*exportToolFields[i].member = core::pathFromUtf8(scene().get<scene::UiText>(toolFields[i].path).text);
+            platform::setExportToolPaths(std::move(paths));
+            state.scriptSettingsUnsaved = true;
+        }
+        if (world.wasClicked(toolFields[i].browse.entity))
+        {
+            const std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
+            state.platform.showFileDialog(dialogParent(state),
+                                          {.type = platform::FileDialogType::OpenFolder,
+                                           .defaultLocation = platform::exportToolPaths().*exportToolFields[i].member},
+                                          [answers, i](std::optional<std::filesystem::path> chosen) {
+                                              if (const auto inbox = answers.lock(); inbox && chosen)
+                                              {
+                                                  inbox->exportTool = std::pair{i, std::move(*chosen)};
+                                              }
+                                          });
+        }
+    }
     if (world.wasClicked(reset.entity))
     {
-        if (selected == viewportPage)
+        if (selected == exportPage)
+        {
+            platform::setExportToolPaths({});
+            state.scriptSettingsUnsaved = true;
+        }
+        else if (selected == viewportPage)
         {
             viewport = ViewportSettings{};
         }

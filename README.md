@@ -352,7 +352,8 @@ NDK d'Android Studio, que désigne `ANDROID_NDK_HOME` : `android-arm64` pour les
 `android-x86_64` pour l'émulateur d'Android Studio. Une fois ces builds faits à côté de celui de
 l'éditeur, **Project > Export Game...** les propose sur la plateforme Android, ou en ligne de commande.
 Gradle fait l'APK ou l'AAB, le code C++ du jeu se compile avec le NDK, et `--install` lance le jeu
-sur l'appareil branché ou l'émulateur. La première fois, Gradle télécharge ce qu'il lui faut. Le C#
+sur l'appareil branché ou l'émulateur. La première fois, Gradle télécharge ce qu'il lui faut. L'éditeur trouve seul le
+SDK, le NDK et Java pour exporter, ou les prend où **Editor Settings > Export** les désigne. Le C#
 ne tourne pas encore sur Android : la fenêtre le signale (voir *Android* dans
 [docs/decisions.md](docs/decisions.md)).
 

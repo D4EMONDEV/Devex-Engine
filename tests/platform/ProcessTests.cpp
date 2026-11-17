@@ -1,4 +1,5 @@
 #include <devex/core/Uuid.hpp>
+#include <devex/platform/ExportTools.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/platform/Process.hpp>
 #include <devex/platform/SharedLibrary.hpp>
@@ -6,6 +7,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -138,6 +141,49 @@ TEST_CASE("The folder of the player is found without being made", "[platform][us
     const devex::core::Result<std::filesystem::path> company = devex::platform::userDataLocation("Studio", game);
     REQUIRE(company.has_value());
     CHECK(company->parent_path().filename() == "Studio");
+}
+
+TEST_CASE("The tools that the editor settings choose pass before those found elsewhere", "[platform][export]")
+{
+    namespace platform = devex::platform;
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / ("devex-tools-" + devex::core::Uuid::generate().toString());
+    const auto write = [](const std::filesystem::path& file, std::string_view text) {
+        std::filesystem::create_directories(file.parent_path());
+        std::ofstream(file) << text;
+    };
+#if defined(_WIN32)
+    const std::string java = "java.exe";
+#else
+    const std::string java = "java";
+#endif
+    const platform::ExportToolPaths before = platform::exportToolPaths();
+    const platform::ExportToolPaths chosen{.androidSdk = root / "sdk", .androidNdk = root / "ndk", .java = root / "jdk", .emsdk = root / "emsdk"};
+    // Kept as the settings of the editor keep them, without the empty ones.
+    CHECK(platform::readExportToolPaths(platform::writeExportToolPaths(chosen)) == chosen);
+    CHECK(platform::writeExportToolPaths({}).attributes.empty());
+
+    write(root / "sdk" / "platform-tools" / "adb", "");
+    write(root / "ndk" / "build" / "cmake" / "android.toolchain.cmake", "");
+    write(root / "jdk" / "bin" / java, "");
+    write(root / "emsdk" / "upstream" / "emscripten" / "cmake" / "Modules" / "Platform" / "Emscripten.cmake", "");
+    write(root / "emsdk" / "upstream" / "emscripten" / "emscripten-version.txt", "\"7.0.0\"\n");
+    platform::setExportToolPaths(chosen);
+    CHECK(platform::findAndroidSdk() == chosen.androidSdk);
+    CHECK(platform::findAndroidNdk(chosen.androidSdk) == chosen.androidNdk);
+    CHECK(platform::findJava() == chosen.java / "bin" / java);
+    CHECK(platform::emsdkCandidates() == std::vector{chosen.emsdk});
+    CHECK(platform::emscriptenVersion(chosen.emsdk) == "7.0.0");
+
+    // A folder chosen that is not the tool is not looked past: the exports say so.
+    platform::setExportToolPaths({.androidSdk = root / "ndk", .androidNdk = root / "sdk", .java = root / "sdk"});
+    CHECK(platform::findAndroidSdk().empty());
+    CHECK(platform::findAndroidNdk({}).empty());
+    CHECK(platform::findJava().empty());
+    CHECK_FALSE(platform::emscriptenVersion(root / "sdk").has_value());
+
+    platform::setExportToolPaths(before);
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
 }
 
 TEST_CASE("The files that a game keeps are there before it starts", "[platform][user]")

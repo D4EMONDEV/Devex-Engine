@@ -947,7 +947,7 @@ void ToolsOverlay::setWebExport(std::string problem, std::function<std::string(c
     m_state->webProjectProblem = std::move(projectProblem);
 }
 
-void ToolsOverlay::setAndroidExport(std::vector<std::string> abis, std::string problem)
+void ToolsOverlay::setAndroidExport(std::vector<std::string> abis, std::function<std::string()> problem)
 {
     m_state->androidAbis = std::move(abis);
     m_state->androidProblem = std::move(problem);

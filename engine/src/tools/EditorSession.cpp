@@ -6,6 +6,7 @@
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/platform/ExportTools.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/NavigationComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
@@ -18,6 +19,7 @@
 #include <devex/tools/SceneCommands.hpp>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <chrono>
 #include <cctype>
@@ -1206,6 +1208,10 @@ void loadUserSettings(ToolsState& state, const std::filesystem::path& file)
         {
             state.updates = readUpdateSettings(section);
         }
+        else if (section.type == "export_tools")
+        {
+            platform::setExportToolPaths(platform::readExportToolPaths(section));
+        }
     }
 }
 
@@ -1220,6 +1226,7 @@ void saveUserSettings(const ToolsState& state)
     document.sections.push_back(writeViewportSettings(state.viewportSettings));
     document.sections.push_back(writeScriptSettings(state.scripts));
     document.sections.push_back(writeUpdateSettings(state.updates));
+    document.sections.push_back(platform::writeExportToolPaths(platform::exportToolPaths()));
     state.projects.write(document);
     std::error_code error;
     std::filesystem::create_directories(state.userSettingsFile.parent_path(), error);
@@ -1360,6 +1367,19 @@ void updateEditorSession(ToolsState& state, scene::Scene& scene)
     {
         state.scripts.editors[editor->first].executable = core::toUtf8(editor->second);
         saveUserSettings(state);
+    }
+    if (auto tool = std::exchange(answers.exportTool, std::nullopt))
+    {
+        platform::ExportToolPaths paths = platform::exportToolPaths();
+        constexpr std::array<decltype(&platform::ExportToolPaths::androidSdk), 4> members{
+            &platform::ExportToolPaths::androidSdk, &platform::ExportToolPaths::androidNdk, &platform::ExportToolPaths::java,
+            &platform::ExportToolPaths::emsdk};
+        if (tool->first < members.size())
+        {
+            paths.*members[tool->first] = std::move(tool->second);
+            platform::setExportToolPaths(std::move(paths));
+            saveUserSettings(state);
+        }
     }
     if (std::optional<std::filesystem::path> project = std::exchange(answers.importProject, std::nullopt))
     {

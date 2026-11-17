@@ -387,8 +387,9 @@ public:
 
     // Editor only: the engine builds that games can be exported with, and the state of the export.
     void setEngineBuilds(std::vector<EngineBuildChoice> builds);
-    // The architectures that games can be exported for on Android, and what is missing to do it.
-    void setAndroidExport(std::vector<std::string> abis, std::string problem);
+    // The architectures that games can be exported for on Android, and what is missing to do it, asked again as the
+    // tools chosen in Editor Settings > Export change.
+    void setAndroidExport(std::vector<std::string> abis, std::function<std::string()> problem);
     // What stands in the way of exporting for the other desktop system; empty when nothing does.
     void setOtherDesktopExport(std::string problem);
     // What stands in the way of exporting for the web: the player missing next to the editor, and what a project asks

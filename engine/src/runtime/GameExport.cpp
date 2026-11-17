@@ -658,7 +658,7 @@ std::string WebTools::problem() const
     if (emsdk.empty())
     {
         return std::format("The C++ of this game builds for the web with Emscripten {0}, which is not found: install emsdk, "
-                           "run emsdk install {0} and emsdk activate {0}, then set EMSDK to its folder",
+                           "run emsdk install {0} and emsdk activate {0}, then choose its folder in Editor Settings > Export",
                            neededVersion);
     }
     if (foundVersion != neededVersion)
@@ -667,16 +667,6 @@ std::string WebTools::problem() const
                            neededVersion, core::toUtf8(emsdk), foundVersion.empty() ? std::string("another version") : foundVersion);
     }
     return {};
-}
-
-std::vector<std::filesystem::path> emsdkCandidates()
-{
-    const auto environmentPath = [](const char* name) { return core::pathFromUtf8(platform::environmentVariable(name)); };
-#ifdef _WIN32
-    return {environmentPath("EMSDK"), environmentPath("USERPROFILE") / "emsdk", "C:/emsdk"};
-#else
-    return {environmentPath("EMSDK"), environmentPath("HOME") / "emsdk", "/opt/emsdk"};
-#endif
 }
 
 WebTools findWebTools(const std::filesystem::path& webPlayer, const std::vector<std::filesystem::path>& candidates)
@@ -697,20 +687,11 @@ WebTools findWebTools(const std::filesystem::path& webPlayer, const std::vector<
 
     for (const std::filesystem::path& candidate : candidates)
     {
-        std::error_code error;
-        const std::filesystem::path emscripten = candidate / "upstream" / "emscripten";
-        if (candidate.empty() ||
-            !std::filesystem::is_regular_file(emscripten / "cmake" / "Modules" / "Platform" / "Emscripten.cmake", error))
-        {
-            continue;
-        }
-        // "7.0.0", with its quotes.
-        std::string version = core::readTextFile(emscripten / "emscripten-version.txt").value_or(std::string{});
-        std::erase_if(version, [](char c) { return c == '"' || std::isspace(static_cast<unsigned char>(c)) != 0; });
-        if (tools.emsdk.empty() || (version == tools.neededVersion && tools.foundVersion != tools.neededVersion))
+        const std::optional<std::string> version = platform::emscriptenVersion(candidate);
+        if (version && (tools.emsdk.empty() || (*version == tools.neededVersion && tools.foundVersion != tools.neededVersion)))
         {
             tools.emsdk = candidate.lexically_normal();
-            tools.foundVersion = version;
+            tools.foundVersion = *version;
         }
     }
     return tools;
@@ -1537,6 +1518,8 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
         DEVEX_LOG_ERROR("Cannot open the project: {}", project.error());
         return 1;
     }
+    // The tools chosen in the settings of the editor, as the editor uses them.
+    platform::loadExportToolPaths();
     core::JobSystem jobs(0);
     core::Result<std::unique_ptr<asset::AssetDatabase>> database =
         asset::AssetDatabase::open(*project, jobs, {.watchFiles = false});

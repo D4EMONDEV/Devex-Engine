@@ -656,7 +656,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
         {
             androidAbis.push_back(build.abi);
         }
-        services.tools->setAndroidExport(std::move(androidAbis), findAndroidTools().problem(false));
+        services.tools->setAndroidExport(std::move(androidAbis), [] { return findAndroidTools().problem(false); });
         const core::Result<EngineBuild> otherEngine = findOtherDesktopEngine(services.platform.baseDirectory());
         services.tools->setOtherDesktopExport(otherEngine ? std::string{} : otherEngine.error().message);
         const core::Result<std::filesystem::path> webPlayer = findWebPlayer(services.platform.baseDirectory());

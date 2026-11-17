@@ -334,7 +334,7 @@ TEST_CASE("The C++ of a game builds for the web with the Emscripten its kit was 
     // No SDK: how to install it.
     const std::string missing = devex::runtime::findWebTools(player, {directory.path / "nothing"}).problem();
     CHECK(missing.find("Emscripten 7.0.0, which is not found") != std::string::npos);
-    CHECK(missing.find("EMSDK") != std::string::npos);
+    CHECK(missing.find("Editor Settings > Export") != std::string::npos);
 }
 
 TEST_CASE("An export packages the scenes and every asset they need", "[runtime][export][noweb]")

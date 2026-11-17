@@ -6,6 +6,7 @@
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Error.hpp>
+#include <devex/platform/ExportTools.hpp>
 
 #include <atomic>
 #include <cstddef>
@@ -226,12 +227,10 @@ struct DEVEX_API WebTools
     [[nodiscard]] std::string problem() const;
 };
 
-// Where an Emscripten SDK is looked for: EMSDK, then where emsdk is usually cloned.
-[[nodiscard]] DEVEX_API std::vector<std::filesystem::path> emsdkCandidates();
 // The tools for the web player in the folder webPlayer (findWebPlayer): the first SDK of candidates that has the version
 // of its kit, or else the first SDK, which the problem then names.
 [[nodiscard]] DEVEX_API WebTools findWebTools(const std::filesystem::path& webPlayer,
-                                              const std::vector<std::filesystem::path>& candidates = emsdkCandidates());
+                                              const std::vector<std::filesystem::path>& candidates = platform::emsdkCandidates());
 // Fills a plan for an export to the web: the player found next to the editor, the folder of the project settings or
 // `output`, and a ZIP of the game beside it, ready for itch.io. C# does not run in a browser: its components do nothing.
 [[nodiscard]] DEVEX_API core::Result<void> prepareWebExport(ExportPlan& plan, const std::filesystem::path& binDirectory,

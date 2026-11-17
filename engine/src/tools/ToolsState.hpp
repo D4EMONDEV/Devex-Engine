@@ -430,6 +430,8 @@ struct DEVEX_API DialogAnswers
     std::optional<std::filesystem::path> saveAsPrefab;
     std::optional<std::filesystem::path> exportFolder;
     std::optional<std::pair<std::size_t, std::filesystem::path>> scriptEditor;
+    // A tool of Editor Settings > Export, by its row, and the folder chosen for it.
+    std::optional<std::pair<std::size_t, std::filesystem::path>> exportTool;
     std::optional<std::filesystem::path> installAddon;
     std::optional<std::filesystem::path> exportAddon;
 };
@@ -1217,7 +1219,7 @@ struct DEVEX_API ToolsState
     bool showExport = false;
     std::vector<EngineBuildChoice> engineBuilds;
     std::vector<std::string> androidAbis;
-    std::string androidProblem;
+    std::function<std::string()> androidProblem;
     std::string otherDesktopProblem;
     std::string webProblem;
     std::function<std::string(const asset::Project&)> webProjectProblem;

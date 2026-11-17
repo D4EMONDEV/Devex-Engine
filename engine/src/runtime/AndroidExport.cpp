@@ -10,6 +10,7 @@
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/platform/ExportTools.hpp>
 #include <devex/platform/Process.hpp>
 
 #include <algorithm>
@@ -29,88 +30,6 @@ constexpr std::string_view programSuffix = ".exe";
 #else
 constexpr std::string_view programSuffix = "";
 #endif
-
-[[nodiscard]] fs::path environmentPath(const char* name)
-{
-    return core::pathFromUtf8(platform::environmentVariable(name));
-}
-
-[[nodiscard]] bool isDirectory(const fs::path& path)
-{
-    std::error_code error;
-    return !path.empty() && fs::is_directory(path, error);
-}
-
-[[nodiscard]] fs::path findSdk()
-{
-    const fs::path home = environmentPath(
-#ifdef _WIN32
-        "USERPROFILE"
-#else
-        "HOME"
-#endif
-    );
-    for (const fs::path& candidate : {environmentPath("ANDROID_HOME"), environmentPath("ANDROID_SDK_ROOT"),
-#ifdef _WIN32
-                                      environmentPath("LOCALAPPDATA") / "Android" / "Sdk",
-#else
-                                      home / "Android" / "Sdk", home / "Library" / "Android" / "sdk",
-#endif
-         })
-    {
-        if (isDirectory(candidate / "platform-tools") || isDirectory(candidate / "platforms"))
-        {
-            return candidate;
-        }
-    }
-    return {};
-}
-
-// The NDK named by the environment, or the newest of the SDK.
-[[nodiscard]] fs::path findNdk(const fs::path& sdk)
-{
-    for (const fs::path& candidate : {environmentPath("ANDROID_NDK_HOME"), environmentPath("ANDROID_NDK_ROOT")})
-    {
-        if (isDirectory(candidate / "build" / "cmake"))
-        {
-            return candidate;
-        }
-    }
-    std::vector<fs::path> versions;
-    std::error_code error;
-    for (const fs::directory_entry& entry : fs::directory_iterator(sdk / "ndk", error))
-    {
-        if (isDirectory(entry.path() / "build" / "cmake"))
-        {
-            versions.push_back(entry.path());
-        }
-    }
-    std::ranges::sort(versions);
-    return versions.empty() ? fs::path{} : versions.back();
-}
-
-// JAVA_HOME, the JDK that comes with Android Studio, or the one the system finds.
-[[nodiscard]] fs::path findJava()
-{
-    const std::string java = std::format("java{}", programSuffix);
-    std::vector<fs::path> homes{environmentPath("JAVA_HOME")};
-#ifdef _WIN32
-    homes.push_back(environmentPath("ProgramFiles") / "Android" / "Android Studio" / "jbr");
-#else
-    homes.push_back(environmentPath("HOME") / "android-studio" / "jbr");
-    homes.emplace_back("/opt/android-studio/jbr");
-    homes.emplace_back("/Applications/Android Studio.app/Contents/jbr/Contents/Home");
-#endif
-    for (const fs::path& home : homes)
-    {
-        std::error_code error;
-        if (!home.empty() && fs::is_regular_file(home / "bin" / java, error))
-        {
-            return home / "bin" / java;
-        }
-    }
-    return java;
-}
 
 // A value of a properties file, where a backslash starts an escape.
 [[nodiscard]] std::string propertyValue(std::string_view value)
@@ -151,13 +70,13 @@ constexpr std::string_view programSuffix = "";
 AndroidTools findAndroidTools()
 {
     AndroidTools tools;
-    tools.sdk = findSdk();
+    tools.sdk = platform::findAndroidSdk();
     if (!tools.sdk.empty())
     {
-        tools.ndk = findNdk(tools.sdk);
         tools.adb = tools.sdk / "platform-tools" / std::format("adb{}", programSuffix);
     }
-    tools.java = findJava();
+    tools.ndk = platform::findAndroidNdk(tools.sdk);
+    tools.java = platform::findJava();
     return tools;
 }
 
@@ -165,11 +84,15 @@ std::string AndroidTools::problem(bool needsNdk) const
 {
     if (sdk.empty())
     {
-        return "The Android SDK is not found: install Android Studio, or set ANDROID_HOME";
+        return "The Android SDK is not found: install Android Studio, or choose its SDK in Editor Settings > Export";
     }
     if (needsNdk && ndk.empty())
     {
-        return "The Android NDK is not found: install it from the SDK Manager of Android Studio, or set ANDROID_NDK_HOME";
+        return "The Android NDK is not found: install it from the SDK Manager of Android Studio, or choose it in Editor Settings > Export";
+    }
+    if (java.empty())
+    {
+        return "The Java chosen in Editor Settings > Export is not a JDK";
     }
     return {};
 }

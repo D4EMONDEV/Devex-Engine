@@ -475,10 +475,10 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
         const auto hasBuild = [&](std::string_view abi) { return std::ranges::contains(state.androidAbis, abi); };
         const bool available = (phone.arm64 && hasBuild("arm64-v8a")) || (phone.x86_64 && hasBuild("x86_64"));
         const std::string package = phone.package.empty() ? asset::androidPackageFromName(project.name) : phone.package;
-        std::string problem;
-        if (!state.androidProblem.empty())
+        std::string problem = state.androidProblem ? state.androidProblem() : std::string{};
+        if (!problem.empty())
         {
-            problem = state.androidProblem + ".";
+            problem += ".";
         }
         else if (!available)
         {

@@ -117,6 +117,7 @@ target_sources(devex_platform
         src/platform/CrashHandler.cpp
         src/platform/DesktopEntry.cpp
         src/platform/Executable.cpp
+        src/platform/ExportTools.cpp
         src/platform/Input.cpp
         src/platform/InputSource.cpp
         src/platform/Platform.cpp
@@ -132,6 +133,7 @@ target_sources(devex_platform
             include/devex/platform/DesktopEntry.hpp
             include/devex/platform/Event.hpp
             include/devex/platform/Executable.hpp
+            include/devex/platform/ExportTools.hpp
             include/devex/platform/Input.hpp
             include/devex/platform/InputSource.hpp
             include/devex/platform/Key.hpp
@@ -145,6 +147,7 @@ target_link_libraries(devex_platform
     PUBLIC
         Devex::Core
         Devex::Math
+        Devex::Serialization
     PRIVATE
         SDL3::SDL3
         $<$<PLATFORM_ID:Windows>:dwmapi>
