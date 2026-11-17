@@ -1487,6 +1487,24 @@ void ApplicationRunner::render(bool gameplay)
     {
         world.limitToCompatibility();
     }
+#ifdef __ANDROID__
+    // On Android, what the project turns off there.
+    if (const asset::AssetSource* const source = assetSource(); source != nullptr && source->project().androidRendering.enabled)
+    {
+        const asset::PlatformRendering& android = source->project().androidRendering;
+        if (android.compatibility)
+        {
+            world.limitToCompatibility();
+        }
+        world.limit(render::RenderWorld::Limits{.temporalAntialiasing = android.temporalAntialiasing,
+                                                .ambientOcclusion = android.ambientOcclusion,
+                                                .screenReflections = android.screenReflections,
+                                                .bloom = android.bloom,
+                                                .lensEffects = android.lensEffects,
+                                                .volumetricFog = android.volumetricFog,
+                                                .lightShadows = android.lightShadows});
+    }
+#endif
     m_animationViews.clear();
     m_animationViews.push_back(math::Vec3(math::inverse(world.camera.view)[3]));
     for (const auto& view : world.views)

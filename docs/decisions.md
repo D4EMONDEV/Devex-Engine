@@ -5974,8 +5974,13 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      bien qu'un jeu qui lit ses actions n'a rien à changer pour le tactile. Ils ne s'affichent que sur un écran
      tactile, là où la souris joue un doigt, et dans l'éditeur, sauf si on décoche Touch Screen Only. Le bouton
      prend son image d'un UiImage, comme UiButton ; le joystick dessine son disque et son bouton ;
-   - **la qualité mobile : des réglages par plateforme** dans Project Settings > Rendering, une colonne Android qui
-     remplace les réglages lourds, avec un préréglage Mobile qui les coupe.
+   - **la qualité mobile : des réglages par plateforme**, comme les surcharges `.mobile` de Godot. Les effets lourds
+     se règlent par caméra et par volume, pas dans le projet : la carte **Android** de Project Settings > Rendering
+     ne remplace donc pas des valeurs mais dit ce que le jeu coupe sur Android (antialiasing temporel, occlusion
+     ambiante, reflets de l'écran, bloom, effets d'objectif, brouillard volumétrique, ombres des lumières locales), et
+     s'il y dessine en Compatibility. Le jeu l'applique à chaque image au monde de rendu, comme Compatibility, et
+     sur Android seulement : l'éditeur et les autres plateformes gardent leur image. **Mobile Preset** coupe tout.
+     Rien ne baisse encore la taille de l'image ou des ombres du soleil : à mesurer sur un vrai téléphone.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

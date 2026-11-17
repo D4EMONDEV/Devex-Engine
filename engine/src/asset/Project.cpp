@@ -262,6 +262,20 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
 {
     for (const serialization::TextSection& section : document.sections)
     {
+        if (section.type == "android_rendering")
+        {
+            PlatformRendering& android = project.androidRendering;
+            readBool(section, "enabled", android.enabled);
+            readBool(section, "compatibility", android.compatibility);
+            readBool(section, "temporal_antialiasing", android.temporalAntialiasing);
+            readBool(section, "ambient_occlusion", android.ambientOcclusion);
+            readBool(section, "screen_reflections", android.screenReflections);
+            readBool(section, "bloom", android.bloom);
+            readBool(section, "lens_effects", android.lensEffects);
+            readBool(section, "volumetric_fog", android.volumetricFog);
+            readBool(section, "light_shadows", android.lightShadows);
+            continue;
+        }
         if (section.type == "window")
         {
             WindowSettings& window = project.window;
@@ -914,6 +928,30 @@ std::string writeProjectText(const Project& project)
         if (settings.emulateTouchFromMouse)
         {
             window.attributes.push_back({"emulate_touch_from_mouse", serialization::TextValue(true)});
+        }
+    }
+
+    // Written when it differs from the desktop: whether it replaces anything, and what it turns off.
+    if (project.androidRendering != PlatformRendering{})
+    {
+        serialization::TextSection& android = document.sections.emplace_back();
+        android.type = "android_rendering";
+        const PlatformRendering& settings = project.androidRendering;
+        android.attributes.push_back({"enabled", serialization::TextValue(settings.enabled)});
+        const std::array<std::pair<std::string_view, bool>, 8> kept{{{"compatibility", !settings.compatibility},
+                                                                      {"temporal_antialiasing", settings.temporalAntialiasing},
+                                                                      {"ambient_occlusion", settings.ambientOcclusion},
+                                                                      {"screen_reflections", settings.screenReflections},
+                                                                      {"bloom", settings.bloom},
+                                                                      {"lens_effects", settings.lensEffects},
+                                                                      {"volumetric_fog", settings.volumetricFog},
+                                                                      {"light_shadows", settings.lightShadows}}};
+        for (const auto& [key, unchanged] : kept)
+        {
+            if (!unchanged)
+            {
+                android.attributes.push_back({std::string(key), serialization::TextValue(key == "compatibility")});
+            }
         }
     }
 

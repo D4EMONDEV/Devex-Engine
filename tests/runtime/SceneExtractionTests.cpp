@@ -45,6 +45,27 @@ TEST_CASE("Compatibility leaves out what does not run everywhere", "[runtime][ex
     CHECK(world.camera.bloom == 0.2f);
 }
 
+TEST_CASE("A platform turns off the effects it is told to, and keeps the others", "[runtime][extraction]")
+{
+    devex::render::RenderWorld world;
+    world.camera.bloom = 0.2f;
+    world.camera.grain = 0.3f;
+    world.camera.ambientOcclusion = 1.0f;
+    world.postVolumes.push_back({});
+    world.postVolumes.back().settings.bloom = 0.5f;
+    world.lights.push_back({.castShadows = true});
+    world.volumetricFog.enabled = true;
+
+    world.limit({.temporalAntialiasing = false, .bloom = false, .lensEffects = false, .lightShadows = false});
+    CHECK(world.camera.antialiasing == devex::render::Antialiasing::None);
+    CHECK(world.camera.bloom == 0.0f);
+    CHECK(world.camera.grain == 0.0f);
+    CHECK(world.postVolumes.back().settings.bloom == 0.0f);
+    CHECK_FALSE(world.lights.back().castShadows);
+    CHECK(world.camera.ambientOcclusion == 1.0f);
+    CHECK(world.volumetricFog.enabled);
+}
+
 TEST_CASE("Extraction copies the camera, the lights and the loaded meshes", "[runtime][extraction]")
 {
     Scene scene;

@@ -840,6 +840,68 @@ struct DEVEX_API RenderWorld
 
     // What the Compatibility renderer of a project leaves out, which not every system can do: ambient occlusion,
     // reflections of the screen and volumetric fog.
+    // What a platform turns off of what the cameras, the volumes and the lights ask for.
+    struct DEVEX_API Limits
+    {
+        bool temporalAntialiasing = true;
+        bool ambientOcclusion = true;
+        bool screenReflections = true;
+        bool bloom = true;
+        // Depth of field, motion blur, grain and chromatic aberration.
+        bool lensEffects = true;
+        bool volumetricFog = true;
+        // The shadows of the spot and point lights.
+        bool lightShadows = true;
+    };
+    void limit(const Limits& limits) noexcept
+    {
+        const auto cut = [&](RenderCamera& settings) {
+            if (!limits.temporalAntialiasing)
+            {
+                settings.antialiasing = Antialiasing::None;
+            }
+            if (!limits.ambientOcclusion)
+            {
+                settings.ambientOcclusion = 0.0f;
+            }
+            if (!limits.screenReflections)
+            {
+                settings.screenReflections = 0.0f;
+            }
+            if (!limits.bloom)
+            {
+                settings.bloom = 0.0f;
+            }
+            if (!limits.lensEffects)
+            {
+                settings.depthOfField = 0.0f;
+                settings.motionBlur = 0.0f;
+                settings.grain = 0.0f;
+                settings.chromaticAberration = 0.0f;
+            }
+        };
+        cut(camera);
+        for (RenderView& view : views)
+        {
+            cut(view.camera);
+        }
+        for (RenderPostVolume& volume : postVolumes)
+        {
+            cut(volume.settings);
+        }
+        if (!limits.volumetricFog)
+        {
+            volumetricFog.enabled = false;
+        }
+        if (!limits.lightShadows)
+        {
+            for (RenderLight& light : lights)
+            {
+                light.castShadows = false;
+            }
+        }
+    }
+
     void limitToCompatibility() noexcept
     {
         const auto limit = [](RenderCamera& settings) {

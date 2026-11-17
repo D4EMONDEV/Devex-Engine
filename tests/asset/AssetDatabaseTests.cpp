@@ -639,6 +639,10 @@ TEST_CASE("Window and export settings of projects are saved and read back", "[as
     CHECK(devex::asset::writeProjectText(project).find("desktop_entry") == std::string::npos);
     CHECK(devex::asset::writeProjectText(project).find("quit_on_back") == std::string::npos);
     CHECK(devex::asset::writeProjectText(project).find("emulate_") == std::string::npos);
+    CHECK(devex::asset::writeProjectText(project).find("android_rendering") == std::string::npos);
+    project.androidRendering = devex::asset::PlatformRendering::mobile();
+    project.androidRendering.compatibility = true;
+    project.androidRendering.volumetricFog = true;
     project.window = {.width = 1920, .height = 1080, .fullscreen = true, .vsyncMode = devex::asset::VSyncMode::Disabled, .maxFrameRate = 144,
                       .icon = AssetId::generate(), .desktopEntry = false, .quitOnBack = false, .emulateMouseFromTouch = false,
                       .emulateTouchFromMouse = true};
@@ -650,6 +654,7 @@ TEST_CASE("Window and export settings of projects are saved and read back", "[as
     const auto loaded = devex::asset::loadProject(project.file);
     REQUIRE(loaded.has_value());
     CHECK(loaded->window == project.window);
+    CHECK(loaded->androidRendering == project.androidRendering);
     CHECK(loaded->exportSettings == project.exportSettings);
 
     const auto parsed = devex::asset::parseProject(devex::asset::writeProjectText(project), project.file);

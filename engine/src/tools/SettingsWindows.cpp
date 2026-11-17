@@ -74,6 +74,26 @@ constexpr std::array<std::string_view, 12> projectPages{
 constexpr std::size_t runPage = 10;
 constexpr std::size_t rendererPage = 11;
 
+// The toggles of Project Settings > Rendering > Android, in the order they show.
+struct AndroidRenderingField
+{
+    std::string_view label;
+    bool asset::PlatformRendering::* member;
+    std::string_view tip;
+};
+constexpr std::array androidRenderingFields{
+    AndroidRenderingField{"Replace on Android", &asset::PlatformRendering::enabled,
+                          "On Android, the game draws as below, in place of what its cameras, volumes and lights ask for"},
+    AndroidRenderingField{"Compatibility", &asset::PlatformRendering::compatibility, "Draws with Compatibility on Android"},
+    AndroidRenderingField{"Temporal Antialiasing", &asset::PlatformRendering::temporalAntialiasing, "Unticked, the edges are left as they are"},
+    AndroidRenderingField{"Ambient Occlusion", &asset::PlatformRendering::ambientOcclusion, "Unticked, the corners are not darkened"},
+    AndroidRenderingField{"Screen Reflections", &asset::PlatformRendering::screenReflections, "Unticked, smooth surfaces reflect the sky alone"},
+    AndroidRenderingField{"Bloom", &asset::PlatformRendering::bloom, "Unticked, bright things do not glow"},
+    AndroidRenderingField{"Lens Effects", &asset::PlatformRendering::lensEffects, "Depth of field, motion blur, grain and chromatic aberration"},
+    AndroidRenderingField{"Volumetric Fog", &asset::PlatformRendering::volumetricFog, "Unticked, the light does not show in the air"},
+    AndroidRenderingField{"Light Shadows", &asset::PlatformRendering::lightShadows, "The shadows of the spot and point lights; the sun keeps its own"},
+};
+
 // A category of the list on the left and its pages; without a name, a page that stands alone.
 struct PageTree
 {
@@ -1401,6 +1421,17 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     renderingMethod = choice(methodRow.editor);
     tooltip(methodRow.row, "Forward+ has every effect. Compatibility leaves out what does not run everywhere, for the same picture on every system.");
     note(&rendering, "Compatibility turns off ambient occlusion, screen reflections and volumetric fog, here as in the game. The web will need it.", "dim", 2.0f);
+    Section& android = pageCard(kit, rendererPage, "Android");
+    static_assert(androidRenderingFields.size() == std::tuple_size_v<decltype(androidRendering)>);
+    for (std::size_t i = 0; i < androidRenderingFields.size(); ++i)
+    {
+        const FormRow row = formRow(android, std::string(androidRenderingFields[i].label));
+        androidRendering[i] = toggle(row.editor);
+        tooltip(row.row, std::string(androidRenderingFields[i].tip));
+    }
+    mobilePreset = action(kit, actions(&android), Icon::Gauge, "Mobile Preset");
+    tooltip(mobilePreset.entity, "Replaces on Android and turns every heavy effect off");
+    note(&android, "What a phone draws too slowly, turned off on Android only: the editor and the other platforms keep it.", "dim", 2.0f);
 
     // Physics.
     Section& physics = pageCard(kit, 2, "");
@@ -1583,6 +1614,10 @@ void ProjectSettingsUi::sync(ToolsState& state, EditorUiKit& kit)
     setToggle(borderless, project.window.borderless);
     setChoice(vsyncMode, {"Disabled", "Enabled", "Adaptive", "Mailbox"}, static_cast<std::int32_t>(project.window.vsyncMode));
     setChoice(renderingMethod, {"Forward+", "Compatibility"}, project.renderingMethod == asset::RenderingMethod::Compatibility ? 1 : 0);
+    for (std::size_t i = 0; i < androidRenderingFields.size(); ++i)
+    {
+        setToggle(androidRendering[i], project.androidRendering.*androidRenderingFields[i].member);
+    }
     setNumber(frameRate, static_cast<float>(project.window.maxFrameRate));
     scene::UiNumberField& rate = scene().get<scene::UiNumberField>(frameRate);
     rate.format = rate.value < 0.5f ? "Unlimited" : "{} fps";
@@ -1725,6 +1760,17 @@ void ProjectSettingsUi::answer(ToolsState& state, EditorUiKit& kit)
     if (const std::optional<std::size_t> mode = chosen(vsyncMode))
     {
         project.window.vsyncMode = static_cast<asset::VSyncMode>(*mode);
+    }
+    for (std::size_t i = 0; i < androidRenderingFields.size(); ++i)
+    {
+        if (world.wasChanged(androidRendering[i]))
+        {
+            project.androidRendering.*androidRenderingFields[i].member = scene().get<scene::UiToggle>(androidRendering[i]).value;
+        }
+    }
+    if (world.wasClicked(mobilePreset.entity))
+    {
+        project.androidRendering = asset::PlatformRendering::mobile();
     }
     if (const std::optional<std::size_t> method = chosen(renderingMethod))
     {

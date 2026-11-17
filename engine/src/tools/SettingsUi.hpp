@@ -209,6 +209,9 @@ struct ProjectSettingsUi : SettingsUi
     scene::Entity borderless;
     scene::Entity vsyncMode;
     scene::Entity renderingMethod;
+    // What Android turns off, one toggle each, and the preset that turns everything heavy off.
+    std::array<scene::Entity, 9> androidRendering{};
+    PanelButton mobilePreset;
     scene::Entity frameRate;
     // Physics.
     std::vector<scene::Entity> gravity;

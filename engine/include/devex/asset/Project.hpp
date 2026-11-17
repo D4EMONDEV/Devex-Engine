@@ -81,6 +81,40 @@ enum class RenderingMethod : std::uint8_t
     Compatibility,
 };
 
+// What the game turns off on Android, in place of what its cameras, volumes and lights ask for, as the platform
+// overrides of Godot: what a phone draws too slowly. Without it, Android draws as the desktop.
+struct DEVEX_API PlatformRendering
+{
+    // Whether it replaces anything.
+    bool enabled = false;
+    // Draws with Compatibility, whatever the method of the project.
+    bool compatibility = false;
+    bool temporalAntialiasing = true;
+    bool ambientOcclusion = true;
+    bool screenReflections = true;
+    bool bloom = true;
+    // Depth of field, motion blur, grain and the aberration of the lens.
+    bool lensEffects = true;
+    bool volumetricFog = true;
+    // The shadows of the spot and point lights; the sun keeps its own.
+    bool lightShadows = true;
+
+    // Every heavy effect off.
+    [[nodiscard]] static PlatformRendering mobile() noexcept
+    {
+        return PlatformRendering{.enabled = true,
+                                 .temporalAntialiasing = false,
+                                 .ambientOcclusion = false,
+                                 .screenReflections = false,
+                                 .bloom = false,
+                                 .lensEffects = false,
+                                 .volumetricFog = false,
+                                 .lightShadows = false};
+    }
+
+    bool operator==(const PlatformRendering&) const = default;
+};
+
 // How the window of the game starts, in the player and in exported games.
 // How a game waits for the display between frames, as the project says.
 enum class VSyncMode : std::uint8_t
@@ -338,6 +372,7 @@ struct DEVEX_API Project
     std::string description;
     std::string version;
     RenderingMethod renderingMethod = RenderingMethod::ForwardPlus;
+    PlatformRendering androidRendering;
     PhysicsSettings physics;
     AudioSettings audio;
     SortingSettings sorting;
