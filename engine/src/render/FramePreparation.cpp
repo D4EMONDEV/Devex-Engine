@@ -107,6 +107,22 @@ math::Vec2 temporalJitter(std::uint64_t frame, math::Extent2D extent) noexcept
             (haltonPoint(sample + 1, 3) - 0.5f) * 2.0f / static_cast<float>(std::max(extent.height, 1U))};
 }
 
+std::optional<DecalBox> decalBox(const RenderDecal& decal) noexcept
+{
+    // The box from -1 to 1 along its axes: the transform of the decal, scaled to half its size.
+    const math::Mat4 boxToWorld = decal.transform * math::scale(math::Mat4{1.0f}, decal.size * 0.5f);
+    if (std::abs(glm::determinant(boxToWorld)) < 1e-12f)
+    {
+        return std::nullopt;
+    }
+    const auto axis = [&decal](int column) {
+        const math::Vec3 direction = math::Vec3(decal.transform[column]);
+        const float length = math::length(direction);
+        return math::Vec4(length > 0.0f ? direction / length : direction, 0.0f);
+    };
+    return DecalBox{.worldToDecal = math::inverse(boxToWorld), .axisX = axis(0), .axisY = axis(1), .axisZ = axis(2)};
+}
+
 ViewMatrices prepareView(const RenderCamera& camera, math::Extent2D extent, math::Vec2 jitter, const math::Mat4& clipCorrection)
 {
     const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(std::max(extent.height, 1U));

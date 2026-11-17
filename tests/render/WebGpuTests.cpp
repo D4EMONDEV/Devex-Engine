@@ -278,6 +278,9 @@ private:
                                 .outerAngle = 0.6f,
                                 .castShadows = true});
         world.meshes.push_back({.mesh = *plane, .material = ground});
+        // A decal on the ground, the sky as its albedo, faded at the edges of its box.
+        world.decals.push_back({.transform = at(0.6f, 0.0f, 0.8f), .size = {1.6f, 1.0f, 1.2f}, .albedo = *skyTexture,
+                                .modulate = {1.0f, 0.9f, 0.8f, 0.9f}});
         world.meshes.push_back({.mesh = *sphere, .material = rough, .transform = at(-1.2f, 0.5f, 0.0f)});
         world.meshes.push_back({.mesh = *sphere, .material = metal, .transform = at(0.0f, 0.5f, -0.5f)});
         world.meshes.push_back({.mesh = *cube, .material = textured, .transform = at(1.3f, 0.5f, 0.0f)});

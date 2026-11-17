@@ -847,6 +847,7 @@ std::uint32_t WebGpuRenderer::submeshCount(MeshHandle mesh) const noexcept
 
 core::Result<TextureHandle> WebGpuRenderer::createTexture(const asset::TextureData& texture)
 {
+    ++m_textureRevision;
     if (core::Result<void> valid = asset::validate(texture); !valid)
     {
         return std::unexpected(valid.error());
@@ -918,6 +919,7 @@ core::Result<TextureHandle> WebGpuRenderer::createTexture(const asset::TextureDa
 
 void WebGpuRenderer::destroyTexture(TextureHandle texture)
 {
+    ++m_textureRevision;
     if (m_textures.remove(texture))
     {
         // The materials that read it sample white from now on.
@@ -928,6 +930,7 @@ void WebGpuRenderer::destroyTexture(TextureHandle texture)
 core::Result<void> WebGpuRenderer::updateTexture(TextureHandle texture, std::uint32_t top, std::uint32_t height,
                                                  std::span<const std::byte> rows)
 {
+    ++m_textureRevision;
     const GpuTexture* const gpu = m_textures.find(texture);
     if (gpu == nullptr)
     {

@@ -6,6 +6,7 @@
 module geometry;
 
 import common;
+import decal_layer;
 import pbr;
 
 // The compute skinning keeps both positions for motion, and transformed normals and tangents.
@@ -152,16 +153,39 @@ public SurfaceVertex posedSurfaceVertex(DrawData draw, SkinnedVertex vertex, uin
     return output;
 }
 
-// What the decals change of a surface before it is lit.
-struct DecalLayer
+// The textures of a decal among those of the scene.
+struct BindlessDecal : IDecalTextures
 {
-    float3 baseColor;
-    float3 normal;
-    float metallic;
-    float roughness;
-    float occlusion;
-    float3 emission;
+    uint4 slots;
+
+    bool has(uint kind)
+    {
+        return slots[kind] != noDecalTexture;
+    }
+
+    float4 read(uint kind, float2 uv, float2 slopeX, float2 slopeY)
+    {
+        return sampleTextureGrad(slots[kind], uv, slopeX, slopeY);
+    }
 };
+
+DecalShape shapeOf(Decal decal)
+{
+    DecalShape shape;
+    shape.worldToDecal = decal.worldToDecal;
+    shape.axisX = decal.axisX;
+    shape.axisZ = decal.axisZ;
+    shape.axisY = decal.axisY;
+    shape.modulate = decal.modulate;
+    shape.albedoMix = decal.albedoMix;
+    shape.emissionEnergy = decal.emissionEnergy;
+    shape.normalFade = decal.normalFade;
+    shape.upperFade = decal.upperFade;
+    shape.lowerFade = decal.lowerFade;
+    shape.fadeBegin = decal.fadeBegin;
+    shape.fadeLength = decal.fadeLength;
+    return shape;
+}
 
 // Lays the decals of the cluster of the pixel on its material, in their order, as Godot's decals:
 // each covers by its albedo's alpha, faded towards the top and the bottom of its box, on surfaces
@@ -185,57 +209,9 @@ void applyDecals(SceneData* scene, float3 position, float3 facing, float2 fragme
     for (uint entry = 0; entry < cluster.count; ++entry)
     {
         const Decal decal = scene->decals[scene->clusterDecals[cluster.offset + entry]];
-        const float3 local = mul(decal.worldToDecal, float4(position, 1.0)).xyz;
-        if (any(abs(local) > 1.0))
-        {
-            continue;
-        }
-
-        float fade = decal.modulate.a * pow(1.0 - abs(local.y), local.y > 0.0 ? decal.upperFade : decal.lowerFade);
-        if (decal.normalFade > 0.0)
-        {
-            fade *= smoothstep(decal.normalFade, 1.0, dot(facing, decal.axisY.xyz) * 0.5 + 0.5);
-        }
-        if (decal.fadeLength > 0.0)
-        {
-            fade *= saturate((decal.fadeBegin + decal.fadeLength - viewDistance) / decal.fadeLength);
-        }
-        if (fade <= 0.0)
-        {
-            continue;
-        }
-
-        // Its textures across X and Z, with slopes taken in its box, so that its edges do not pick
-        // the smallest mips.
-        const float2 uv = local.xz * 0.5 + 0.5;
-        const float2 uvDx = mul((float3x3)decal.worldToDecal, positionDx).xz * 0.5;
-        const float2 uvDy = mul((float3x3)decal.worldToDecal, positionDy).xz * 0.5;
-        float coverage = fade;
-        if (decal.albedoTexture != noDecalTexture)
-        {
-            const float4 albedo = sampleTextureGrad(decal.albedoTexture, uv, uvDx, uvDy);
-            coverage = albedo.a * fade;
-            layer.baseColor = lerp(layer.baseColor, albedo.rgb * decal.modulate.rgb, coverage * decal.albedoMix);
-        }
-        if (decal.normalTexture != noDecalTexture)
-        {
-            const float2 tilt = sampleTextureGrad(decal.normalTexture, uv, uvDx, uvDy).rg * 2.0 - 1.0;
-            const float3 decalNormal =
-                decal.axisX.xyz * tilt.x + decal.axisZ.xyz * tilt.y + decal.axisY.xyz * sqrt(saturate(1.0 - dot(tilt, tilt)));
-            layer.normal = normalize(lerp(layer.normal, decalNormal, coverage));
-        }
-        if (decal.ormTexture != noDecalTexture)
-        {
-            const float3 orm = sampleTextureGrad(decal.ormTexture, uv, uvDx, uvDy).rgb;
-            layer.occlusion = lerp(layer.occlusion, orm.r, coverage);
-            layer.roughness = clamp(lerp(layer.roughness, orm.g, coverage), 0.045, 1.0);
-            layer.metallic = lerp(layer.metallic, orm.b, coverage);
-        }
-        if (decal.emissionTexture != noDecalTexture)
-        {
-            layer.emission += sampleTextureGrad(decal.emissionTexture, uv, uvDx, uvDy).rgb * decal.modulate.rgb *
-                              decal.emissionEnergy * fade;
-        }
+        BindlessDecal textures;
+        textures.slots = uint4(decal.albedoTexture, decal.normalTexture, decal.ormTexture, decal.emissionTexture);
+        layDecal(shapeOf(decal), textures, position, facing, viewDistance, positionDx, positionDy, layer);
     }
 }
 

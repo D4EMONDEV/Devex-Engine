@@ -5994,6 +5994,14 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      comme son TAA : il suit la caméra, pas un objet qui bouge seul. Ses sept images de chaque étape sont liées à
      chaque passe, celle qu'elle écrit remplacée par une image vide, ce que WebGPU exige. Un test compare à Vulkan
      une caméra qui glisse, mise au point, avec aberration chromatique et table de couleurs ;
+   - ✅ **les décalcomanies** : ce qu'une décalcomanie pose sur une surface passe dans `decal_layer.slang`
+     (`layDecal`, générique sur ses textures, `IDecalTextures`), que Vulkan appelle pour chaque décalcomanie de la
+     grappe du pixel et WebGPU pour chacune de l'image, sans grappes, comme ses lumières. WebGPU n'a pas de textures
+     sans liaison fixe : comme le renderer mobile de Godot, il dessine les textures des décalcomanies dans deux
+     atlas de 2048 pixels, les couleurs en sRGB (albédo, émission) et les données (normales, ORM), à la taille de
+     chacune mais pas plus d'un demi-atlas, toutes réduites ensemble jusqu'à tenir ; il ne les redessine que quand
+     les textures changent. L'atlas n'a pas de mips : de loin, une décalcomanie scintille un peu plus que sous
+     Vulkan. La boîte d'une décalcomanie se calcule une fois pour les deux (`decalBox`) ;
 
 ## Outils de level design — plan décidé le 2026-11-04
 

@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <vector>
 
 namespace devex::render {
@@ -42,6 +43,17 @@ struct ViewMatrices
 
 // Where the values of an instance start, when the frame has them; noInstanceParameters otherwise.
 [[nodiscard]] DEVEX_API std::uint32_t instanceParametersOf(const RenderWorld& world, std::uint32_t first) noexcept;
+
+// The box of a decal as the shaders read it: from the world into the box, X and Z from -1 to 1 across it and Y from -1
+// to 1 up it, and its axes in the world, normalized. Nothing for a box without volume.
+struct DecalBox
+{
+    math::Mat4 worldToDecal{1.0f};
+    math::Vec4 axisX{0.0f};
+    math::Vec4 axisY{0.0f};
+    math::Vec4 axisZ{0.0f};
+};
+[[nodiscard]] DEVEX_API std::optional<DecalBox> decalBox(const RenderDecal& decal) noexcept;
 
 // The air and the fog as the shaders read them, for a camera standing `cameraHeight` meters up, and how high that is in
 // the air, in kilometers, which the light of the sun through the air needs.

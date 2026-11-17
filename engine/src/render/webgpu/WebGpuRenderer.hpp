@@ -238,6 +238,17 @@ private:
     void ensurePostTargets(math::Extent2D size);
     // Mixes the frame with the ones before when the camera asks for it; the image the bloom and the tonemapping read.
     [[nodiscard]] wgpu::TextureView resolve(const wgpu::CommandEncoder& encoder, const ViewMatrices& matrices);
+    // An atlas of the textures of the decals: where it put every texture, and what it was drawn from.
+    struct DecalAtlas
+    {
+        wgpu::Texture texture;
+        wgpu::TextureView view;
+        std::vector<std::pair<TextureHandle, math::Vec4>> rects;
+        std::vector<std::uint64_t> key;
+    };
+    // The decals of the frame, in WebGpuScene.cpp: their atlases drawn when their textures change, and what they read.
+    void prepareDecals();
+    void fillDecalAtlas(DecalAtlas& atlas, std::vector<TextureHandle> textures, wgpu::TextureFormat format, const wgpu::RenderPipeline& blit);
     // The halo of what is brighter than the threshold, in the first level of the chain; null without bloom.
     [[nodiscard]] wgpu::TextureView drawBloom(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& finished);
     // The depth of field and the motion blur of the camera over the resolved image, as Vulkan draws them; the image
@@ -327,6 +338,18 @@ private:
     core::SlotMap<GpuMaterial, MaterialTag> m_materials;
     // Counts the textures destroyed: a material made before reads one that went.
     std::uint64_t m_textureEpoch = 1;
+    // Grows with every texture made, changed or destroyed: the atlases of the decals are drawn again then.
+    std::uint64_t m_textureRevision = 0;
+    // The decals: the atlases their textures are drawn into, their colours (sRGB) and their data, each with where it
+    // put every texture and what it was drawn from; the blit that fills them; and what the decals of the frame read.
+    DecalAtlas m_decalColors;
+    DecalAtlas m_decalData;
+    wgpu::BindGroupLayout m_blitLayout;
+    wgpu::RenderPipeline m_blitColors;
+    wgpu::RenderPipeline m_blitData;
+    wgpu::Buffer m_decalBuffer;
+    std::uint64_t m_decalCapacity = 0;
+    std::uint32_t m_decalCount = 0;
 
     wgpu::Texture m_depthTarget;
     wgpu::TextureView m_depthView;

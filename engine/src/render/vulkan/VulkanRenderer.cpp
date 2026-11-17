@@ -3376,22 +3376,16 @@ core::Result<void> VulkanRenderer::uploadDecals(FrameContext& frame, const Clust
     m_decalSpheres.clear();
     for (const RenderDecal& decal : m_world.decals)
     {
-        // The box from -1 to 1 along its axes: the transform of the decal, scaled to half its size.
-        const math::Mat4 boxToWorld = decal.transform * math::scale(math::Mat4{1.0f}, decal.size * 0.5f);
-        if (std::abs(glm::determinant(boxToWorld)) < 1e-12f)
+        const std::optional<DecalBox> box = decalBox(decal);
+        if (!box)
         {
             continue;
         }
-        const auto axis = [&decal](int column) {
-            const math::Vec3 direction = math::Vec3(decal.transform[column]);
-            const float length = math::length(direction);
-            return math::Vec4(length > 0.0f ? direction / length : direction, 0.0f);
-        };
         m_gpuDecals.push_back({
-            .worldToDecal = math::inverse(boxToWorld),
-            .axisX = axis(0),
-            .axisZ = axis(2),
-            .axisY = axis(1),
+            .worldToDecal = box->worldToDecal,
+            .axisX = box->axisX,
+            .axisZ = box->axisZ,
+            .axisY = box->axisY,
             .modulate = decal.modulate,
             .albedoTexture = slotOf(decal.albedo),
             .normalTexture = slotOf(decal.normal),

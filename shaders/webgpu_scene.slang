@@ -22,7 +22,8 @@ public struct SceneData
     public float3 sky;
     public float environmentRotation;
     public float specularMipCount;
-    public float padding0;
+    // How many decals the frame lays on its surfaces.
+    public uint decalCount;
     public float padding1;
     public float padding2;
     // The cascades of the sun's shadow: where each ends, how wide its texels are, and how far the shadows go; 1 when

@@ -482,6 +482,7 @@ if(DEVEX_WEBGPU)
         SOURCES
             ibl.slang
             webgpu_luminance.slang
+            webgpu_blit.slang
             webgpu_bloom.slang
             webgpu_lens.slang
             webgpu_mesh.slang

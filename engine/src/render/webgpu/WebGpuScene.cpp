@@ -54,7 +54,8 @@ struct SceneData
     math::Vec3 sky{1.0f};
     float environmentRotation = 0.0f;
     float specularMipCount = 1.0f;
-    float padding[3]{};
+    std::uint32_t decalCount = 0;
+    float padding[2]{};
     std::array<math::Mat4, 4> cascadeViewProjections{};
     math::Vec4 cascadeSplits{0.0f};
     math::Vec4 cascadeTexelSizes{0.0f};
@@ -92,6 +93,38 @@ struct BloomData
     float strength = 1.0f;
     float padding = 0.0f;
 };
+// A decal of the frame, as webgpu_mesh.slang reads it: its box, its fades, and where its textures lie in the atlases.
+struct AtlasDecalData
+{
+    math::Mat4 worldToDecal{1.0f};
+    math::Vec4 axisX{0.0f};
+    math::Vec4 axisZ{0.0f};
+    math::Vec4 axisY{0.0f};
+    math::Vec4 modulate{1.0f};
+    float albedoMix = 1.0f;
+    float emissionEnergy = 1.0f;
+    float normalFade = 0.0f;
+    float upperFade = 0.3f;
+    float lowerFade = 0.3f;
+    float fadeBegin = 0.0f;
+    float fadeLength = 0.0f;
+    float padding = 0.0f;
+    std::array<math::Vec4, 4> rects{};
+};
+static_assert(sizeof(AtlasDecalData) == 224);
+// What the blit of a texture into an atlas reads.
+struct BlitData
+{
+    math::Vec4 rect{0.0f};
+    float targetWidth = 0.0f;
+    float targetHeight = 0.0f;
+    float padding[2]{};
+};
+// The atlases of the decals: as wide as webgpu_mesh.slang says, every texture no larger than half of it.
+constexpr std::uint32_t decalAtlasSize = 2048;
+constexpr wgpu::TextureFormat decalColorFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
+constexpr wgpu::TextureFormat decalDataFormat = wgpu::TextureFormat::RGBA8Unorm;
+
 // What every step of the lens reads, as webgpu_lens.slang has it, at an offset of its own.
 struct LensData
 {
@@ -263,8 +296,31 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
                                   storageEntry(2, wgpu::ShaderStage::Vertex), storageEntry(3, wgpu::ShaderStage::Vertex),
                                   cubeEntry(4, fragment), cubeEntry(5, fragment), textureEntry(6, fragment), samplerEntry(7, fragment),
                                   storageEntry(8, fragment), cascades, atlas, comparison, textureEntry(12, fragment),
-                                  samplerEntry(13, fragment)};
+                                  samplerEntry(13, fragment), storageEntry(14, fragment), textureEntry(15, fragment),
+                                  textureEntry(16, fragment), samplerEntry(17, fragment)};
     m_sceneLayout = bindGroupLayout(m_device, "Scene", sceneEntries);
+    // The blit that draws the textures of the decals into their atlases.
+    const std::array blitEntries{uniformEntry(0, both, true, sizeof(BlitData)), textureEntry(1, fragment), samplerEntry(2, fragment)};
+    m_blitLayout = bindGroupLayout(m_device, "Decal atlas", blitEntries);
+    const wgpu::ShaderModule blit = shaderModule("webgpu_blit");
+    for (const auto& [format, pipeline] : {std::pair{decalColorFormat, &m_blitColors}, std::pair{decalDataFormat, &m_blitData}})
+    {
+        wgpu::ColorTargetState target;
+        target.format = format;
+        wgpu::FragmentState fragmentState;
+        fragmentState.module = blit;
+        fragmentState.entryPoint = "blitFragment";
+        fragmentState.targetCount = 1;
+        fragmentState.targets = &target;
+        const std::array groups{m_blitLayout};
+        wgpu::RenderPipelineDescriptor descriptor;
+        descriptor.label = "Decal atlas";
+        descriptor.layout = pipelineLayout(m_device, groups);
+        descriptor.vertex.module = blit;
+        descriptor.vertex.entryPoint = "blitVertex";
+        descriptor.fragment = &fragmentState;
+        *pipeline = m_device.CreateRenderPipeline(&descriptor);
+    }
     std::array<wgpu::BindGroupLayoutEntry, 11> materialEntries{};
     materialEntries[0] = uniformEntry(0, fragment, false, sizeof(MaterialData));
     for (std::uint32_t texture = 0; texture < 5; ++texture)
@@ -708,6 +764,8 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
             scene.cascadeTexelSizes[static_cast<int>(cascade)] = cascades->texelSizes[cascade];
         }
     }
+    prepareDecals();
+    scene.decalCount = m_decalCount;
     m_queue.WriteBuffer(m_sceneBuffer, 0, &scene, sizeof(scene));
 
     // The instances the camera sees, by batches of one mesh, submesh, material and way to be drawn; blended ones alone,
@@ -935,7 +993,11 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
                                   viewBinding(10, m_atlasMap.CreateView()), samplerBinding(11, m_shadowSampler),
                                   viewBinding(12, skyTexture != nullptr && skyTexture->bindable ? skyTexture->texture.CreateView()
                                                                                                 : m_white.CreateView()),
-                                  samplerBinding(13, m_device.CreateSampler(&wrap))};
+                                  samplerBinding(13, m_device.CreateSampler(&wrap)),
+                                  bufferBinding(14, m_decalBuffer, m_decalCapacity),
+                                  viewBinding(15, m_decalColors.view ? m_decalColors.view : m_white.CreateView()),
+                                  viewBinding(16, m_decalData.view ? m_decalData.view : m_white.CreateView()),
+                                  samplerBinding(17, m_clampSampler)};
     m_sceneGroup = bindGroup(m_device, m_sceneLayout, sceneEntries);
     const std::array shadowEntries{bufferBinding(0, m_instanceBuffer, instanceBytes), bufferBinding(1, m_boneBuffer, boneBytes),
                                    bufferBinding(2, m_shadowMatrixBuffer, sizeof(math::Mat4))};
@@ -1481,6 +1543,202 @@ wgpu::TextureView WebGpuRenderer::resolve(const wgpu::CommandEncoder& encoder, c
     m_historyValid = true;
     m_historyExposure = m_exposure;
     return m_resolvedViews[into];
+}
+
+void WebGpuRenderer::fillDecalAtlas(DecalAtlas& atlas, std::vector<TextureHandle> textures, wgpu::TextureFormat format,
+                                    const wgpu::RenderPipeline& blit)
+{
+    const auto keyOf = [](TextureHandle handle) { return (std::uint64_t{handle.index} << 32) | handle.generation; };
+    std::ranges::sort(textures, {}, keyOf);
+    textures.erase(std::ranges::unique(textures, {}, keyOf).begin(), textures.end());
+    std::vector<std::uint64_t> key{m_textureRevision};
+    for (const TextureHandle texture : textures)
+    {
+        key.push_back(keyOf(texture));
+    }
+    if (key == atlas.key)
+    {
+        return;
+    }
+    atlas.key = std::move(key);
+    atlas.rects.clear();
+    if (textures.empty())
+    {
+        return;
+    }
+    if (!atlas.texture)
+    {
+        wgpu::TextureDescriptor descriptor;
+        descriptor.label = "Decal atlas";
+        descriptor.size = {decalAtlasSize, decalAtlasSize, 1};
+        descriptor.format = format;
+        descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+        atlas.texture = m_device.CreateTexture(&descriptor);
+        atlas.view = atlas.texture.CreateView();
+    }
+    // On shelves, the tallest first, each texture at its size but no larger than half the atlas, all halved together
+    // until they fit; a texel of room around each keeps its neighbours from bleeding in.
+    std::vector<math::Extent2D> sizes;
+    for (const TextureHandle texture : textures)
+    {
+        const GpuTexture* const found = m_textures.find(texture);
+        sizes.push_back(found != nullptr ? found->size : math::Extent2D{1, 1});
+    }
+    std::vector<std::size_t> order(textures.size());
+    for (std::size_t index = 0; index < order.size(); ++index)
+    {
+        order[index] = index;
+    }
+    std::ranges::sort(order, std::greater{}, [&](std::size_t index) { return sizes[index].height; });
+    std::vector<math::Vec4> placed(textures.size());
+    for (float scale = 1.0f; scale >= 1.0f / 64.0f; scale *= 0.5f)
+    {
+        std::uint32_t x = 0;
+        std::uint32_t y = 0;
+        std::uint32_t shelf = 0;
+        bool fits = true;
+        for (const std::size_t index : order)
+        {
+            const math::Extent2D size = sizes[index];
+            const float largest = static_cast<float>(std::max(size.width, size.height));
+            const float shrink = std::min(1.0f, static_cast<float>(decalAtlasSize / 2) / largest) * scale;
+            const auto width = std::max(static_cast<std::uint32_t>(std::lround(static_cast<float>(size.width) * shrink)), 1U);
+            const auto height = std::max(static_cast<std::uint32_t>(std::lround(static_cast<float>(size.height) * shrink)), 1U);
+            if (x + width + 2 > decalAtlasSize)
+            {
+                x = 0;
+                y += shelf;
+                shelf = 0;
+            }
+            if (y + height + 2 > decalAtlasSize)
+            {
+                fits = false;
+                break;
+            }
+            const float atlasSize = static_cast<float>(decalAtlasSize);
+            placed[index] = math::Vec4(static_cast<float>(x + 1) / atlasSize, static_cast<float>(y + 1) / atlasSize,
+                                       static_cast<float>(width) / atlasSize, static_cast<float>(height) / atlasSize);
+            x += width + 2;
+            shelf = std::max(shelf, height + 2);
+        }
+        if (fits)
+        {
+            break;
+        }
+    }
+    wgpu::BufferDescriptor buffer;
+    buffer.label = "Decal atlas";
+    buffer.size = textures.size() * uniformStride;
+    buffer.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+    const wgpu::Buffer settings = m_device.CreateBuffer(&buffer);
+    std::vector<std::byte> steps(textures.size() * uniformStride);
+    const wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
+    wgpu::RenderPassColorAttachment color;
+    color.view = atlas.view;
+    color.loadOp = wgpu::LoadOp::Clear;
+    color.storeOp = wgpu::StoreOp::Store;
+    wgpu::RenderPassDescriptor descriptor;
+    descriptor.label = "Decal atlas";
+    descriptor.colorAttachmentCount = 1;
+    descriptor.colorAttachments = &color;
+    const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+    pass.SetPipeline(blit);
+    for (std::size_t index = 0; index < textures.size(); ++index)
+    {
+        const GpuTexture* const found = m_textures.find(textures[index]);
+        if (found == nullptr || !found->bindable || placed[index].z <= 0.0f)
+        {
+            continue;
+        }
+        const BlitData data{.rect = placed[index], .targetWidth = static_cast<float>(decalAtlasSize), .targetHeight = static_cast<float>(decalAtlasSize)};
+        std::memcpy(steps.data() + index * uniformStride, &data, sizeof(data));
+        const std::array entries{bufferBinding(0, settings, sizeof(BlitData)), viewBinding(1, found->texture.CreateView()),
+                                 samplerBinding(2, m_clampSampler)};
+        const auto offset = static_cast<std::uint32_t>(index * uniformStride);
+        pass.SetBindGroup(0, bindGroup(m_device, m_blitLayout, entries), 1, &offset);
+        pass.Draw(6);
+        atlas.rects.emplace_back(textures[index], placed[index]);
+    }
+    pass.End();
+    m_queue.WriteBuffer(settings, 0, steps.data(), steps.size());
+    const wgpu::CommandBuffer commands = encoder.Finish();
+    m_queue.Submit(1, &commands);
+}
+
+void WebGpuRenderer::prepareDecals()
+{
+    const auto usable = [this](TextureHandle texture) {
+        const GpuTexture* const found = m_textures.find(texture);
+        return found != nullptr && found->bindable;
+    };
+    std::vector<TextureHandle> colors;
+    std::vector<TextureHandle> data;
+    for (const RenderDecal& decal : m_world.decals)
+    {
+        for (const TextureHandle texture : {decal.albedo, decal.emission})
+        {
+            if (usable(texture))
+            {
+                colors.push_back(texture);
+            }
+        }
+        for (const TextureHandle texture : {decal.normal, decal.orm})
+        {
+            if (usable(texture))
+            {
+                data.push_back(texture);
+            }
+        }
+    }
+    fillDecalAtlas(m_decalColors, std::move(colors), decalColorFormat, m_blitColors);
+    fillDecalAtlas(m_decalData, std::move(data), decalDataFormat, m_blitData);
+    // Where a texture lies in its atlas; nothing for one it does not hold.
+    const auto rectOf = [&usable](const DecalAtlas& atlas, TextureHandle texture) {
+        if (!usable(texture))
+        {
+            return math::Vec4{0.0f};
+        }
+        const auto found = std::ranges::find_if(atlas.rects, [&](const auto& placed) { return placed.first == texture; });
+        return found != atlas.rects.end() ? found->second : math::Vec4{0.0f};
+    };
+    std::vector<AtlasDecalData> packed;
+    for (const RenderDecal& decal : m_world.decals)
+    {
+        const std::optional<DecalBox> box = decalBox(decal);
+        if (!box)
+        {
+            continue;
+        }
+        packed.push_back({.worldToDecal = box->worldToDecal,
+                          .axisX = box->axisX,
+                          .axisZ = box->axisZ,
+                          .axisY = box->axisY,
+                          .modulate = decal.modulate,
+                          .albedoMix = decal.albedoMix,
+                          .emissionEnergy = decal.emissionEnergy,
+                          .normalFade = decal.normalFade,
+                          .upperFade = decal.upperFade,
+                          .lowerFade = decal.lowerFade,
+                          .fadeBegin = decal.fadeBegin,
+                          .fadeLength = decal.fadeLength,
+                          .rects = {rectOf(m_decalColors, decal.albedo), rectOf(m_decalData, decal.normal), rectOf(m_decalData, decal.orm),
+                                    rectOf(m_decalColors, decal.emission)}});
+    }
+    m_decalCount = static_cast<std::uint32_t>(packed.size());
+    const std::uint64_t bytes = std::max<std::size_t>(packed.size(), 1) * sizeof(AtlasDecalData);
+    if (!m_decalBuffer || m_decalCapacity < bytes)
+    {
+        wgpu::BufferDescriptor descriptor;
+        descriptor.label = "Decals";
+        descriptor.size = bytes;
+        descriptor.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
+        m_decalBuffer = m_device.CreateBuffer(&descriptor);
+        m_decalCapacity = bytes;
+    }
+    if (!packed.empty())
+    {
+        m_queue.WriteBuffer(m_decalBuffer, 0, packed.data(), packed.size() * sizeof(AtlasDecalData));
+    }
 }
 
 void WebGpuRenderer::ensureLensTargets(math::Extent2D size)
