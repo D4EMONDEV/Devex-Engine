@@ -50,6 +50,9 @@ struct DEVEX_API TextEditState
     bool openGoTo = false;
     // F2: rename what is under the cursor, through the language server.
     bool openRename = false;
+    // Alt+F: fold the block of the line of the cursor, or the one it is in, or unfold it; and every block at once.
+    bool toggleFold = false;
+    std::optional<bool> foldAll;
     int goToLine = 1;
 
     // Completion.

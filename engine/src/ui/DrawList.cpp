@@ -1394,8 +1394,30 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
              withOpacity(area.caretColor, rect.opacity));
     }
 
-    // The gutter: the number of each line on its first row, the one of the cursor in the colour of the text, and a
-    // bar beside every row of the lines that are marked.
+    // After a line whose block is folded, the dots of what it hides.
+    if (view != nullptr && !view->folds.empty())
+    {
+        const float dot = std::max(std::round(text.size * 0.12f), 1.0f);
+        for (std::size_t row = first; row < last; ++row)
+        {
+            if (!endsLine(row) || !std::ranges::binary_search(view->folds, shownRows[row - first].line))
+            {
+                continue;
+            }
+            const float x = left + lines[row - first]->xOf(lines[row - first]->length) + text.size * 0.4f;
+            const float middle = topOf(row) + metrics.lineHeight * 0.5f;
+            fill(builder, math::Vec2{x, middle - metrics.lineHeight * 0.3f}, math::Vec2{x + text.size * 1.5f, middle + metrics.lineHeight * 0.3f},
+                 withOpacity(area.lineNumberColor, rect.opacity * 0.5f));
+            for (const float across : {0.35f, 0.75f, 1.15f})
+            {
+                const float at = x + text.size * across - dot * 0.5f;
+                fill(builder, math::Vec2{at, middle - dot * 0.5f}, math::Vec2{at + dot, middle + dot * 0.5f}, plain);
+            }
+        }
+    }
+
+    // The gutter: the number of each line on its first row, the one of the cursor in the colour of the text, a bar
+    // beside every row of the lines that are marked, and the arrows of the blocks.
     cut(rect.min, rect.max);
     if (metrics.gutter > 0.0f)
     {
@@ -1415,8 +1437,9 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
         }
         static thread_local TextAreaLine number;
         static thread_local std::string digits;
-        const float digit = metrics.gutter / static_cast<float>(std::to_string(starts.size()).size() + 2);
-        for (std::size_t row = first; row < last; ++row)
+        const float numbers = metrics.gutter - metrics.foldColumn;
+        const float digit = numbers / static_cast<float>(std::to_string(starts.size()).size() + 2);
+        for (std::size_t row = first; row < last && area.lineNumbers; ++row)
         {
             const TextAreaRow& part = shownRows[row - first];
             if (part.begin != starts[part.line])
@@ -1434,11 +1457,38 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
                 layoutAreaLine(*font.data, digits, text.size, 0, math::Vec2{0.0f}, number);
             }
             // Against the right of the gutter, a digit away from the text.
-            const math::Vec2 step{rect.min.x + metrics.gutter - digit - placed->layout.size.x, topOf(row)};
+            const math::Vec2 step{rect.min.x + numbers - digit - placed->layout.size.x, topOf(row)};
             const math::Vec4 color = view != nullptr && view->focused && part.line == caretLine ? plain : withOpacity(area.lineNumberColor, rect.opacity);
             for (const GlyphQuad& glyph : placed->layout.glyphs)
             {
                 drawLetter(builder, context, font, glyph, step, color, sharpness);
+            }
+        }
+        // An arrow down beside a block that can fold, and one to the right, brighter, beside one folded.
+        if (view != nullptr && !view->foldEnds.empty())
+        {
+            const float centre = rect.min.x + metrics.gutter - metrics.foldColumn * 0.5f;
+            const float half = std::max(text.size * 0.3f, 3.0f);
+            const float thick = std::max(text.size * 0.07f, 0.8f);
+            for (std::size_t row = first; row < last; ++row)
+            {
+                const TextAreaRow& part = shownRows[row - first];
+                if (part.begin != starts[part.line] || part.line >= view->foldEnds.size() || view->foldEnds[part.line] <= part.line)
+                {
+                    continue;
+                }
+                const math::Vec2 at{centre, topOf(row) + metrics.lineHeight * 0.5f};
+                if (std::ranges::binary_search(view->folds, part.line))
+                {
+                    softStroke(builder, at + math::Vec2{-half * 0.5f, -half}, at + math::Vec2{half * 0.5f, 0.0f}, thick, plain);
+                    softStroke(builder, at + math::Vec2{half * 0.5f, 0.0f}, at + math::Vec2{-half * 0.5f, half}, thick, plain);
+                }
+                else
+                {
+                    const math::Vec4 dim = withOpacity(area.lineNumberColor, rect.opacity);
+                    softStroke(builder, at + math::Vec2{-half, -half * 0.5f}, at + math::Vec2{0.0f, half * 0.5f}, thick, dim);
+                    softStroke(builder, at + math::Vec2{0.0f, half * 0.5f}, at + math::Vec2{half, -half * 0.5f}, thick, dim);
+                }
             }
         }
     }

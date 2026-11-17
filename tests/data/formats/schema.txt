@@ -736,6 +736,7 @@ UiTextArea.caret_color vec4
 UiTextArea.padding vec2
 UiTextArea.scroll vec2
 UiTextArea.wrap bool
+UiTextArea.folding bool
 UiTextArea.line_numbers bool
 UiTextArea.line_number_color vec4
 UiTextArea.current_line_color vec4

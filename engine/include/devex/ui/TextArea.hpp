@@ -52,8 +52,12 @@ struct DEVEX_API TextAreaRow
 struct DEVEX_API TextAreaView
 {
     std::span<const std::uint32_t> lineStarts;
-    // Its rows when it wraps; empty when each line is one row.
+    // Its rows when it wraps or folds; empty when each line is one row.
     std::span<const TextAreaRow> rows;
+    // Where the block of each line ends, the line itself where none starts, and the lines whose block is folded, in
+    // order: empty for an area that does not fold.
+    std::span<const std::uint32_t> foldEnds;
+    std::span<const std::uint32_t> folds;
     std::size_t caret = 0;
     std::size_t selectionMin = 0;
     std::size_t selectionMax = 0;
@@ -84,8 +88,10 @@ DEVEX_API void indexLines(std::string_view text, std::vector<std::uint32_t>& sta
 struct DEVEX_API TextAreaMetrics
 {
     float lineHeight = 0.0f;
-    // The room of the numbers of the lines, at the left; none without them.
+    // The room of the numbers of the lines and of the arrows that fold, at the left; none without them.
     float gutter = 0.0f;
+    // The room of the arrows, at the right of the gutter; none for an area that does not fold.
+    float foldColumn = 0.0f;
     // The room the letters show in: what is left once the gutter, the padding and the bars are taken.
     math::Vec2 viewMin{0.0f};
     math::Vec2 viewMax{0.0f};
@@ -159,6 +165,12 @@ DEVEX_API void layoutAreaLine(const asset::FontData& font, std::string_view line
 // there is one, and else before the letter that passes it.
 DEVEX_API void wrapAreaRows(const asset::FontData& font, std::string_view text, std::span<const std::uint32_t> starts, float size,
                             std::int32_t tabSize, float width, std::vector<TextAreaRow>& rows);
+// Where the block that starts at each line ends: the last line folding it hides, or the line itself where none
+// starts. A line with a brace that closes lower folds down to the line of that brace, which stays when it starts with
+// it; a line followed by a brace alone folds that brace, what it holds and the one that closes it; any other line
+// folds the lines under it that are more indented, to the last that is not empty. Braces in strings and comments
+// count for nothing.
+DEVEX_API void foldAreaLines(std::string_view text, std::span<const std::uint32_t> starts, std::vector<std::uint32_t>& ends);
 // Where the word before an offset starts, and where the one after it ends, skipping the spaces on
 // the way: where Ctrl and an arrow take the cursor.
 [[nodiscard]] DEVEX_API std::size_t previousWord(std::string_view text, std::size_t offset) noexcept;

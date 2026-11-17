@@ -5937,8 +5937,16 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      elle change ; le curseur, la sélection, le dessin et la marge passent par les rangées, et une zone qui ne coupe
      rien en a une par ligne, sans rien garder de plus. Devex Script la règle par **Wrap Lines**, une préférence de
      l'éditeur ;
-   - **le repli du code par l'indentation et les accolades** : une ligne se replie quand la suivante est plus indentée
-     ou qu'elle ouvre une accolade qui se ferme plus bas ; la flèche dans la marge, comme Godot ;
+   - ✅ **le repli du code par l'indentation et les accolades** : une ligne se replie quand elle ouvre une accolade qui
+     se ferme plus bas (jusqu'à la ligne de celle-ci, qui reste quand elle commence par elle), quand la suivante est
+     une accolade seule (le style de C#, qui replie l'accolade fermante aussi), et sinon quand les suivantes sont plus
+     indentées ; les accolades des chaînes et des commentaires sont laissées de côté. C'est une case de `UiTextArea`
+     (`folding`), comme `wrap` : la zone calcule la fin du bloc de chaque ligne à chaque changement de son texte, et
+     ses rangées laissent de côté les lignes repliées, si bien que le curseur, le dessin et le défilement n'ont rien à
+     savoir de plus. Les plis suivent les lignes quand le texte change, et s'ouvrent quand le changement touche ce
+     qu'ils cachent ; le curseur passe par-dessus, et un saut à l'intérieur (recherche, Go to Line) les ouvre. La
+     flèche est à droite des numéros, Alt+F et Edit > Folding font le reste, comme Godot. Les plis ne sont pas gardés
+     à la fermeture d'un fichier, à la différence de Godot, qui les met en cache ;
    - **les curseurs multiples et la sélection en colonnes, avec les raccourcis de Godot** : Alt+clic ajoute un
      curseur, Ctrl+D l'occurrence suivante, Maj+Alt+Haut/Bas un curseur au-dessus ou en dessous, Alt+glisser une
      colonne, Échap revient à un seul curseur.

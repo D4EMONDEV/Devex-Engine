@@ -84,6 +84,7 @@ compilation reste nécessaire pour les macros et dépendances propres au jeu.
 | Aller à la définition | **F12** ou **Ctrl+clic** sur le symbole |
 | Trouver les références | **Maj+F12** |
 | Renommer un symbole | **F2**, ou clic droit > **Rename Symbol...** |
+| Replier / déplier un bloc | **Alt+F**, ou la flèche dans la marge ; tout : **Edit > Folding** |
 | Informations sur un symbole | Survol, ou **Ctrl+I** au curseur |
 | Formater le document | **Alt+Maj+F** |
 | Afficher les problèmes | Bouton **Problems** ou **Ctrl+Maj+M** |
@@ -110,6 +111,16 @@ places et de fichiers ont changé.
 lignes trop longues au bord droit du panneau, entre deux mots quand c'est
 possible, au lieu de défiler en largeur. Le numéro d'une ligne reste sur sa
 première rangée ; **Haut** et **Bas** passent d'une rangée à l'autre.
+
+Une flèche dans la marge, à droite des numéros, replie le bloc d'une ligne :
+ce que ses accolades contiennent (l'accolade fermante reste visible), une
+accolade seule sur la ligne suivante comme on l'écrit en C#, ou les lignes plus
+indentées en dessous. Les accolades des chaînes et des commentaires ne comptent
+pas. Une ligne repliée finit par trois points. **Alt+F** replie le bloc de la
+ligne du curseur, ou celui qui la contient. Le curseur passe par-dessus un bloc
+replié ; une recherche ou un saut à l'intérieur le déplie, comme une
+modification de ce qu'il cache. Les blocs repliés ne sont pas gardés à la
+fermeture du fichier.
 
 Les erreurs et avertissements apparaissent dans la marge et sur les plages de
 texte concernées. Le survol en donne le message. **Problems** rassemble les
@@ -146,8 +157,8 @@ UTF-8 du champ, y compris en présence d'accents ou d'emoji.
 La coloration et la liste de méthodes utilisent encore les analyseurs locaux
 de Devex. LSP ajoute complétion, diagnostics, informations au survol,
 définitions, références, renommage et formatage selon les capacités du
-serveur. Les code actions, la coloration par semantic tokens, le repli du code
-et les curseurs multiples ne sont pas encore implémentés. CMake, JSON,
+serveur. Les code actions, la coloration par semantic tokens et les curseurs
+multiples ne sont pas encore implémentés. CMake, JSON,
 shaders et fichiers `.dvx*` conservent leurs outils locaux.
 
 Les serveurs sont des outils de développement facultatifs : ils ne sont pas

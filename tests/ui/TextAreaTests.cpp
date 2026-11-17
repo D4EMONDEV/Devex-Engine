@@ -559,3 +559,79 @@ TEST_CASE("An area that wraps cuts its long lines into rows between words, and m
     REQUIRE(unwrapped.has_value());
     CHECK(unwrapped->position.y == Catch::Approx(start->position.y));
 }
+
+TEST_CASE("An area folds the blocks of its braces and of its indentation, and keeps its folds through changes", "[ui][textarea]")
+{
+    // Braces closed on a line of their own, a brace alone under its line, braces in a comment and a string, and
+    // indentation.
+    const std::string text = "class A {\n"
+                             "    int x;\n"
+                             "    int y;\n"
+                             "}\n"
+                             "void F()\n"
+                             "{\n"
+                             "    // { not this one\n"
+                             "    call(\"}\");\n"
+                             "}\n"
+                             "def g():\n"
+                             "    a\n"
+                             "\n"
+                             "    b\n"
+                             "c";
+    std::vector<std::uint32_t> starts;
+    devex::ui::indexLines(text, starts);
+    std::vector<std::uint32_t> ends;
+    devex::ui::foldAreaLines(text, starts, ends);
+    CHECK(ends == std::vector<std::uint32_t>{2, 1, 2, 3, 8, 7, 6, 7, 8, 12, 10, 11, 12, 13});
+
+    Notes notes(text, UiTextArea{.padding = {0.0f, 0.0f}, .folding = true, .scrollbarSize = 0.0f});
+    notes.world.startEditing(notes.scene, notes.area);
+    notes.world.selectText(notes.scene, notes.area, 0, 0);
+    CHECK_FALSE(notes.world.toggleTextFold(notes.scene, notes.area, 1));
+    REQUIRE(notes.world.toggleTextFold(notes.scene, notes.area, 0));
+    CHECK(notes.world.foldedTextLines(notes.area) == std::vector<std::size_t>{0});
+    // Down goes over what is folded, to the line of the closing brace; Left from there goes back past it, to the end of
+    // the line that holds it, and Right comes back.
+    const std::size_t closing = text.find("}\n");
+    notes.send(UiInput{.downPressed = true});
+    CHECK(notes.caret() == closing);
+    notes.send(UiInput{.leftPressed = true});
+    CHECK(notes.caret() == 9);
+    notes.send(UiInput{.rightPressed = true});
+    CHECK(notes.caret() == closing);
+    const std::optional<UiWorld::CaretPlace> below = notes.world.textCaretPlace(notes.scene, notes.area);
+    REQUIRE(below.has_value());
+    CHECK(notes.world.textLineAt(notes.scene, notes.area, Vec2{below->position.x + 5.0f, below->position.y + below->height * 0.5f}) == 3);
+
+    // A line put in above moves the fold with its line; a change to what it hides opens it.
+    notes.world.selectText(notes.scene, notes.area, 0, 0);
+    notes.send(UiInput{.typed = "\n"});
+    CHECK(notes.world.foldedTextLines(notes.area) == std::vector<std::size_t>{1});
+    notes.text().insert(notes.text().find("int y"), "z");
+    notes.send(UiInput{});
+    CHECK(notes.world.foldedTextLines(notes.area).empty());
+
+    // A jump into a fold opens it.
+    REQUIRE(notes.world.toggleTextFold(notes.scene, notes.area, 5));
+    const std::size_t inside = notes.text().find("call");
+    notes.world.selectText(notes.scene, notes.area, inside, inside);
+    CHECK(notes.world.foldedTextLines(notes.area).empty());
+    CHECK(notes.world.textBlockAt(notes.area, 8) == 6);
+    CHECK(notes.world.textBlockAt(notes.area, 0) == -1);
+
+    // Everything folds at once, the cursor going out of what it hides; and everything unfolds.
+    notes.world.foldAllText(notes.scene, notes.area, true);
+    CHECK(notes.world.foldedTextLines(notes.area) == std::vector<std::size_t>{1, 5, 6, 10});
+    CHECK(notes.caret() == notes.text().find("void F()") + 8);
+    CHECK(notes.draw().uiVertices.size() > 0);
+    notes.world.foldAllText(notes.scene, notes.area, false);
+    CHECK(notes.world.foldedTextLines(notes.area).empty());
+
+    // A press on the arrow of a line folds its block, and leaves the cursor where it was.
+    notes.world.selectText(notes.scene, notes.area, 1, 1);
+    const std::optional<UiWorld::CaretPlace> place = notes.world.textCaretPlace(notes.scene, notes.area);
+    REQUIRE(place.has_value());
+    notes.click(Vec2{109.0f, place->position.y + place->height * 0.5f});
+    CHECK(notes.world.foldedTextLines(notes.area) == std::vector<std::size_t>{1});
+    CHECK(notes.caret() == 1);
+}

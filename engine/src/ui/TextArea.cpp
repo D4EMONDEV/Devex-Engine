@@ -170,6 +170,152 @@ void wrapAreaRows(const asset::FontData& font, std::string_view text, std::span<
     }
 }
 
+void foldAreaLines(std::string_view text, std::span<const std::uint32_t> starts, std::vector<std::uint32_t>& ends)
+{
+    const std::size_t count = starts.size();
+    constexpr std::uint32_t none = 0xFFFFFFFFU;
+    // The line the braces opened on each line close on, the lowest when several stay open.
+    std::vector<std::uint32_t> closes(count, none);
+    std::vector<std::uint32_t> open;
+    std::uint32_t line = 0;
+    char quote = 0;
+    bool comment = false;
+    for (std::size_t at = 0; at < text.size(); ++at)
+    {
+        const char letter = text[at];
+        const char next = at + 1 < text.size() ? text[at + 1] : '\0';
+        if (letter == '\n')
+        {
+            // A string ends with its line, which leaves an apostrophe of prose harmless.
+            ++line;
+            quote = 0;
+        }
+        else if (comment)
+        {
+            if (letter == '*' && next == '/')
+            {
+                comment = false;
+                ++at;
+            }
+        }
+        else if (quote != 0)
+        {
+            if (letter == '\\' && next != '\n')
+            {
+                ++at;
+            }
+            else if (letter == quote)
+            {
+                quote = 0;
+            }
+        }
+        else if (letter == '/' && next == '/')
+        {
+            // To the end of the line, whose new line the loop counts.
+            const std::size_t end = text.find('\n', at);
+            at = end == std::string_view::npos ? text.size() : end - 1;
+        }
+        else if (letter == '/' && next == '*')
+        {
+            comment = true;
+            ++at;
+        }
+        else if (letter == '"' || letter == '\'')
+        {
+            quote = letter;
+        }
+        else if (letter == '{')
+        {
+            open.push_back(line);
+        }
+        else if (letter == '}' && !open.empty())
+        {
+            const std::uint32_t from = open.back();
+            open.pop_back();
+            if (line > from && line < count && from < count)
+            {
+                closes[from] = closes[from] == none ? line : std::max(closes[from], line);
+            }
+        }
+    }
+
+    // The indentation of each line, a tab up to the next four; -1 for a line without letters.
+    std::vector<int> indents(count, -1);
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        int width = 0;
+        for (const char letter : lineText(text, starts, index))
+        {
+            if (letter == ' ')
+            {
+                ++width;
+            }
+            else if (letter == '\t')
+            {
+                width += 4 - width % 4;
+            }
+            else if (letter != '\r')
+            {
+                indents[index] = width;
+                break;
+            }
+        }
+    }
+    // The blocks of the indentation: a line stays open until one as little indented comes, and ends at the last line
+    // with letters before it.
+    std::vector<std::uint32_t> blocks(count);
+    std::vector<std::uint32_t> stack;
+    std::uint32_t filled = 0;
+    for (std::uint32_t index = 0; index < count; ++index)
+    {
+        blocks[index] = index;
+        if (indents[index] < 0)
+        {
+            continue;
+        }
+        while (!stack.empty() && indents[stack.back()] >= indents[index])
+        {
+            blocks[stack.back()] = filled;
+            stack.pop_back();
+        }
+        stack.push_back(index);
+        filled = index;
+    }
+    for (const std::uint32_t index : stack)
+    {
+        blocks[index] = filled;
+    }
+
+    const auto trimmed = [&](std::size_t index) {
+        std::string_view content = lineText(text, starts, index);
+        while (!content.empty() && (content.front() == ' ' || content.front() == '\t'))
+        {
+            content.remove_prefix(1);
+        }
+        while (!content.empty() && (content.back() == ' ' || content.back() == '\t' || content.back() == '\r'))
+        {
+            content.remove_suffix(1);
+        }
+        return content;
+    };
+    ends.resize(count);
+    for (std::uint32_t index = 0; index < count; ++index)
+    {
+        std::uint32_t end = index;
+        if (closes[index] != none)
+        {
+            end = trimmed(closes[index]).starts_with('}') ? closes[index] - 1 : closes[index];
+        }
+        else if (index + 1 < count && indents[index] >= 0 && closes[index + 1] != none && trimmed(index + 1).starts_with('{') &&
+                 !trimmed(index).ends_with(';') && !trimmed(index).ends_with('}'))
+        {
+            // A brace on the next line, the way C# writes them.
+            end = closes[index + 1];
+        }
+        ends[index] = end > index ? end : blocks[index];
+    }
+}
+
 TextAreaMetrics textAreaMetrics(const asset::FontData& font, const scene::UiText& text, const scene::UiTextArea& area, const LaidOutRect& rect,
                                 std::size_t lineCount, std::size_t rowCount)
 {
@@ -187,6 +333,11 @@ TextAreaMetrics textAreaMetrics(const asset::FontData& font, const scene::UiText
         const asset::FontGlyph* const zero = asset::findGlyph(font, U'0');
         const float digit = zero != nullptr ? zero->advance * scale : text.size * 0.6f;
         metrics.gutter = std::ceil(digit * (static_cast<float>(digits) + 2.0f));
+    }
+    if (area.folding)
+    {
+        metrics.foldColumn = std::ceil(text.size * 0.9f);
+        metrics.gutter += metrics.foldColumn;
     }
     const math::Vec2 padding{std::max(area.padding.x, 0.0f), std::max(area.padding.y, 0.0f)};
     const float bar = std::max(area.scrollbarSize, 0.0f);

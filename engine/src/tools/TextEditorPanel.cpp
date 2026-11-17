@@ -256,6 +256,16 @@ void indexDocument(TextEditState& edit, const TextDocument& document)
                                commentSelection(tools.textEdit, *open, languageOf(open->path));
                            }
                        }});
+    // As Godot has them, under Folding.
+    MenuEntry folding{.label = "Folding", .enabled = document != nullptr};
+    folding.children.push_back({.label = "Fold/Unfold Line", .shortcut = "Alt+F", .action = [](ToolsState& tools, scene::Scene&) {
+                                    tools.textEdit.toggleFold = true;
+                                }});
+    folding.children.push_back(
+        {.label = "Fold All Lines", .action = [](ToolsState& tools, scene::Scene&) { tools.textEdit.foldAll = true; }});
+    folding.children.push_back(
+        {.label = "Unfold All Lines", .action = [](ToolsState& tools, scene::Scene&) { tools.textEdit.foldAll = false; }});
+    entries.push_back(std::move(folding));
     return entries;
 }
 
@@ -654,6 +664,7 @@ void ScriptUi::syncAreas(ToolsState& state)
         scene().add<scene::UiText>(entry.area, scene::UiText{.text = document.text, .font = EditorUiKit::monoFont(), .size = codeSize, .wrap = false});
         scene().add<scene::UiTextArea>(entry.area, scene::UiTextArea{.padding = {std::round(font * 0.4f), std::round(font * 0.3f)},
                                                                      .lineNumbers = true,
+                                                                     .folding = true,
                                                                      .indentAfter = "{(:"});
         open.push_back(std::move(entry));
     }
@@ -1472,6 +1483,8 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
         }
     }
     const bool typing = area.isValid() && world.editedTextArea() == area;
+    if (typing && state.input.alt() && !state.input.shift() && !state.input.ctrl() && state.input.letterPressed('f'))
+        edit.toggleFold = true;
     showCompletions(state, area, typing);
     fillResults(state, kit);
 
@@ -1574,6 +1587,20 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
     {
         world.redoText(scene(), area);
     }
+    if (std::exchange(edit.toggleFold, false))
+    {
+        // The block of the line of the cursor, or else the one it is in.
+        const std::string& written = scene().get<scene::UiText>(area).text;
+        const std::size_t at = std::min(world.textSelection(area).first, written.size());
+        const auto caretLine = static_cast<std::size_t>(std::count(written.begin(), written.begin() + static_cast<std::ptrdiff_t>(at), '\n'));
+        if (!world.toggleTextFold(scene(), area, caretLine))
+        {
+            if (const std::int32_t block = world.textBlockAt(area, caretLine); block >= 0)
+                world.toggleTextFold(scene(), area, static_cast<std::size_t>(block));
+        }
+    }
+    if (const std::optional<bool> all = std::exchange(edit.foldAll, std::nullopt))
+        world.foldAllText(scene(), area, *all);
     // What was typed goes back to the document, with where the cursor is.
     const std::string& typed = scene().get<scene::UiText>(area).text;
     if (typed != document->text)

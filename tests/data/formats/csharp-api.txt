@@ -1783,6 +1783,7 @@ Devex.UiTextAlign: Devex.UiTextAlign Center
 Devex.UiTextAlign: Devex.UiTextAlign Left
 Devex.UiTextAlign: Devex.UiTextAlign Right
 Devex.UiTextArea: Boolean& AutoIndent
+Devex.UiTextArea: Boolean& Folding
 Devex.UiTextArea: Boolean& Interactable
 Devex.UiTextArea: Boolean& LineNumbers
 Devex.UiTextArea: Boolean& ReadOnly

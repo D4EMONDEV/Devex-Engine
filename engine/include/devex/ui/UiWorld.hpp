@@ -252,6 +252,15 @@ public:
     [[nodiscard]] std::int32_t textLineAt(const scene::Scene& scene, scene::Entity area, math::Vec2 point) const;
     [[nodiscard]] std::optional<std::size_t>
     textOffsetAt(const scene::Scene& scene, scene::Entity area, math::Vec2 point) const;
+    // The blocks of an area that folds. Folds the block that starts at a line, its lines hidden under it, or unfolds
+    // it; false where no block starts. A cursor inside goes to the end of that line.
+    bool toggleTextFold(scene::Scene& scene, scene::Entity area, std::size_t line);
+    // Folds every block, or unfolds them all.
+    void foldAllText(scene::Scene& scene, scene::Entity area, bool folded);
+    // The lines whose block is folded, in order.
+    [[nodiscard]] std::vector<std::size_t> foldedTextLines(scene::Entity area) const;
+    // The line of the innermost block a line is in, the line itself when one starts there; -1 in none.
+    [[nodiscard]] std::int32_t textBlockAt(scene::Entity area, std::size_t line) const noexcept;
     // The area that takes what is typed, if any.
     [[nodiscard]] scene::Entity editedTextArea() const noexcept;
 
@@ -602,6 +611,10 @@ private:
         // Its rows when it wraps, and the width they were cut for; empty when each line is one row.
         std::vector<TextAreaRow> rows;
         float wrappedWidth = -1.0f;
+        // Where the block of each line ends, and the lines whose block is folded, in order; empty when it does not
+        // fold.
+        std::vector<std::uint32_t> foldEnds;
+        std::vector<std::uint32_t> folds;
         // The width of the longest line, in units; none when it wraps, which leaves nothing to scroll across.
         float contentWidth = 0.0f;
         std::size_t caret = 0;
@@ -625,8 +638,14 @@ private:
     [[nodiscard]] TextAreaState* areaState(scene::Entity entity) noexcept;
     [[nodiscard]] const TextAreaState* areaState(scene::Entity entity) const noexcept;
     [[nodiscard]] TextAreaState& ensureAreaState(scene::Entity entity, const std::string& text);
-    // Cuts the rows of an area that wraps for the width it has, or forgets them when it does not wrap.
+    // Cuts the rows of an area that wraps for the width it has, and leaves out the lines its folds hide; none when it
+    // neither wraps nor folds anything.
     void wrapArea(const scene::Scene& scene, TextAreaState& state, const std::string& text);
+    // Keeps the folds of an area on their lines through a change of its text, and opens those the change reaches into.
+    static void moveFolds(TextAreaState& state, std::size_t offset, std::string_view removed, std::string_view inserted);
+    // A cursor in lines that folds hide: past them, ahead or back, when it went there by itself, or the folds opened
+    // when it was sent there. Whether it changed anything.
+    bool showCaret(scene::Scene& scene, TextAreaState& state, bool unfold, bool ahead);
     // What an area of the scene keeps, made for one not updated yet; null for what is no area.
     [[nodiscard]] TextAreaState* areaStateOf(const scene::Scene& scene, scene::Entity entity);
     [[nodiscard]] const TextAreaView* textAreaView(scene::Entity entity) const noexcept;

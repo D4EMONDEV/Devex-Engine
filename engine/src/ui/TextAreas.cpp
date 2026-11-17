@@ -114,6 +114,8 @@ const TextAreaView* UiWorld::textAreaView(scene::Entity entity) const noexcept
     const bool focused = entity == m_areaFocus;
     state->view = TextAreaView{.lineStarts = state->lineStarts,
                                .rows = state->rows,
+                               .foldEnds = state->foldEnds,
+                               .folds = state->folds,
                                .caret = state->caret,
                                .selectionMin = std::min(state->caret, state->anchor),
                                .selectionMax = std::max(state->caret, state->anchor),
@@ -130,6 +132,17 @@ const TextAreaView* UiWorld::textAreaView(scene::Entity entity) const noexcept
 void UiWorld::indexArea(const scene::Scene& scene, TextAreaState& state, const std::string& text)
 {
     indexLines(text, state.lineStarts);
+    // The blocks, and the folds of those that still start where they were.
+    if (const auto* const folding = scene.tryGet<scene::UiTextArea>(state.entity); folding != nullptr && folding->folding)
+    {
+        foldAreaLines(text, state.lineStarts, state.foldEnds);
+        std::erase_if(state.folds, [&](std::uint32_t line) { return line >= state.foldEnds.size() || state.foldEnds[line] <= line; });
+    }
+    else
+    {
+        state.foldEnds.clear();
+        state.folds.clear();
+    }
     // The longest line, measured alone: how far the area scrolls across.
     std::size_t longest = 0;
     std::size_t length = 0;
@@ -166,15 +179,109 @@ void UiWorld::wrapArea(const scene::Scene& scene, TextAreaState& state, const st
     TextAreaMetrics metrics;
     const LaidOutRect* rect = nullptr;
     float scale = 1.0f;
-    if (area == nullptr || shown == nullptr || !area->wrap || !areaPlace(scene, state.entity, font, metrics, rect, scale))
+    if (area != nullptr && shown != nullptr && area->wrap && areaPlace(scene, state.entity, font, metrics, rect, scale))
+    {
+        const float width = metrics.viewSize().x;
+        wrapAreaRows(*font, text, state.lineStarts, shown->size, area->tabSize, width, state.rows);
+        state.wrappedWidth = width;
+        // Nothing passes its right edge.
+        state.contentWidth = 0.0f;
+    }
+    if (state.folds.empty())
     {
         return;
     }
-    const float width = metrics.viewSize().x;
-    wrapAreaRows(*font, text, state.lineStarts, shown->size, area->tabSize, width, state.rows);
-    state.wrappedWidth = width;
-    // Nothing passes its right edge.
-    state.contentWidth = 0.0f;
+    // The lines folded away are left out of the rows, made one a line when it does not wrap.
+    if (state.rows.empty())
+    {
+        for (std::size_t line = 0; line < state.lineStarts.size(); ++line)
+        {
+            state.rows.push_back(areaRow({}, state.lineStarts, text.size(), line));
+        }
+    }
+    std::vector<bool> hidden(state.lineStarts.size(), false);
+    for (const std::uint32_t line : state.folds)
+    {
+        const std::size_t end = line < state.foldEnds.size() ? std::min<std::size_t>(state.foldEnds[line], hidden.size() - 1) : line;
+        for (std::size_t below = line + 1; below <= end; ++below)
+        {
+            hidden[below] = true;
+        }
+    }
+    std::erase_if(state.rows, [&](const TextAreaRow& row) { return row.line < hidden.size() && hidden[row.line]; });
+}
+
+void UiWorld::moveFolds(TextAreaState& state, std::size_t offset, std::string_view removed, std::string_view inserted)
+{
+    if (state.folds.empty() || state.lineStarts.empty())
+    {
+        return;
+    }
+    const std::size_t first = lineOfOffset(state.lineStarts, offset);
+    const auto gone = static_cast<std::size_t>(std::ranges::count(removed, '\n'));
+    const auto added = static_cast<std::size_t>(std::ranges::count(inserted, '\n'));
+    const std::size_t last = first + gone;
+    // Lines put in at the start of a line push it down whole.
+    const bool before = gone == 0 && offset == state.lineStarts[first];
+    std::vector<std::uint32_t> kept;
+    for (const std::uint32_t line : state.folds)
+    {
+        const std::size_t end = line < state.foldEnds.size() ? state.foldEnds[line] : line;
+        if (last < line || (before && line == first))
+        {
+            kept.push_back(static_cast<std::uint32_t>(line + added - gone));
+        }
+        else if (first > end || (first == line && last == line && added == 0))
+        {
+            // Below the block, or within the line that holds it.
+            kept.push_back(line);
+        }
+    }
+    state.folds = std::move(kept);
+}
+
+bool UiWorld::showCaret(scene::Scene& scene, TextAreaState& state, bool unfold, bool ahead)
+{
+    const bool selected = state.caret != state.anchor;
+    bool changed = false;
+    bool opened = false;
+    for (std::size_t guard = 0; guard <= state.folds.size() && !state.folds.empty(); ++guard)
+    {
+        // The outermost fold that hides the line of the cursor.
+        const std::size_t line = lineOfOffset(state.lineStarts, state.caret);
+        const auto hiding = std::ranges::find_if(state.folds, [&](std::uint32_t fold) {
+            return fold < line && fold < state.foldEnds.size() && line <= state.foldEnds[fold];
+        });
+        if (hiding == state.folds.end())
+        {
+            break;
+        }
+        const std::size_t after = static_cast<std::size_t>(state.foldEnds[*hiding]) + 1;
+        if (!unfold && ahead && after < state.lineStarts.size())
+        {
+            state.caret = state.lineStarts[after];
+        }
+        else if (!unfold && !ahead)
+        {
+            // The end of the line that holds the block.
+            state.caret = state.lineStarts[*hiding + 1] - 1;
+        }
+        else
+        {
+            state.folds.erase(hiding);
+            opened = true;
+        }
+        changed = true;
+    }
+    if (!selected)
+    {
+        state.anchor = state.caret;
+    }
+    if (opened)
+    {
+        wrapArea(scene, state, scene.get<scene::UiText>(state.entity).text);
+    }
+    return changed;
 }
 
 void UiWorld::syncArea(TextAreaState& state, std::string& text)
@@ -202,6 +309,7 @@ void UiWorld::syncArea(TextAreaState& state, std::string& text)
                       .inserted = text.substr(prefix, text.size() - prefix - suffix),
                       .caretBefore = state.caret,
                       .anchorBefore = state.anchor};
+    moveFolds(state, prefix, change.removed, change.inserted);
     state.caret = std::min(state.caret, text.size());
     state.anchor = std::min(state.anchor, text.size());
     change.caretAfter = state.caret;
@@ -242,6 +350,7 @@ void UiWorld::changeArea(scene::Scene& scene, TextAreaState& state, std::string&
                       .anchorBefore = state.anchor,
                       .caretAfter = offset + inserted.size(),
                       .typing = typing};
+    moveFolds(state, offset, change.removed, change.inserted);
     text.replace(offset, removed, inserted);
 
     // Letters typed one after the other are one change, up to the end of a word.
@@ -274,6 +383,7 @@ void UiWorld::changeArea(scene::Scene& scene, TextAreaState& state, std::string&
 void UiWorld::applyTextChange(scene::Scene& scene, TextAreaState& state, std::string& text, const TextChange& change, bool forward)
 {
     const std::size_t offset = std::min(change.offset, text.size());
+    moveFolds(state, offset, forward ? change.removed : change.inserted, forward ? change.inserted : change.removed);
     if (forward)
     {
         text.replace(offset, std::min(change.removed.size(), text.size() - offset), change.inserted);
@@ -289,6 +399,8 @@ void UiWorld::applyTextChange(scene::Scene& scene, TextAreaState& state, std::st
     state.wantedX = -1.0f;
     state.known = text;
     indexArea(scene, state, text);
+    // Where it goes back to shows, out of any fold.
+    showCaret(scene, state, true, true);
     notifyArea(scene, state.entity);
 }
 
@@ -431,7 +543,8 @@ void UiWorld::updateTextAreas(scene::Scene& scene, const UiInput& input, core::D
         TextAreaState& state = ensureAreaState(entity, shown.text);
         state.seen = true;
         syncArea(state, shown.text);
-        if (state.contentWidth < 0.0f)
+        // Indexed again for a change from outside, and for folding turned on or off.
+        if (state.contentWidth < 0.0f || area.folding == state.foldEnds.empty())
         {
             indexArea(scene, state, shown.text);
         }
@@ -511,6 +624,14 @@ void UiWorld::updateTextAreas(scene::Scene& scene, const UiInput& input, core::D
                 const bool onThumb = point.x >= bars.horizontalMin.x && point.x <= bars.horizontalMax.x;
                 m_areaGrab = onThumb ? point.x - bars.horizontalMin.x : (bars.horizontalMax.x - bars.horizontalMin.x) * 0.5f;
             }
+            else if (point.x >= rect->min.x + metrics.gutter - metrics.foldColumn && point.x < rect->min.x + metrics.gutter)
+            {
+                // On the column of the arrows, the block of the line folds or unfolds; the cursor stays where it is.
+                const float down = (point.y - metrics.origin.y + area.scroll.y) / metrics.lineHeight;
+                const std::size_t rows = areaRowCount(state->rows, state->lineStarts);
+                const auto index = static_cast<std::size_t>(std::clamp(std::floor(down), 0.0f, static_cast<float>(rows - 1)));
+                toggleTextFold(scene, pressed, areaRow(state->rows, state->lineStarts, shown.text.size(), index).line);
+            }
             else
             {
                 const std::size_t offset = areaOffsetAt(scene, *state, point);
@@ -586,7 +707,13 @@ void UiWorld::updateTextAreas(scene::Scene& scene, const UiInput& input, core::D
         clampScroll(area, bars);
     }
 
+    // A cursor moved into a fold goes past it, the way it went.
+    const std::size_t before = focused->caret;
     editTextArea(scene, *focused, input);
+    if (focused->caret != before && showCaret(scene, *focused, false, focused->caret > before))
+    {
+        revealCaret(scene, *focused);
+    }
     m_areaBlink += std::chrono::duration<float>(delta).count();
 }
 
@@ -987,6 +1114,8 @@ void UiWorld::selectText(scene::Scene& scene, scene::Entity area, std::size_t an
     state.caret = std::min(caret, shown->text.size());
     state.wantedX = -1.0f;
     m_areaBlink = 0.0f;
+    // Sent into a fold, it opens it.
+    showCaret(scene, state, true, true);
     revealCaret(scene, state);
 }
 
@@ -1092,6 +1221,94 @@ std::int32_t UiWorld::textLineAt(const scene::Scene& scene, scene::Entity area, 
         return -1;
     }
     return static_cast<std::int32_t>(areaRow(state->rows, state->lineStarts, scene.get<scene::UiText>(area).text.size(), static_cast<std::size_t>(down)).line);
+}
+
+bool UiWorld::toggleTextFold(scene::Scene& scene, scene::Entity area, std::size_t line)
+{
+    TextAreaState* const state = areaStateOf(scene, area);
+    if (state == nullptr)
+    {
+        return false;
+    }
+    const std::string& text = scene.get<scene::UiText>(area).text;
+    if (state->foldEnds.empty())
+    {
+        indexArea(scene, *state, text);
+    }
+    if (line >= state->foldEnds.size())
+    {
+        return false;
+    }
+    const auto found = std::ranges::lower_bound(state->folds, static_cast<std::uint32_t>(line));
+    bool moved = false;
+    if (found != state->folds.end() && *found == line)
+    {
+        state->folds.erase(found);
+    }
+    else if (state->foldEnds[line] > line)
+    {
+        state->folds.insert(found, static_cast<std::uint32_t>(line));
+        moved = showCaret(scene, *state, false, false);
+    }
+    else
+    {
+        return false;
+    }
+    wrapArea(scene, *state, text);
+    // The view moves only for a cursor that had to.
+    if (moved)
+    {
+        revealCaret(scene, *state);
+    }
+    return true;
+}
+
+void UiWorld::foldAllText(scene::Scene& scene, scene::Entity area, bool folded)
+{
+    TextAreaState* const state = areaStateOf(scene, area);
+    if (state == nullptr)
+    {
+        return;
+    }
+    const std::string& text = scene.get<scene::UiText>(area).text;
+    if (state->foldEnds.empty())
+    {
+        indexArea(scene, *state, text);
+    }
+    state->folds.clear();
+    for (std::size_t line = 0; folded && line < state->foldEnds.size(); ++line)
+    {
+        if (state->foldEnds[line] > line)
+        {
+            state->folds.push_back(static_cast<std::uint32_t>(line));
+        }
+    }
+    showCaret(scene, *state, false, false);
+    wrapArea(scene, *state, text);
+    revealCaret(scene, *state);
+}
+
+std::vector<std::size_t> UiWorld::foldedTextLines(scene::Entity area) const
+{
+    const TextAreaState* const state = areaState(area);
+    return state != nullptr ? std::vector<std::size_t>(state->folds.begin(), state->folds.end()) : std::vector<std::size_t>{};
+}
+
+std::int32_t UiWorld::textBlockAt(scene::Entity area, std::size_t line) const noexcept
+{
+    const TextAreaState* const state = areaState(area);
+    if (state == nullptr || line >= state->foldEnds.size())
+    {
+        return -1;
+    }
+    for (std::size_t above = line + 1; above-- > 0;)
+    {
+        if (state->foldEnds[above] > above && state->foldEnds[above] >= line)
+        {
+            return static_cast<std::int32_t>(above);
+        }
+    }
+    return -1;
 }
 
 scene::Entity UiWorld::editedTextArea() const noexcept

@@ -201,6 +201,9 @@ struct DEVEX_API UiTextArea
     // Cuts the lines too long for the area at its right edge, between words when it can, rather than scrolling
     // across: prose, and code read in a narrow panel.
     bool wrap = false;
+    // Its blocks fold under their first line, by an arrow at the right of the gutter: what braces hold, or what is
+    // indented under it.
+    bool folding = false;
     math::Vec4 lineNumberColor{1.0f, 1.0f, 1.0f, 0.4f};
     // Behind the line the cursor is on, while the area takes what is typed.
     math::Vec4 currentLineColor{1.0f, 1.0f, 1.0f, 0.04f};
