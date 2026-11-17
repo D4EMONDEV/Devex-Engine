@@ -9,6 +9,7 @@
 #include <devex/render/Culling.hpp>
 #include <devex/render/RenderWorld.hpp>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -54,6 +55,22 @@ struct DecalBox
     math::Vec4 axisZ{0.0f};
 };
 [[nodiscard]] DEVEX_API std::optional<DecalBox> decalBox(const RenderDecal& decal) noexcept;
+
+// What a terrain draws this frame, as both renderers draw it: its blocks after Strugar's continuous distance-dependent
+// level of detail, those drawn whole then the quarters drawn by their block, and the tiles where its grass grows, the
+// nearest band first, with the blades of a tile in each band and how much wider they are to cover for the ones left
+// out far away.
+struct TerrainSelection
+{
+    std::array<std::vector<GpuTerrainNode>, 5> nodes;
+    std::array<std::vector<GpuTerrainNode>, 3> tiles;
+    std::array<std::uint32_t, 3> blades{};
+    std::array<float, 3> bladeWidth{};
+    // The distance within which the finest blocks are drawn; each coarser level reaches twice as far.
+    float leafRange = 0.0f;
+};
+// Nothing for a terrain whose maps cannot be cut into blocks.
+[[nodiscard]] DEVEX_API std::optional<TerrainSelection> selectTerrain(const RenderTerrain& terrain, math::Vec3 eye, const Frustum& frustum);
 
 // The air and the fog as the shaders read them, for a camera standing `cameraHeight` meters up, and how high that is in
 // the air, in kilometers, which the light of the sun through the air needs.

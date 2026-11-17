@@ -3,6 +3,7 @@
 #include <devex/render/Light2D.hpp>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -105,6 +106,143 @@ math::Vec2 temporalJitter(std::uint64_t frame, math::Extent2D extent) noexcept
     const auto sample = static_cast<std::uint32_t>(frame % 8);
     return {(haltonPoint(sample + 1, 2) - 0.5f) * 2.0f / static_cast<float>(std::max(extent.width, 1U)),
             (haltonPoint(sample + 1, 3) - 0.5f) * 2.0f / static_cast<float>(std::max(extent.height, 1U))};
+}
+
+std::optional<TerrainSelection> selectTerrain(const RenderTerrain& terrain, math::Vec3 eye, const Frustum& frustum)
+{
+    const std::uint32_t cells = terrain.resolution > 0 ? terrain.resolution - 1 : 0;
+    const std::uint32_t blocks = cells / terrainBlockCells;
+    if (blocks == 0 || !std::has_single_bit(blocks) || terrain.blockHeights.size() != std::size_t{blocks} * blocks)
+    {
+        return std::nullopt;
+    }
+    // Whether any part of a box lies within a distance of the eye.
+    const auto reaches = [&eye](const math::Aabb& box, float distance) {
+        const math::Vec3 nearest = math::clamp(eye, box.min, box.max);
+        const math::Vec3 offset = nearest - eye;
+        return math::dot(offset, offset) <= distance * distance;
+    };
+    const float blockSize = terrain.size / static_cast<float>(blocks);
+    const auto levels = static_cast<std::uint32_t>(std::countr_zero(blocks)) + 1;
+    TerrainSelection selection;
+    // Three times the side of the finest blocks keeps the levels of neighbouring blocks within one of each other, with
+    // their vertices slid together before they meet.
+    selection.leafRange = blockSize * 3.0f;
+
+    // The lowest and highest heights of the blocks of every level, the finest first.
+    std::vector<std::vector<math::Vec2>> heights{terrain.blockHeights};
+    for (std::uint32_t level = 1; level < levels; ++level)
+    {
+        const std::uint32_t side = blocks >> level;
+        const std::vector<math::Vec2>& finer = heights.back();
+        std::vector<math::Vec2> coarser(std::size_t{side} * side);
+        for (std::uint32_t z = 0; z < side; ++z)
+        {
+            for (std::uint32_t x = 0; x < side; ++x)
+            {
+                math::Vec2 range{std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest()};
+                for (std::uint32_t child = 0; child < 4; ++child)
+                {
+                    const math::Vec2& part = finer[std::size_t{z * 2 + (child >> 1u)} * (side * 2) + x * 2 + (child & 1u)];
+                    range = {std::min(range.x, part.x), std::max(range.y, part.y)};
+                }
+                coarser[std::size_t{z} * side + x] = range;
+            }
+        }
+        heights.push_back(std::move(coarser));
+    }
+    const auto bounds = [&](std::uint32_t level, std::uint32_t x, std::uint32_t z) {
+        const float side = blockSize * static_cast<float>(1u << level);
+        const math::Vec2 range = heights[level][std::size_t{z} * (blocks >> level) + x];
+        const math::Vec3 corner = terrain.origin + math::Vec3{static_cast<float>(x) * side, 0.0f, static_cast<float>(z) * side};
+        return math::Aabb{.min = corner + math::Vec3{0.0f, range.x, 0.0f}, .max = corner + math::Vec3{side, range.y, side}};
+    };
+    // The coarsest level reaches everywhere: the whole terrain is drawn, however far.
+    const auto range = [&](std::uint32_t level) {
+        return level + 1 == levels ? std::numeric_limits<float>::max() : selection.leafRange * static_cast<float>(1u << level);
+    };
+    const auto add = [&](std::size_t group, std::uint32_t level, std::uint32_t x, std::uint32_t z) {
+        const float side = blockSize * static_cast<float>(1u << level);
+        selection.nodes[group].push_back({.corner = {static_cast<float>(x) * side, static_cast<float>(z) * side}, .size = side, .level = level});
+    };
+    // Strugar's selection: a block within the range of the level below splits into its four smaller ones, and draws
+    // itself the quarters of those beyond their range. Returns false when the block lies beyond the range of its own
+    // level, for its parent to draw its area.
+    const auto select = [&](const auto& self, std::uint32_t level, std::uint32_t x, std::uint32_t z) -> bool {
+        const math::Aabb box = bounds(level, x, z);
+        if (!reaches(box, range(level)))
+        {
+            return false;
+        }
+        if (!frustum.intersects(box))
+        {
+            return true;
+        }
+        if (level == 0 || !reaches(box, range(level - 1)))
+        {
+            add(0, level, x, z);
+            return true;
+        }
+        for (std::uint32_t quarter = 0; quarter < 4; ++quarter)
+        {
+            if (!self(self, level - 1, x * 2 + (quarter & 1u), z * 2 + (quarter >> 1u)))
+            {
+                add(1 + quarter, level, x, z);
+            }
+        }
+        return true;
+    };
+    static_cast<void>(select(select, levels - 1, 0, 0));
+
+    // Grass grows on the tiles around the camera that were painted with some, fewer blades on those farther away.
+    if (terrain.grassDensity > 0.0f && terrain.grassHeight > 0.0f && terrain.grassDistance > 0.0f &&
+        terrain.blockGrass.size() == terrain.blockHeights.size())
+    {
+        // Static, so that the lambda reads it without a capture, which Clang finds superfluous.
+        static constexpr float tile = 4.0f;
+        const float reach = terrain.grassDistance;
+        const math::Vec3 local = eye - terrain.origin;
+        const auto firstTile = [](float value) { return static_cast<std::int32_t>(std::floor(value / tile)); };
+        const auto full = static_cast<std::uint32_t>(std::clamp(std::round(terrain.grassDensity * tile * tile), 1.0f, 4096.0f));
+        for (std::int32_t z = firstTile(local.z - reach); z <= firstTile(local.z + reach); ++z)
+        {
+            for (std::int32_t x = firstTile(local.x - reach); x <= firstTile(local.x + reach); ++x)
+            {
+                const math::Vec2 corner{static_cast<float>(x) * tile, static_cast<float>(z) * tile};
+                if (corner.x < 0.0f || corner.y < 0.0f || corner.x >= terrain.size || corner.y >= terrain.size)
+                {
+                    continue;
+                }
+                const math::Vec2 center = corner + math::Vec2{tile * 0.5f};
+                const float distance = math::length(center - math::Vec2{local.x, local.z});
+                if (distance > reach + tile * 0.71f)
+                {
+                    continue;
+                }
+                const auto blockX = std::min(static_cast<std::uint32_t>(center.x / blockSize), blocks - 1);
+                const auto blockZ = std::min(static_cast<std::uint32_t>(center.y / blockSize), blocks - 1);
+                const std::size_t block = std::size_t{blockZ} * blocks + blockX;
+                if (terrain.blockGrass[block] == 0)
+                {
+                    continue;
+                }
+                const math::Vec2 height = terrain.blockHeights[block];
+                const math::Vec3 low = terrain.origin + math::Vec3{corner.x, height.x, corner.y};
+                if (!frustum.intersects({.min = low, .max = low + math::Vec3{tile, height.y - height.x + terrain.grassHeight * 1.5f, tile}}))
+                {
+                    continue;
+                }
+                const std::size_t band = distance < reach * 0.35f ? 0 : distance < reach * 0.65f ? 1 : 2;
+                selection.tiles[band].push_back({.corner = corner, .size = tile});
+            }
+        }
+        for (std::size_t band = 0; band < selection.tiles.size(); ++band)
+        {
+            selection.blades[band] = std::max(full >> band, 1u);
+            selection.bladeWidth[band] = band == 0 ? 1.0f : band == 1 ? 1.4f : 2.0f;
+        }
+    }
+    return selection;
 }
 
 std::optional<DecalBox> decalBox(const RenderDecal& decal) noexcept

@@ -40,6 +40,7 @@ devex_add_shaders(devex_shaders
         sprite_shape.slang
         surface_shading.slang
         temporal.slang
+        terrain_shading.slang
         tonemapping.slang
         ui_shape.slang
         webgpu_blit.slang
@@ -53,6 +54,7 @@ devex_add_shaders(devex_shaders
         webgpu_sky.slang
         webgpu_sprite.slang
         webgpu_taa.slang
+        webgpu_terrain.slang
         webgpu_tonemap.slang
         webgpu_ui.slang
 )

@@ -6002,6 +6002,16 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      chacune mais pas plus d'un demi-atlas, toutes réduites ensemble jusqu'à tenir ; il ne les redessine que quand
      les textures changent. L'atlas n'a pas de mips : de loin, une décalcomanie scintille un peu plus que sous
      Vulkan. La boîte d'une décalcomanie se calcule une fois pour les deux (`decalBox`) ;
+   - ✅ **les terrains et l'herbe** : la sélection des blocs (CDLOD de Strugar) et des carrés d'herbe passe dans
+     `selectTerrain` (`FramePreparation`), et le reste dans `terrain_shading.slang`, générique sur les cartes
+     (`ITerrainMaps`) et les couches (`ITerrainLayers`) : les sommets glissants, les poids peints et par règles, le
+     triplanaire, le mélange par la luminosité, les brins d'herbe. Vulkan (`terrain.slang`) lit tout parmi ses
+     textures sans liaison fixe ; WebGPU (`webgpu_terrain.slang`) lie les cartes de chaque terrain, et dessine les
+     textures de ses couches dans trois tableaux de 512 pixels avec leurs mips (couleurs, surfaces, normales), une
+     tranche par couche, refaits quand une texture change ; les couches se lisent avec les pentes de leurs
+     coordonnées, que WGSL demande dans les branches. Le terrain jette son ombre dans les cascades et l'atlas ; ces
+     passes ne lient rien de la scène, dont elles dessinent les cartes. Un test compare à Vulkan des collines à deux
+     couches peintes, avec de l'herbe et l'ombre d'une sphère ;
 
 ## Outils de level design — plan décidé le 2026-11-04
 

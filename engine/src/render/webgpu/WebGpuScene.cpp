@@ -120,6 +120,50 @@ struct BlitData
     float targetHeight = 0.0f;
     float padding[2]{};
 };
+// A terrain, as webgpu_terrain.slang reads it, at an offset of its own.
+struct TerrainUniform
+{
+    math::Vec3 origin{0.0f};
+    float size = 1.0f;
+    std::uint32_t resolution = 0;
+    std::uint32_t layerCount = 0;
+    float textureSize = 4.0f;
+    float blendSharpness = 0.5f;
+    std::uint32_t triplanar = 0;
+    std::int32_t autoBaseLayer = 0;
+    std::int32_t autoSlopeLayer = -1;
+    float autoSlope = 0.0f;
+    std::int32_t autoHeightLayer = -1;
+    float autoHeight = 0.0f;
+    float autoBlend = 0.0f;
+    float windStrength = 0.0f;
+    float windSpeed = 0.0f;
+    float grassDistance = 0.0f;
+    float leafRange = 0.0f;
+    std::uint32_t gridCells = terrainBlockCells;
+    math::Vec3 grassColor{0.0f};
+    float grassHeight = 0.0f;
+    math::Vec3 grassTipColor{0.0f};
+    float grassWidth = 0.0f;
+    std::array<math::Vec4, 8> baseColorFactors{};
+    std::array<math::Vec4, 8> layerFactors{};
+};
+static_assert(sizeof(TerrainUniform) == 368);
+constexpr std::uint64_t terrainStride = 512;
+// What a draw of a terrain reads.
+struct TerrainDrawData
+{
+    math::Vec3 cameraPosition{0.0f};
+    std::uint32_t firstTile = 0;
+    std::uint32_t bladesPerTile = 1;
+    float bladeWidthScale = 1.0f;
+    float time = 0.0f;
+    float padding = 0.0f;
+};
+// The textures of the layers of a terrain, drawn into arrays at this size, with their mips.
+constexpr std::uint32_t terrainLayerSize = 512;
+constexpr std::uint32_t terrainLayerMips = 10;
+
 // The atlases of the decals: as wide as webgpu_mesh.slang says, every texture no larger than half of it.
 constexpr std::uint32_t decalAtlasSize = 2048;
 constexpr wgpu::TextureFormat decalColorFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
@@ -321,6 +365,7 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
         descriptor.fragment = &fragmentState;
         *pipeline = m_device.CreateRenderPipeline(&descriptor);
     }
+    createTerrainPipelines();
     std::array<wgpu::BindGroupLayoutEntry, 11> materialEntries{};
     materialEntries[0] = uniformEntry(0, fragment, false, sizeof(MaterialData));
     for (std::uint32_t texture = 0; texture < 5; ++texture)
@@ -1066,6 +1111,7 @@ void WebGpuRenderer::drawShadows(const wgpu::CommandEncoder& encoder)
         {
             const wgpu::RenderPassEncoder pass = begin(m_cascadeLayers[shadow.layer], "Cascade");
             drawBatches(pass, shadow);
+            drawTerrains(pass, shadow.view, false);
             pass.End();
         }
     }
@@ -1081,6 +1127,7 @@ void WebGpuRenderer::drawShadows(const wgpu::CommandEncoder& encoder)
                 pass.SetScissorRect(static_cast<std::uint32_t>(shadow.viewport[0]), static_cast<std::uint32_t>(shadow.viewport[1]),
                                     static_cast<std::uint32_t>(shadow.viewport[2]), static_cast<std::uint32_t>(shadow.viewport[3]));
                 drawBatches(pass, shadow);
+                drawTerrains(pass, shadow.view, true);
             }
         }
         pass.End();
@@ -1543,6 +1590,419 @@ wgpu::TextureView WebGpuRenderer::resolve(const wgpu::CommandEncoder& encoder, c
     m_historyValid = true;
     m_historyExposure = m_exposure;
     return m_resolvedViews[into];
+}
+
+void WebGpuRenderer::createTerrainPipelines()
+{
+    const wgpu::ShaderStage vertex = wgpu::ShaderStage::Vertex;
+    const wgpu::ShaderStage fragment = wgpu::ShaderStage::Fragment;
+    const wgpu::ShaderStage both = vertex | fragment;
+    std::array<wgpu::BindGroupLayoutEntry, 13> entries{};
+    entries[0] = uniformEntry(0, both, true, sizeof(TerrainUniform));
+    // The heights are floats, read at their samples.
+    entries[1] = textureEntry(1, vertex);
+    entries[1].texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
+    entries[2] = textureEntry(2, both);
+    // The maps are read through one function, which the vertices name too.
+    entries[3] = textureEntry(3, both);
+    entries[4] = textureEntry(4, both);
+    entries[5] = textureEntry(5, both);
+    for (std::uint32_t array = 6; array <= 8; ++array)
+    {
+        entries[array] = textureEntry(array, fragment);
+        entries[array].texture.viewDimension = wgpu::TextureViewDimension::e2DArray;
+    }
+    entries[9] = storageEntry(9, vertex);
+    entries[10] = storageEntry(10, vertex);
+    entries[11] = samplerEntry(11, both);
+    entries[12] = samplerEntry(12, fragment);
+    m_terrainLayout = bindGroupLayout(m_device, "Terrain", entries);
+    const std::array drawEntries{uniformEntry(0, vertex, true, sizeof(TerrainDrawData)), uniformEntry(1, vertex, true, sizeof(math::Mat4))};
+    m_terrainDrawLayout = bindGroupLayout(m_device, "Terrain draw", drawEntries);
+    m_emptyLayout = bindGroupLayout(m_device, "Empty", std::span<const wgpu::BindGroupLayoutEntry>{});
+    m_emptyGroup = bindGroup(m_device, m_emptyLayout, std::span<const wgpu::BindGroupEntry>{});
+
+    const wgpu::ShaderModule terrain = shaderModule("webgpu_terrain");
+    const std::array sceneGroups{m_sceneLayout, m_terrainLayout, m_terrainDrawLayout};
+    const wgpu::PipelineLayout sceneLayout = pipelineLayout(m_device, sceneGroups);
+    for (const auto& [vertexEntry, fragmentEntry, pipeline] :
+         {std::tuple{"sceneVertex", "sceneFragment", &m_terrainPipeline}, std::tuple{"grassVertex", "grassFragment", &m_grassPipeline}})
+    {
+        wgpu::ColorTargetState target;
+        target.format = sceneFormat;
+        wgpu::FragmentState fragmentState;
+        fragmentState.module = terrain;
+        fragmentState.entryPoint = fragmentEntry;
+        fragmentState.targetCount = 1;
+        fragmentState.targets = &target;
+        // Reversed depth: nearer is greater.
+        wgpu::DepthStencilState depth;
+        depth.format = depthFormat;
+        depth.depthWriteEnabled = true;
+        depth.depthCompare = wgpu::CompareFunction::Greater;
+        wgpu::RenderPipelineDescriptor descriptor;
+        descriptor.label = fragmentEntry;
+        descriptor.layout = sceneLayout;
+        descriptor.vertex.module = terrain;
+        descriptor.vertex.entryPoint = vertexEntry;
+        descriptor.primitive.cullMode = wgpu::CullMode::None;
+        descriptor.depthStencil = &depth;
+        descriptor.fragment = &fragmentState;
+        *pipeline = m_device.CreateRenderPipeline(&descriptor);
+    }
+    // The shadows bind nothing of the scene, whose maps they draw.
+    const std::array shadowGroups{m_emptyLayout, m_terrainLayout, m_terrainDrawLayout};
+    const wgpu::PipelineLayout shadowLayout = pipelineLayout(m_device, shadowGroups);
+    for (std::size_t atlas = 0; atlas < m_terrainShadowPipelines.size(); ++atlas)
+    {
+        wgpu::FragmentState fragmentState;
+        fragmentState.module = terrain;
+        fragmentState.entryPoint = "shadowFragment";
+        wgpu::DepthStencilState depth;
+        depth.format = depthFormat;
+        depth.depthWriteEnabled = true;
+        depth.depthCompare = wgpu::CompareFunction::LessEqual;
+        depth.depthBiasSlopeScale = atlas != 0 ? 2.0f : 1.5f;
+        wgpu::RenderPipelineDescriptor descriptor;
+        descriptor.label = "Terrain shadow";
+        descriptor.layout = shadowLayout;
+        descriptor.vertex.module = terrain;
+        descriptor.vertex.entryPoint = "shadowVertex";
+        descriptor.primitive.cullMode = wgpu::CullMode::None;
+        descriptor.primitive.unclippedDepth = m_unclippedDepth;
+        descriptor.depthStencil = &depth;
+        descriptor.fragment = &fragmentState;
+        m_terrainShadowPipelines[atlas] = m_device.CreateRenderPipeline(&descriptor);
+    }
+
+    // A block is a grid of terrainBlockCells cells on a side, its four quarters one after the other, as Vulkan has it,
+    // so that a block can draw a quarter of itself where its smaller blocks are not drawn; and a blade of grass, two
+    // vertices at each of three heights then its tip, or far away one triangle from its foot to its tip.
+    constexpr std::uint32_t cells = terrainBlockCells;
+    constexpr std::uint32_t half = cells / 2;
+    std::vector<std::uint32_t> indices;
+    for (std::uint32_t quarter = 0; quarter < 4; ++quarter)
+    {
+        const std::uint32_t firstX = (quarter & 1U) * half;
+        const std::uint32_t firstZ = (quarter >> 1U) * half;
+        for (std::uint32_t z = firstZ; z < firstZ + half; ++z)
+        {
+            for (std::uint32_t x = firstX; x < firstX + half; ++x)
+            {
+                const std::uint32_t corner = z * (cells + 1) + x;
+                const std::uint32_t right = corner + 1;
+                const std::uint32_t below = corner + cells + 1;
+                indices.insert(indices.end(), {corner, below, right, right, below, below + 1});
+            }
+        }
+    }
+    constexpr std::array<std::uint32_t, 18> blade{0, 1, 2, 2, 1, 3, 2, 3, 4, 4, 3, 5, 4, 5, 6, 0, 1, 6};
+    for (const auto& [buffer, data] : {std::pair{&m_terrainGrid, std::span<const std::uint32_t>(indices)},
+                                       std::pair{&m_grassBlade, std::span<const std::uint32_t>(blade)}})
+    {
+        wgpu::BufferDescriptor descriptor;
+        descriptor.label = "Terrain";
+        descriptor.size = data.size_bytes();
+        descriptor.usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst;
+        *buffer = m_device.CreateBuffer(&descriptor);
+        m_queue.WriteBuffer(*buffer, 0, data.data(), data.size_bytes());
+    }
+}
+
+void WebGpuRenderer::fillTerrainLayers(TerrainLayers& layers, const RenderTerrain& terrain)
+{
+    const std::uint32_t count = std::max(std::min<std::uint32_t>(terrain.layerCount, 8), 1U);
+    // The textures of each layer, white or flat where its material has none.
+    std::vector<std::uint64_t> key{m_textureRevision, count};
+    std::vector<std::array<wgpu::Texture, 3>> sources;
+    const auto keyOf = [](TextureHandle handle) { return (std::uint64_t{handle.index} << 32) | handle.generation; };
+    for (std::uint32_t layer = 0; layer < count; ++layer)
+    {
+        const GpuMaterial* const material = layer < terrain.layerCount ? m_materials.find(terrain.layers[layer]) : nullptr;
+        const auto textureOf = [&](TextureHandle handle, const wgpu::Texture& fallback) {
+            const GpuTexture* const texture = material != nullptr ? m_textures.find(handle) : nullptr;
+            key.push_back(texture != nullptr && texture->bindable ? keyOf(handle) : 0);
+            return texture != nullptr && texture->bindable ? texture->texture : fallback;
+        };
+        sources.push_back({textureOf(material != nullptr ? material->description.baseColorTexture : TextureHandle{}, m_white),
+                           textureOf(material != nullptr ? material->description.metallicRoughnessTexture : TextureHandle{}, m_white),
+                           textureOf(material != nullptr ? material->description.normalTexture : TextureHandle{}, m_flatNormal)});
+    }
+    if (layers.colors && key == layers.key)
+    {
+        return;
+    }
+    layers.key = std::move(key);
+    const std::array<std::pair<wgpu::Texture*, wgpu::TextureFormat>, 3> arrays{
+        {{&layers.colors, decalColorFormat}, {&layers.surfaces, decalDataFormat}, {&layers.normals, decalDataFormat}}};
+    for (const auto& [array, format] : arrays)
+    {
+        wgpu::TextureDescriptor descriptor;
+        descriptor.label = "Terrain layers";
+        descriptor.size = {terrainLayerSize, terrainLayerSize, count};
+        descriptor.format = format;
+        descriptor.mipLevelCount = terrainLayerMips;
+        descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+        *array = m_device.CreateTexture(&descriptor);
+    }
+    // Every level of every layer of every array, drawn from its texture at the mip that fits it.
+    const std::size_t steps = std::size_t{count} * 3 * terrainLayerMips;
+    wgpu::BufferDescriptor buffer;
+    buffer.label = "Terrain layers";
+    buffer.size = steps * uniformStride;
+    buffer.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+    const wgpu::Buffer settings = m_device.CreateBuffer(&buffer);
+    std::vector<std::byte> data(steps * uniformStride);
+    const wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
+    std::size_t step = 0;
+    for (std::size_t array = 0; array < arrays.size(); ++array)
+    {
+        for (std::uint32_t layer = 0; layer < count; ++layer)
+        {
+            for (std::uint32_t mip = 0; mip < terrainLayerMips; ++mip, ++step)
+            {
+                const auto side = static_cast<float>(std::max(terrainLayerSize >> mip, 1U));
+                const BlitData blit{.rect = math::Vec4(0.0f, 0.0f, 1.0f, 1.0f), .targetWidth = side, .targetHeight = side};
+                std::memcpy(data.data() + step * uniformStride, &blit, sizeof(blit));
+                wgpu::TextureViewDescriptor level;
+                level.dimension = wgpu::TextureViewDimension::e2D;
+                level.baseArrayLayer = layer;
+                level.arrayLayerCount = 1;
+                level.baseMipLevel = mip;
+                level.mipLevelCount = 1;
+                wgpu::RenderPassColorAttachment color;
+                color.view = arrays[array].first->CreateView(&level);
+                color.loadOp = wgpu::LoadOp::Clear;
+                color.storeOp = wgpu::StoreOp::Store;
+                wgpu::RenderPassDescriptor descriptor;
+                descriptor.label = "Terrain layers";
+                descriptor.colorAttachmentCount = 1;
+                descriptor.colorAttachments = &color;
+                const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+                pass.SetPipeline(array == 0 ? m_blitColors : m_blitData);
+                // Read as the layers are, repeating, so that the edges of a tile blend into the next one.
+                const std::array entries{bufferBinding(0, settings, sizeof(BlitData)), viewBinding(1, sources[layer][array].CreateView()),
+                                         samplerBinding(2, m_linearSampler)};
+                const auto offset = static_cast<std::uint32_t>(step * uniformStride);
+                pass.SetBindGroup(0, bindGroup(m_device, m_blitLayout, entries), 1, &offset);
+                pass.Draw(6);
+                pass.End();
+            }
+        }
+    }
+    m_queue.WriteBuffer(settings, 0, data.data(), data.size());
+    const wgpu::CommandBuffer commands = encoder.Finish();
+    m_queue.Submit(1, &commands);
+}
+
+void WebGpuRenderer::prepareTerrains(const ViewMatrices& matrices)
+{
+    m_terrainDrawings.clear();
+    if (m_world.terrains.empty())
+    {
+        return;
+    }
+    // The blocks around the camera, kept as Vulkan keeps them.
+    const float aspectRatio = static_cast<float>(m_sceneSize.width) / static_cast<float>(std::max(m_sceneSize.height, 1U));
+    const Frustum frustum = frustumOf(projectionMatrix(m_world.camera, aspectRatio, math::Mat4{1.0f}) * m_world.camera.view);
+    const math::Vec3 eye = matrices.cameraPosition;
+    m_terrainLayers.resize(m_world.terrains.size());
+    std::vector<GpuTerrainNode> nodes;
+    std::vector<GpuTerrainNode> tiles;
+    std::vector<std::byte> uniforms;
+    // The first draw is that of the blocks; three of grass follow for each terrain.
+    std::vector<TerrainDrawData> draws{TerrainDrawData{.cameraPosition = eye, .time = m_time}};
+    std::vector<std::array<const GpuTexture*, 5>> maps;
+    std::vector<std::size_t> layerIndices;
+    for (std::size_t index = 0; index < m_world.terrains.size(); ++index)
+    {
+        const RenderTerrain& terrain = m_world.terrains[index];
+        const TerrainTextures& textures = terrain.textures;
+        const std::array<const GpuTexture*, 5> found{m_textures.find(textures.heights), m_textures.find(textures.slopes),
+                                                     m_textures.find(textures.paint0), m_textures.find(textures.paint1),
+                                                     m_textures.find(textures.detail)};
+        if (std::ranges::any_of(found, [](const GpuTexture* texture) { return texture == nullptr; }))
+        {
+            continue;
+        }
+        const std::optional<TerrainSelection> selection = selectTerrain(terrain, eye, frustum);
+        if (!selection)
+        {
+            continue;
+        }
+        fillTerrainLayers(m_terrainLayers[index], terrain);
+        TerrainDrawing drawing{.castShadows = terrain.castShadows};
+        for (std::size_t group = 0; group < selection->nodes.size(); ++group)
+        {
+            drawing.firstNode[group] = static_cast<std::uint32_t>(nodes.size());
+            drawing.nodeCount[group] = static_cast<std::uint32_t>(selection->nodes[group].size());
+            nodes.insert(nodes.end(), selection->nodes[group].begin(), selection->nodes[group].end());
+        }
+        drawing.firstDraw = static_cast<std::uint32_t>(draws.size());
+        for (std::size_t band = 0; band < selection->tiles.size(); ++band)
+        {
+            draws.push_back({.cameraPosition = eye,
+                             .firstTile = static_cast<std::uint32_t>(tiles.size()),
+                             .bladesPerTile = std::max(selection->blades[band], 1U),
+                             .bladeWidthScale = selection->bladeWidth[band],
+                             .time = m_time});
+            drawing.tileCount[band] = static_cast<std::uint32_t>(selection->tiles[band].size());
+            drawing.blades[band] = selection->blades[band];
+            tiles.insert(tiles.end(), selection->tiles[band].begin(), selection->tiles[band].end());
+        }
+        TerrainUniform uniform{
+            .origin = terrain.origin,
+            .size = terrain.size,
+            .resolution = terrain.resolution,
+            .layerCount = std::min<std::uint32_t>(terrain.layerCount, 8),
+            .textureSize = terrain.textureSize,
+            .blendSharpness = terrain.blendSharpness,
+            .triplanar = terrain.triplanar ? 1U : 0U,
+            .autoBaseLayer = terrain.autoBaseLayer,
+            .autoSlopeLayer = terrain.autoSlopeLayer,
+            .autoSlope = terrain.autoSlope,
+            .autoHeightLayer = terrain.autoHeightLayer,
+            .autoHeight = terrain.autoHeight,
+            .autoBlend = terrain.autoBlend,
+            .windStrength = terrain.windStrength,
+            .windSpeed = terrain.windSpeed,
+            .grassDistance = terrain.grassDistance,
+            .leafRange = selection->leafRange,
+            .grassColor = terrain.grassColor,
+            .grassHeight = terrain.grassHeight,
+            .grassTipColor = terrain.grassTipColor,
+            .grassWidth = terrain.grassWidth,
+        };
+        for (std::uint32_t layer = 0; layer < uniform.layerCount; ++layer)
+        {
+            const GpuMaterial* const material = m_materials.find(terrain.layers[layer]);
+            uniform.baseColorFactors[layer] = material != nullptr ? material->description.baseColorFactor : math::Vec4{1.0f};
+            uniform.layerFactors[layer] = material != nullptr ? math::Vec4(material->description.metallicFactor,
+                                                                           material->description.roughnessFactor,
+                                                                           material->description.normalScale, 0.0f)
+                                                              : math::Vec4(0.0f, 1.0f, 1.0f, 0.0f);
+        }
+        uniforms.resize((m_terrainDrawings.size() + 1) * terrainStride);
+        std::memcpy(uniforms.data() + m_terrainDrawings.size() * terrainStride, &uniform, sizeof(uniform));
+        maps.push_back(found);
+        layerIndices.push_back(index);
+        m_terrainDrawings.push_back(std::move(drawing));
+    }
+    if (m_terrainDrawings.empty())
+    {
+        return;
+    }
+    growBuffer(m_terrainBuffer, m_terrainCapacity, uniforms.size(), wgpu::BufferUsage::Uniform, "Terrains");
+    m_queue.WriteBuffer(m_terrainBuffer, 0, uniforms.data(), uniforms.size());
+    std::vector<std::byte> drawBytes(draws.size() * uniformStride);
+    for (std::size_t draw = 0; draw < draws.size(); ++draw)
+    {
+        std::memcpy(drawBytes.data() + draw * uniformStride, &draws[draw], sizeof(TerrainDrawData));
+    }
+    growBuffer(m_terrainDrawBuffer, m_terrainDrawCapacity, drawBytes.size(), wgpu::BufferUsage::Uniform, "Terrain draws");
+    m_queue.WriteBuffer(m_terrainDrawBuffer, 0, drawBytes.data(), drawBytes.size());
+    const std::uint64_t nodeBytes = std::max<std::size_t>(nodes.size(), 1) * sizeof(GpuTerrainNode);
+    const std::uint64_t tileBytes = std::max<std::size_t>(tiles.size(), 1) * sizeof(GpuTerrainNode);
+    growBuffer(m_terrainNodeBuffer, m_terrainNodeCapacity, nodeBytes, wgpu::BufferUsage::Storage, "Terrain blocks");
+    growBuffer(m_grassTileBuffer, m_grassTileCapacity, tileBytes, wgpu::BufferUsage::Storage, "Grass tiles");
+    if (!nodes.empty())
+    {
+        m_queue.WriteBuffer(m_terrainNodeBuffer, 0, nodes.data(), nodes.size() * sizeof(GpuTerrainNode));
+    }
+    if (!tiles.empty())
+    {
+        m_queue.WriteBuffer(m_grassTileBuffer, 0, tiles.data(), tiles.size() * sizeof(GpuTerrainNode));
+    }
+    wgpu::TextureViewDescriptor arrayView;
+    arrayView.dimension = wgpu::TextureViewDimension::e2DArray;
+    for (std::size_t drawn = 0; drawn < m_terrainDrawings.size(); ++drawn)
+    {
+        const std::array<const GpuTexture*, 5>& map = maps[drawn];
+        const TerrainLayers& layers = m_terrainLayers[layerIndices[drawn]];
+        std::array<wgpu::BindGroupEntry, 13> entries{};
+        entries[0] = bufferBinding(0, m_terrainBuffer, sizeof(TerrainUniform));
+        for (std::uint32_t texture = 0; texture < 5; ++texture)
+        {
+            entries[1 + texture] = viewBinding(1 + texture, map[texture]->texture.CreateView());
+        }
+        entries[6] = viewBinding(6, layers.colors.CreateView(&arrayView));
+        entries[7] = viewBinding(7, layers.surfaces.CreateView(&arrayView));
+        entries[8] = viewBinding(8, layers.normals.CreateView(&arrayView));
+        entries[9] = bufferBinding(9, m_terrainNodeBuffer, nodeBytes);
+        entries[10] = bufferBinding(10, m_grassTileBuffer, tileBytes);
+        entries[11] = samplerBinding(11, m_clampSampler);
+        entries[12] = samplerBinding(12, m_linearSampler);
+        m_terrainDrawings[drawn].group = bindGroup(m_device, m_terrainLayout, entries);
+    }
+    const std::array drawEntries{bufferBinding(0, m_terrainDrawBuffer, sizeof(TerrainDrawData)),
+                                 bufferBinding(1, m_shadowMatrixBuffer, sizeof(math::Mat4))};
+    m_terrainDrawGroup = bindGroup(m_device, m_terrainDrawLayout, drawEntries);
+}
+
+void WebGpuRenderer::drawTerrains(const wgpu::RenderPassEncoder& pass, std::optional<std::uint32_t> shadowView, bool atlas)
+{
+    if (m_terrainDrawings.empty())
+    {
+        return;
+    }
+    pass.SetPipeline(shadowView ? m_terrainShadowPipelines[atlas ? 1 : 0] : m_terrainPipeline);
+    pass.SetBindGroup(0, shadowView ? m_emptyGroup : m_sceneGroup);
+    const std::array<std::uint32_t, 2> drawOffsets{0, static_cast<std::uint32_t>(std::uint64_t{shadowView.value_or(0)} * uniformStride)};
+    pass.SetBindGroup(2, m_terrainDrawGroup, drawOffsets.size(), drawOffsets.data());
+    pass.SetIndexBuffer(m_terrainGrid, wgpu::IndexFormat::Uint32);
+    constexpr std::uint32_t quarterIndices = terrainBlockCells * terrainBlockCells / 4 * 6;
+    for (std::size_t drawn = 0; drawn < m_terrainDrawings.size(); ++drawn)
+    {
+        const TerrainDrawing& drawing = m_terrainDrawings[drawn];
+        if (shadowView && !drawing.castShadows)
+        {
+            continue;
+        }
+        const auto offset = static_cast<std::uint32_t>(drawn * terrainStride);
+        pass.SetBindGroup(1, drawing.group, 1, &offset);
+        for (std::size_t group = 0; group < drawing.nodeCount.size(); ++group)
+        {
+            if (drawing.nodeCount[group] == 0)
+            {
+                continue;
+            }
+            // A whole block, or one of its quarters; its blocks are its instances.
+            const std::uint32_t indexCount = group == 0 ? quarterIndices * 4 : quarterIndices;
+            const std::uint32_t firstIndex = group == 0 ? 0 : static_cast<std::uint32_t>(group - 1) * quarterIndices;
+            pass.DrawIndexed(indexCount, drawing.nodeCount[group], firstIndex, 0, drawing.firstNode[group]);
+            ++m_drawCalls;
+        }
+    }
+}
+
+void WebGpuRenderer::drawGrass(const wgpu::RenderPassEncoder& pass)
+{
+    if (m_terrainDrawings.empty())
+    {
+        return;
+    }
+    pass.SetPipeline(m_grassPipeline);
+    pass.SetBindGroup(0, m_sceneGroup);
+    pass.SetIndexBuffer(m_grassBlade, wgpu::IndexFormat::Uint32);
+    for (std::size_t drawn = 0; drawn < m_terrainDrawings.size(); ++drawn)
+    {
+        const TerrainDrawing& drawing = m_terrainDrawings[drawn];
+        const auto offset = static_cast<std::uint32_t>(drawn * terrainStride);
+        pass.SetBindGroup(1, drawing.group, 1, &offset);
+        for (std::size_t band = 0; band < drawing.tileCount.size(); ++band)
+        {
+            if (drawing.tileCount[band] == 0)
+            {
+                continue;
+            }
+            const std::array<std::uint32_t, 2> drawOffsets{static_cast<std::uint32_t>(std::uint64_t{drawing.firstDraw + band} * uniformStride), 0};
+            pass.SetBindGroup(2, m_terrainDrawGroup, drawOffsets.size(), drawOffsets.data());
+            // Far away, one triangle a blade.
+            const bool far = band + 1 == drawing.tileCount.size();
+            pass.DrawIndexed(far ? 3 : 15, drawing.tileCount[band] * drawing.blades[band], far ? 15 : 0);
+            ++m_drawCalls;
+        }
+    }
 }
 
 void WebGpuRenderer::fillDecalAtlas(DecalAtlas& atlas, std::vector<TextureHandle> textures, wgpu::TextureFormat format,

@@ -246,6 +246,32 @@ private:
         std::vector<std::pair<TextureHandle, math::Vec4>> rects;
         std::vector<std::uint64_t> key;
     };
+    // The terrains, in WebGpuScene.cpp: the textures of the layers of each drawn into arrays, kept while they stay the
+    // same, and what a frame draws of each: its group, its blocks and its grass.
+    struct TerrainLayers
+    {
+        wgpu::Texture colors;
+        wgpu::Texture surfaces;
+        wgpu::Texture normals;
+        std::vector<std::uint64_t> key;
+    };
+    struct TerrainDrawing
+    {
+        wgpu::BindGroup group;
+        bool castShadows = true;
+        std::array<std::uint32_t, 5> firstNode{};
+        std::array<std::uint32_t, 5> nodeCount{};
+        std::array<std::uint32_t, 3> tileCount{};
+        std::array<std::uint32_t, 3> blades{};
+        // Its three draws of grass among the draw data.
+        std::uint32_t firstDraw = 0;
+    };
+    void createTerrainPipelines();
+    void fillTerrainLayers(TerrainLayers& layers, const RenderTerrain& terrain);
+    void prepareTerrains(const ViewMatrices& matrices);
+    // The blocks, into the scene or, with its view, into a shadow map; the grass, into the scene.
+    void drawTerrains(const wgpu::RenderPassEncoder& pass, std::optional<std::uint32_t> shadowView, bool atlas);
+    void drawGrass(const wgpu::RenderPassEncoder& pass);
     // The decals of the frame, in WebGpuScene.cpp: their atlases drawn when their textures change, and what they read.
     void prepareDecals();
     void fillDecalAtlas(DecalAtlas& atlas, std::vector<TextureHandle> textures, wgpu::TextureFormat format, const wgpu::RenderPipeline& blit);
@@ -350,6 +376,27 @@ private:
     wgpu::Buffer m_decalBuffer;
     std::uint64_t m_decalCapacity = 0;
     std::uint32_t m_decalCount = 0;
+    std::vector<TerrainLayers> m_terrainLayers;
+    std::vector<TerrainDrawing> m_terrainDrawings;
+    wgpu::BindGroupLayout m_terrainLayout;
+    wgpu::BindGroupLayout m_terrainDrawLayout;
+    wgpu::BindGroupLayout m_emptyLayout;
+    wgpu::BindGroup m_emptyGroup;
+    wgpu::BindGroup m_terrainDrawGroup;
+    wgpu::RenderPipeline m_terrainPipeline;
+    wgpu::RenderPipeline m_grassPipeline;
+    // Into the cascades, then into the atlas.
+    std::array<wgpu::RenderPipeline, 2> m_terrainShadowPipelines;
+    wgpu::Buffer m_terrainGrid;
+    wgpu::Buffer m_grassBlade;
+    wgpu::Buffer m_terrainBuffer;
+    std::uint64_t m_terrainCapacity = 0;
+    wgpu::Buffer m_terrainDrawBuffer;
+    std::uint64_t m_terrainDrawCapacity = 0;
+    wgpu::Buffer m_terrainNodeBuffer;
+    std::uint64_t m_terrainNodeCapacity = 0;
+    wgpu::Buffer m_grassTileBuffer;
+    std::uint64_t m_grassTileCapacity = 0;
 
     wgpu::Texture m_depthTarget;
     wgpu::TextureView m_depthView;

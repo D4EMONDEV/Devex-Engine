@@ -491,6 +491,7 @@ if(DEVEX_WEBGPU)
             webgpu_sky.slang
             webgpu_sprite.slang
             webgpu_taa.slang
+            webgpu_terrain.slang
             webgpu_tonemap.slang
             webgpu_ui.slang
     )

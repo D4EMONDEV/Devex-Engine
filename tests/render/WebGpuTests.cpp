@@ -9,9 +9,11 @@
 #include <devex/render/Renderer.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <glm/gtc/packing.hpp>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -330,6 +332,136 @@ private:
     return std::move(captured.front());
 }
 
+// The window of a terrain drawn by one API: hills of 33 samples on a side, two layers painted left and right, holes of
+// none, grass painted in the middle without wind, under a sun that casts the shadows of the hills and of a sphere.
+[[nodiscard]] devex::render::CapturedImage drawTerrain(devex::render::RenderApi api)
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform.has_value());
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window.has_value());
+    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true, .meshLodError = 0.0f, .api = api});
+    if (!renderer)
+    {
+        FAIL(std::format("{}", renderer.error()));
+    }
+    constexpr std::uint32_t resolution = 33;
+    constexpr float size = 16.0f;
+    const auto heightOf = [](std::uint32_t x, std::uint32_t z) {
+        return 0.8f * std::sin(static_cast<float>(x) * 0.35f) * std::cos(static_cast<float>(z) * 0.28f) + 0.8f;
+    };
+    const auto map = [&](devex::asset::TextureFormat format, devex::asset::TextureFilter filter, auto&& texel) {
+        devex::asset::TextureData data{.format = format, .filter = filter};
+        data.mips.push_back({.width = resolution, .height = resolution});
+        for (std::uint32_t z = 0; z < resolution; ++z)
+        {
+            for (std::uint32_t x = 0; x < resolution; ++x)
+            {
+                texel(data.mips.back().bytes, x, z);
+            }
+        }
+        const auto created = renderer->createTexture(data);
+        REQUIRE(created.has_value());
+        return *created;
+    };
+    const auto put = [](std::vector<std::byte>& bytes, const auto& value) {
+        const auto* const raw = reinterpret_cast<const std::byte*>(&value);
+        bytes.insert(bytes.end(), raw, raw + sizeof(value));
+    };
+    devex::render::TerrainTextures textures;
+    textures.heights = map(devex::asset::TextureFormat::R32Float, devex::asset::TextureFilter::Nearest,
+                           [&](std::vector<std::byte>& bytes, std::uint32_t x, std::uint32_t z) { put(bytes, heightOf(x, z)); });
+    textures.slopes = map(devex::asset::TextureFormat::Rgba16Float, devex::asset::TextureFilter::Linear,
+                          [&](std::vector<std::byte>& bytes, std::uint32_t x, std::uint32_t z) {
+                              const std::uint32_t left = x > 0 ? x - 1 : x;
+                              const std::uint32_t right = x + 1 < resolution ? x + 1 : x;
+                              const std::uint32_t up = z > 0 ? z - 1 : z;
+                              const std::uint32_t down = z + 1 < resolution ? z + 1 : z;
+                              const float slopeX = (heightOf(right, z) - heightOf(left, z)) / static_cast<float>(right - left);
+                              const float slopeZ = (heightOf(x, down) - heightOf(x, up)) / static_cast<float>(down - up);
+                              for (const float value : {slopeX, slopeZ, 0.0f, 1.0f})
+                              {
+                                  put(bytes, static_cast<std::uint16_t>(glm::packHalf1x16(value)));
+                              }
+                          });
+    textures.paint0 = map(devex::asset::TextureFormat::Rgba8Unorm, devex::asset::TextureFilter::Linear,
+                          [&](std::vector<std::byte>& bytes, std::uint32_t x, std::uint32_t) {
+                              const auto right = static_cast<std::uint8_t>(std::clamp((static_cast<int>(x) - 12) * 32, 0, 255));
+                              for (const std::uint8_t value : {static_cast<std::uint8_t>(255 - right), right, std::uint8_t{0}, std::uint8_t{0}})
+                              {
+                                  bytes.push_back(std::byte{value});
+                              }
+                          });
+    textures.paint1 = map(devex::asset::TextureFormat::Rgba8Unorm, devex::asset::TextureFilter::Linear,
+                          [](std::vector<std::byte>& bytes, std::uint32_t, std::uint32_t) { bytes.insert(bytes.end(), 4, std::byte{0}); });
+    textures.detail = map(devex::asset::TextureFormat::Rgba8Unorm, devex::asset::TextureFilter::Linear,
+                          [](std::vector<std::byte>& bytes, std::uint32_t x, std::uint32_t z) {
+                              const bool grass = x > 10 && x < 22 && z > 14 && z < 26;
+                              for (const std::uint8_t value : {std::uint8_t{0}, grass ? std::uint8_t{255} : std::uint8_t{0}, std::uint8_t{0}, std::uint8_t{255}})
+                              {
+                                  bytes.push_back(std::byte{value});
+                              }
+                          });
+    devex::asset::TextureData checker{.format = devex::asset::TextureFormat::Rgba8Srgb};
+    checker.mips.push_back({.width = 2, .height = 2,
+                            .bytes = {std::byte{200}, std::byte{180}, std::byte{120}, std::byte{255}, std::byte{90}, std::byte{120}, std::byte{60},
+                                      std::byte{255}, std::byte{90}, std::byte{120}, std::byte{60}, std::byte{255}, std::byte{200}, std::byte{180},
+                                      std::byte{120}, std::byte{255}}});
+    const auto checkerTexture = renderer->createTexture(checker);
+    REQUIRE(checkerTexture.has_value());
+    const devex::render::MaterialHandle sand = renderer->createMaterial({.baseColorTexture = *checkerTexture, .roughnessFactor = 0.8f});
+    const devex::render::MaterialHandle rock = renderer->createMaterial({.baseColorFactor = {0.45f, 0.45f, 0.5f, 1.0f}, .roughnessFactor = 0.6f});
+    const auto sphere = renderer->createMesh(devex::asset::makeUvSphere(0.6f));
+    REQUIRE(sphere.has_value());
+
+    std::vector<devex::render::CapturedImage> captured;
+    for (int frame = 0; frame < 12 && captured.empty(); ++frame)
+    {
+        devex::render::RenderWorld& world = renderer->beginFrame();
+        world.camera.view = devex::math::lookAt(devex::math::Vec3{0.0f, 7.0f, 13.0f}, devex::math::Vec3{0.0f, 0.5f, 0.0f},
+                                                devex::math::Vec3{0.0f, 1.0f, 0.0f});
+        world.camera.autoExposure = false;
+        world.camera.ev100 = 0.0f;
+        world.camera.antialiasing = devex::render::Antialiasing::None;
+        world.camera.bloom = 0.0f;
+        world.camera.ambientOcclusion = 0.0f;
+        world.camera.screenReflections = 0.0f;
+        world.environment.color = {0.8f, 0.9f, 1.0f};
+        world.environment.intensity = 0.6f;
+        world.sun.direction = {-0.5f, -1.0f, -0.4f};
+        world.sun.illuminance = {2.5f, 2.4f, 2.2f};
+        world.sun.castShadows = true;
+        world.terrains.push_back({.textures = textures,
+                                  .resolution = resolution,
+                                  .origin = {-size * 0.5f, 0.0f, -size * 0.5f},
+                                  .size = size,
+                                  .blockHeights = {{0.0f, 1.6f}},
+                                  .blockGrass = {255},
+                                  .layers = {sand, rock},
+                                  .layerCount = 2,
+                                  .textureSize = 2.0f,
+                                  .grassDensity = 6.0f,
+                                  .grassDistance = 25.0f,
+                                  .windStrength = 0.0f});
+        world.meshes.push_back({.mesh = *sphere, .material = rock, .transform = at(1.5f, 2.2f, 1.0f)});
+        if (frame == 4)
+        {
+            static_cast<void>(renderer->requestWindowCapture());
+        }
+        const devex::core::Result<void> presented = renderer->endFrame();
+        if (!presented)
+        {
+            FAIL(std::format("frame {}: {}", frame, presented.error()));
+        }
+        for (devex::render::CapturedImage& image : renderer->takeCaptures())
+        {
+            captured.push_back(std::move(image));
+        }
+    }
+    REQUIRE(captured.size() == 1);
+    return std::move(captured.front());
+}
+
 // The window of a 2D scene under 2D lights drawn by one API: a point light and a directional one, which cast shadows
 // from occluders, over a dark canvas, on a floor and on a sprite with a normal map.
 [[nodiscard]] devex::render::CapturedImage drawLights2D(devex::render::RenderApi api)
@@ -498,6 +630,23 @@ TEST_CASE("WebGPU draws the depth of field, the motion blur and the table of col
     const ErrorCapture capture;
     const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan, false, true);
     const devex::render::CapturedImage webgpu = drawMeshes(devex::render::RenderApi::WebGpu, false, true);
+    REQUIRE(webgpu.rgba.size() == vulkan.rgba.size());
+    const Difference difference = compare(vulkan, webgpu, 8);
+    INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));
+    CHECK(difference.channels < vulkan.rgba.size() / 100);
+    CHECK(difference.mean < 1.5);
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("WebGPU draws terrains, their layers, their shadows and their grass as Vulkan does", "[render][gpu][webgpu]")
+{
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawTerrain(devex::render::RenderApi::Vulkan);
+    const devex::render::CapturedImage webgpu = drawTerrain(devex::render::RenderApi::WebGpu);
     REQUIRE(webgpu.rgba.size() == vulkan.rgba.size());
     const Difference difference = compare(vulkan, webgpu, 8);
     INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));

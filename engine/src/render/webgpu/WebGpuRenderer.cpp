@@ -1284,6 +1284,7 @@ core::Result<void> WebGpuRenderer::endFrame()
     };
     const Frustum frustum = frustumOf(matrices.unjitteredViewProjection);
     prepareMeshes(matrices, frustum);
+    prepareTerrains(matrices);
     gatherSprites(m_world, frustum, resources, m_spriteFrame);
     prepareParticles(matrices);
     orderTransparent(matrices);
@@ -1411,6 +1412,8 @@ core::Result<void> WebGpuRenderer::endFrame()
         const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
         drawSky(pass);
         drawMeshes(pass, false);
+        drawTerrains(pass, std::nullopt, false);
+        drawGrass(pass);
         pass.End();
     }
     {
