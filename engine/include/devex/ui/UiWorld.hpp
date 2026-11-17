@@ -79,6 +79,10 @@ struct DEVEX_API UiInput
     bool undoPressed = false;
     bool redoPressed = false;
     bool wordModifier = false;
+    // Alt: a press adds a cursor, a drag selects a column, and Up and Down with Shift add a cursor above or below.
+    bool caretModifier = false;
+    // Ctrl+D: the next place that holds what the cursor selects gets a cursor too, the word under it first.
+    bool nextOccurrencePressed = false;
 };
 
 // How the tooltips look: the interface world draws them over every canvas, in pixels.
@@ -230,6 +234,8 @@ public:
     // Where the cursor of an area stands and where its selection started, in bytes of its text; the
     // two are equal when nothing is selected.
     [[nodiscard]] std::pair<std::size_t, std::size_t> textSelection(scene::Entity area) const noexcept;
+    // Every cursor of an area, the first one first, each as its place and where its selection started.
+    [[nodiscard]] std::vector<std::pair<std::size_t, std::size_t>> textCarets(scene::Entity area) const;
     // Selects from `anchor` to `caret`, where the cursor ends, and brings it into view.
     void selectText(scene::Scene& scene, scene::Entity area, std::size_t anchor, std::size_t caret);
     // Goes back on the last change of an area, or makes it again. A change made to its text from
@@ -600,6 +606,8 @@ private:
         std::size_t caretAfter = 0;
         // Letters typed one after the other make one change to go back on.
         bool typing = false;
+        // The changes several cursors made together, which go back together; 0 for one alone.
+        std::uint32_t group = 0;
     };
     // What the world keeps of an area from a frame to the next.
     struct DEVEX_API TextAreaState
@@ -621,6 +629,8 @@ private:
         std::size_t anchor = 0;
         // Where the cursor wants to stand across while it goes up and down; negative when unset.
         float wantedX = -1.0f;
+        // The cursors beside the first; none mostly.
+        std::vector<TextAreaCaret> carets;
         std::vector<TextChange> undo;
         std::vector<TextChange> redo;
         std::vector<TextSpan> spans;
@@ -665,7 +675,19 @@ private:
     // The wheel over an area moves its lines; answers whether it took it.
     [[nodiscard]] bool scrollTextArea(scene::Scene& scene, const UiInput& input);
     void updateTextAreas(scene::Scene& scene, const UiInput& input, core::Duration delta);
-    void editTextArea(scene::Scene& scene, TextAreaState& state, const UiInput& input);
+    // What the keyboard does at the cursor of an area, the view following it unless told not to.
+    void editTextArea(scene::Scene& scene, TextAreaState& state, const UiInput& input, bool reveal = true);
+    // The same at every cursor, from the last in the text to the first, as one change to go back on.
+    void editCarets(scene::Scene& scene, TextAreaState& state, const UiInput& input);
+    // Alt and a press: a cursor more, or one less where one stood.
+    static void addCaretAt(TextAreaState& state, std::size_t offset);
+    // Shift+Alt and Up or Down: a cursor on the row above the highest, or under the lowest.
+    void addCaretAcross(scene::Scene& scene, TextAreaState& state, int direction);
+    // Ctrl+D: the word under the cursor, then the next place that holds what it selects.
+    void addNextOccurrence(scene::Scene& scene, TextAreaState& state);
+    // Alt and a drag: a cursor on each row between the press and the pointer, selecting between the two across.
+    void selectColumn(const scene::Scene& scene, TextAreaState& state, math::Vec2 point, const TextAreaMetrics& metrics,
+                      const scene::UiTextArea& area);
 
     std::vector<TextAreaState> m_areas;
     // The area that takes what is typed, and what the pointer holds of it.
@@ -678,6 +700,13 @@ private:
     double m_areaPressTime = -1.0;
     std::size_t m_areaPressOffset = 0;
     int m_areaPresses = 0;
+    // A column being dragged: the row it was pressed on and the place across, from the start of the rows.
+    bool m_areaColumn = false;
+    std::size_t m_columnRow = 0;
+    float m_columnAcross = 0.0f;
+    // The group the changes being made belong to, and the last one given.
+    std::uint32_t m_textGroup = 0;
+    std::uint32_t m_textGroups = 0;
 };
 
 // The text a number field shows: at most `decimals` digits after the point, without the zeros that

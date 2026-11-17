@@ -815,6 +815,8 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
         input.pageDownPressed = stroke(Key::PageDown);
         input.tabPressed = stroke(Key::Tab);
         input.wordModifier = control;
+        input.caretModifier = devices.alt();
+        input.nextOccurrencePressed = control && !devices.shift() && devices.letterPressed('d');
         input.undoPressed = control && !devices.shift() && devices.letterPressed('z', true);
         input.redoPressed = control && (devices.letterPressed('y', true) || (devices.shift() && devices.letterPressed('z', true)));
         if (input.pastePressed)

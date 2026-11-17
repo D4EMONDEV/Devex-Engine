@@ -3162,6 +3162,8 @@ void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
         uiInput.pageDownPressed = stroke(platform::Key::PageDown);
         uiInput.tabPressed = stroke(platform::Key::Tab);
         uiInput.wordModifier = control;
+        uiInput.caretModifier = held(platform::Key::LeftAlt, platform::Key::RightAlt);
+        uiInput.nextOccurrencePressed = control && !uiInput.selecting && input.wasLetterPressed('d');
         uiInput.undoPressed = control && !uiInput.selecting && input.wasLetterPressed('z');
         uiInput.redoPressed = control && (input.wasLetterPressed('y') || (uiInput.selecting && input.wasLetterPressed('z')));
         if (uiInput.pastePressed)

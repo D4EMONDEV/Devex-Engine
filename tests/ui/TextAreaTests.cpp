@@ -635,3 +635,75 @@ TEST_CASE("An area folds the blocks of its braces and of its indentation, and ke
     CHECK(notes.world.foldedTextLines(notes.area) == std::vector<std::size_t>{1});
     CHECK(notes.caret() == 1);
 }
+
+TEST_CASE("An area writes at several cursors at once, added by Alt, Shift+Alt and Ctrl+D, and selects columns", "[ui][textarea]")
+{
+    using Carets = std::vector<std::pair<std::size_t, std::size_t>>;
+    Notes notes("one two\none two\none two", UiTextArea{.padding = {0.0f, 0.0f}, .scrollbarSize = 0.0f});
+    notes.world.startEditing(notes.scene, notes.area);
+    notes.world.selectText(notes.scene, notes.area, 0, 0);
+
+    // Shift+Alt+Down adds a cursor under the lowest, at the same place across; what is typed goes in at each, and
+    // one step back takes back what they did together.
+    notes.send(UiInput{.downPressed = true, .selecting = true, .caretModifier = true});
+    notes.send(UiInput{.downPressed = true, .selecting = true, .caretModifier = true});
+    REQUIRE(notes.world.textCarets(notes.area).size() == 3);
+    notes.send(UiInput{.typed = "x"});
+    CHECK(notes.text() == "xone two\nxone two\nxone two");
+    notes.send(UiInput{.rightPressed = true});
+    notes.send(UiInput{.deletePressed = true});
+    CHECK(notes.text() == "xoe two\nxoe two\nxoe two");
+    notes.send(UiInput{.undoPressed = true});
+    CHECK(notes.text() == "xone two\nxone two\nxone two");
+    CHECK(notes.world.textCarets(notes.area).size() == 1);
+    notes.send(UiInput{.undoPressed = true});
+    CHECK(notes.text() == "one two\none two\none two");
+
+    // Ctrl+D takes the word under the cursor, then each next place that holds it; a place taken already is left.
+    notes.world.selectText(notes.scene, notes.area, 1, 1);
+    notes.send(UiInput{.nextOccurrencePressed = true});
+    CHECK(notes.world.textSelection(notes.area) == std::pair<std::size_t, std::size_t>{3, 0});
+    for (int press = 0; press < 3; ++press)
+    {
+        notes.send(UiInput{.nextOccurrencePressed = true});
+    }
+    CHECK(notes.world.textCarets(notes.area) == Carets{{19, 16}, {3, 0}, {11, 8}});
+    // Copied, the selections are lines; a paste of as many lines deals them out.
+    notes.send(UiInput{.copyPressed = true});
+    CHECK(notes.world.clipboardRequest() == "one\none\none");
+    notes.send(UiInput{.pastePressed = true, .clipboard = "1\r\n2\r\n3"});
+    CHECK(notes.text() == "1 two\n2 two\n3 two");
+    // Escape leaves the first.
+    notes.send(UiInput{.cancelPressed = true});
+    CHECK(notes.world.textCarets(notes.area).size() == 1);
+
+    // Alt and a press add a cursor there, and a press on it takes it away; a plain press leaves one.
+    const auto pointAt = [&](std::size_t offset) {
+        notes.world.selectText(notes.scene, notes.area, offset, offset);
+        const std::optional<UiWorld::CaretPlace> place = notes.world.textCaretPlace(notes.scene, notes.area);
+        REQUIRE(place.has_value());
+        return Vec2{place->position.x + 1.0f, place->position.y + place->height * 0.5f};
+    };
+    const Vec2 second = pointAt(7);
+    const Vec2 third = pointAt(14);
+    const Vec2 first = pointAt(1);
+    notes.send(UiInput{.pointer = second, .pointerDown = true, .pointerPressed = true, .caretModifier = true});
+    notes.send(UiInput{.pointer = second, .pointerReleased = true, .caretModifier = true});
+    CHECK(notes.world.textCarets(notes.area) == Carets{{7, 7}, {1, 1}});
+    notes.send(UiInput{.pointer = third, .pointerDown = true, .pointerPressed = true, .caretModifier = true});
+    notes.send(UiInput{.pointer = third, .pointerReleased = true, .caretModifier = true});
+    CHECK(notes.world.textCarets(notes.area).size() == 3);
+    notes.click(first);
+    CHECK(notes.world.textCarets(notes.area) == Carets{{1, 1}});
+
+    // Alt and a drag take a column: on every row between, from the place pressed to the place reached.
+    notes.send(UiInput{.pointer = first, .pointerDown = true, .pointerPressed = true, .caretModifier = true});
+    notes.send(UiInput{.pointer = third, .pointerDown = true, .pointerMoved = true, .caretModifier = true});
+    notes.send(UiInput{.pointer = third, .pointerReleased = true});
+    const Carets column = notes.world.textCarets(notes.area);
+    REQUIRE(column.size() == 3);
+    CHECK(column[0] == std::pair<std::size_t, std::size_t>{14, 13});
+    notes.send(UiInput{.typed = "-"});
+    CHECK(notes.text() == "1-two\n2-two\n3-two");
+    CHECK(notes.draw().uiVertices.size() > 0);
+}

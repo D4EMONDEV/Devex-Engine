@@ -1320,10 +1320,14 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
     const std::size_t caretLine = view != nullptr ? lineOfOffset(starts, view->caret) : 0;
     if (view != nullptr && view->focused)
     {
-        // Behind every row of the line of the cursor.
+        // Behind every row of the lines of the cursors.
+        const auto onCaretLine = [&](std::size_t line) {
+            return line == caretLine ||
+                   std::ranges::any_of(view->carets, [&](const TextAreaCaret& other) { return lineOfOffset(starts, other.caret) == line; });
+        };
         for (std::size_t row = first; row < last; ++row)
         {
-            if (shownRows[row - first].line == caretLine)
+            if (onCaretLine(shownRows[row - first].line))
             {
                 fill(builder, math::Vec2{lettersMin.x, topOf(row)}, math::Vec2{lettersMax.x, topOf(row) + metrics.lineHeight},
                      withOpacity(area.currentLineColor, rect.opacity));
@@ -1337,6 +1341,10 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
             behind(highlight.begin, highlight.end, withOpacity(highlight.color, rect.opacity));
         }
         behind(view->selectionMin, view->selectionMax, withOpacity(area.selectionColor, rect.opacity));
+        for (const TextAreaCaret& other : view->carets)
+        {
+            behind(std::min(other.caret, other.anchor), std::max(other.caret, other.anchor), withOpacity(area.selectionColor, rect.opacity));
+        }
         // A line marked is underlined under its last row.
         for (std::size_t row = first; row < last; ++row)
         {
@@ -1392,6 +1400,23 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
         const float x = left + lines[caretRow - first]->xOf(view->caret - beginOf(caretRow));
         fill(builder, math::Vec2{x, topOf(caretRow)}, math::Vec2{x + std::max(text.size * 0.09f, 1.0f), topOf(caretRow) + metrics.lineHeight},
              withOpacity(area.caretColor, rect.opacity));
+    }
+
+    // The other cursors, which blink with the first.
+    if (view != nullptr && view->caretVisible)
+    {
+        for (const TextAreaCaret& other : view->carets)
+        {
+            const std::size_t at = std::min(other.caret, text.text.size());
+            const std::size_t row = areaRowOf(rowList, starts, at);
+            if (row < first || row >= last)
+            {
+                continue;
+            }
+            const float x = left + lines[row - first]->xOf(std::min(at - beginOf(row), lines[row - first]->length));
+            fill(builder, math::Vec2{x, topOf(row)}, math::Vec2{x + std::max(text.size * 0.09f, 1.0f), topOf(row) + metrics.lineHeight},
+                 withOpacity(area.caretColor, rect.opacity));
+        }
     }
 
     // After a line whose block is folded, the dots of what it hides.

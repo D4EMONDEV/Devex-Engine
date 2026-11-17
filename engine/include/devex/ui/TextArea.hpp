@@ -47,6 +47,15 @@ struct DEVEX_API TextAreaRow
     std::uint32_t end = 0;
 };
 
+// A cursor of an area beside the first: where it stands, where its selection started, equal when nothing is
+// selected, and where it wants to stand across while it goes up and down, negative when unset.
+struct DEVEX_API TextAreaCaret
+{
+    std::size_t caret = 0;
+    std::size_t anchor = 0;
+    float wantedX = -1.0f;
+};
+
 // What an area that is being used shows beside its text, which the drawing asks the interface world
 // for. Offsets are bytes of the text.
 struct DEVEX_API TextAreaView
@@ -70,6 +79,8 @@ struct DEVEX_API TextAreaView
     std::span<const TextSpan> spans;
     std::span<const TextSpan> highlights;
     std::span<const TextLineMark> marks;
+    // Its cursors beside the first.
+    std::span<const TextAreaCaret> carets;
 };
 
 // Where each line of a text starts, in bytes: the first at 0, the others after each new line.

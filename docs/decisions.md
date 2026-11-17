@@ -5947,9 +5947,15 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      qu'ils cachent ; le curseur passe par-dessus, et un saut à l'intérieur (recherche, Go to Line) les ouvre. La
      flèche est à droite des numéros, Alt+F et Edit > Folding font le reste, comme Godot. Les plis ne sont pas gardés
      à la fermeture d'un fichier, à la différence de Godot, qui les met en cache ;
-   - **les curseurs multiples et la sélection en colonnes, avec les raccourcis de Godot** : Alt+clic ajoute un
-     curseur, Ctrl+D l'occurrence suivante, Maj+Alt+Haut/Bas un curseur au-dessus ou en dessous, Alt+glisser une
-     colonne, Échap revient à un seul curseur.
+   - ✅ **les curseurs multiples et la sélection en colonnes, avec les raccourcis de Godot** : Alt+clic ajoute un
+     curseur (ou retire celui qui est là), Ctrl+D l'occurrence suivante, Maj+Alt+Haut/Bas un curseur au-dessus ou en
+     dessous, Alt+glisser une colonne, Échap revient à un seul curseur. La zone de texte garde son premier curseur
+     comme avant et les autres à côté (`TextAreaCaret`), pour que tout ce qui ne connaît qu'un curseur (la
+     complétion, le serveur de langage, les outils) reste juste. Une touche est jouée à chaque curseur, du dernier au
+     premier dans le texte, chacun laissant en place ceux d'avant et décalant ceux d'après ; les changements d'une même
+     image forment un groupe, qu'une annulation reprend d'un coup. Copier joint les sélections par des retours à la
+     ligne, et coller autant de lignes qu'il y a de curseurs les distribue. `UiInput` gagne Alt (`caretModifier`) et
+     Ctrl+D, que l'éditeur et les jeux remplissent.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

@@ -125,7 +125,8 @@ const TextAreaView* UiWorld::textAreaView(scene::Entity entity) const noexcept
                                .contentWidth = std::max(state->contentWidth, 0.0f),
                                .spans = state->spans,
                                .highlights = state->highlights,
-                               .marks = state->marks};
+                               .marks = state->marks,
+                               .carets = state->carets};
     return &state->view;
 }
 
@@ -312,6 +313,11 @@ void UiWorld::syncArea(TextAreaState& state, std::string& text)
     moveFolds(state, prefix, change.removed, change.inserted);
     state.caret = std::min(state.caret, text.size());
     state.anchor = std::min(state.anchor, text.size());
+    for (TextAreaCaret& other : state.carets)
+    {
+        other.caret = std::min(other.caret, text.size());
+        other.anchor = std::min(other.anchor, text.size());
+    }
     change.caretAfter = state.caret;
     state.undo.push_back(std::move(change));
     if (state.undo.size() > maxHistory)
@@ -349,13 +355,14 @@ void UiWorld::changeArea(scene::Scene& scene, TextAreaState& state, std::string&
                       .caretBefore = state.caret,
                       .anchorBefore = state.anchor,
                       .caretAfter = offset + inserted.size(),
-                      .typing = typing};
+                      .typing = typing,
+                      .group = m_textGroup};
     moveFolds(state, offset, change.removed, change.inserted);
     text.replace(offset, removed, inserted);
 
     // Letters typed one after the other are one change, up to the end of a word.
     TextChange* const last = state.undo.empty() ? nullptr : &state.undo.back();
-    const bool joins = typing && last != nullptr && last->typing && change.removed.empty() && !last->inserted.empty() &&
+    const bool joins = typing && last != nullptr && last->typing && last->group == m_textGroup && change.removed.empty() && !last->inserted.empty() &&
                        last->offset + last->inserted.size() == offset && inserted.find('\n') == std::string_view::npos &&
                        !((last->inserted.back() == ' ' || last->inserted.back() == '\n') && inserted.front() != ' ');
     if (joins)
@@ -597,6 +604,7 @@ void UiWorld::updateTextAreas(scene::Scene& scene, const UiInput& input, core::D
         TextAreaState* const state = pressedArea != nullptr && pressedArea->interactable ? areaState(pressed) : nullptr;
         m_areaFocus = state != nullptr ? pressed : scene::Entity{};
         m_areaSelecting = false;
+        m_areaColumn = false;
         m_areaBar = AreaBar::None;
         const asset::FontData* font = nullptr;
         TextAreaMetrics metrics;
@@ -639,7 +647,22 @@ void UiWorld::updateTextAreas(scene::Scene& scene, const UiInput& input, core::D
                 m_areaPresses = m_clock - m_areaPressTime < repeatedPress && offset == m_areaPressOffset ? m_areaPresses + 1 : 1;
                 m_areaPressTime = m_clock;
                 m_areaPressOffset = offset;
-                if (m_areaPresses == 2)
+                if (!input.caretModifier)
+                {
+                    state->carets.clear();
+                }
+                if (input.caretModifier)
+                {
+                    // Alt: a cursor more where it is pressed, or one less where one stood; dragged, a column.
+                    addCaretAt(*state, offset);
+                    const std::size_t rows = areaRowCount(state->rows, state->lineStarts);
+                    m_columnRow = static_cast<std::size_t>(
+                        std::clamp(std::floor((point.y - metrics.origin.y + area.scroll.y) / metrics.lineHeight), 0.0f, static_cast<float>(rows - 1)));
+                    m_columnAcross = point.x - metrics.origin.x + area.scroll.x;
+                    m_areaColumn = true;
+                    m_areaSelecting = true;
+                }
+                else if (m_areaPresses == 2)
                 {
                     const auto [begin, end] = wordAround(shown.text, offset);
                     state->anchor = begin;
@@ -667,6 +690,7 @@ void UiWorld::updateTextAreas(scene::Scene& scene, const UiInput& input, core::D
     if (input.pointerReleased || !input.pointerDown)
     {
         m_areaSelecting = false;
+        m_areaColumn = false;
         m_areaBar = AreaBar::None;
     }
 
@@ -692,6 +716,11 @@ void UiWorld::updateTextAreas(scene::Scene& scene, const UiInput& input, core::D
         {
             area.scroll.x = (point.x - m_areaGrab - rect->min.x - metrics.gutter) / bars.travel.x * bars.maxScroll.x;
         }
+        else if (m_areaSelecting && m_areaColumn && !input.pointerPressed)
+        {
+            selectColumn(scene, *focused, point, metrics, area);
+            revealCaret(scene, *focused);
+        }
         else if (m_areaSelecting && !input.pointerPressed)
         {
             // Dragging through the letters takes them in, and past an edge the text follows.
@@ -709,7 +738,7 @@ void UiWorld::updateTextAreas(scene::Scene& scene, const UiInput& input, core::D
 
     // A cursor moved into a fold goes past it, the way it went.
     const std::size_t before = focused->caret;
-    editTextArea(scene, *focused, input);
+    editCarets(scene, *focused, input);
     if (focused->caret != before && showCaret(scene, *focused, false, focused->caret > before))
     {
         revealCaret(scene, *focused);
@@ -717,7 +746,324 @@ void UiWorld::updateTextAreas(scene::Scene& scene, const UiInput& input, core::D
     m_areaBlink += std::chrono::duration<float>(delta).count();
 }
 
-void UiWorld::editTextArea(scene::Scene& scene, TextAreaState& state, const UiInput& input)
+void UiWorld::editCarets(scene::Scene& scene, TextAreaState& state, const UiInput& input)
+{
+    auto* const shown = scene.tryGet<scene::UiText>(state.entity);
+    auto* const area = scene.tryGet<scene::UiTextArea>(state.entity);
+    if (shown == nullptr || area == nullptr)
+    {
+        return;
+    }
+    std::string& text = shown->text;
+    // Escape, everything selected and a step back or forth leave one cursor.
+    if (input.cancelPressed || input.selectAllPressed || input.undoPressed || input.redoPressed)
+    {
+        state.carets.clear();
+    }
+    if (input.nextOccurrencePressed)
+    {
+        addNextOccurrence(scene, state);
+        return;
+    }
+    if (input.caretModifier && input.selecting && (input.upPressed || input.downPressed))
+    {
+        addCaretAcross(scene, state, input.downPressed ? 1 : -1);
+        return;
+    }
+    if (state.carets.empty())
+    {
+        editTextArea(scene, state, input);
+        return;
+    }
+
+    const bool writable = !area->readOnly;
+    // Every cursor, the first one first, and the order they stand in the text.
+    std::vector<TextAreaCaret> all;
+    all.push_back(TextAreaCaret{.caret = state.caret, .anchor = state.anchor, .wantedX = state.wantedX});
+    all.insert(all.end(), state.carets.begin(), state.carets.end());
+    std::vector<std::pair<std::size_t, std::size_t>> was;
+    std::vector<std::size_t> order;
+    for (std::size_t index = 0; index < all.size(); ++index)
+    {
+        all[index].caret = std::min(all[index].caret, text.size());
+        all[index].anchor = std::min(all[index].anchor, text.size());
+        was.emplace_back(all[index].caret, all[index].anchor);
+        order.push_back(index);
+    }
+    const std::size_t lengthBefore = text.size();
+    const auto lowOf = [](const TextAreaCaret& caret) { return std::min(caret.caret, caret.anchor); };
+    const auto highOf = [](const TextAreaCaret& caret) { return std::max(caret.caret, caret.anchor); };
+    std::ranges::sort(order, {}, [&](std::size_t index) { return lowOf(all[index]); });
+
+    // Copied together, the selections are the lines of the clipboard, in the order of the text.
+    if ((input.copyPressed || input.cutPressed) && std::ranges::any_of(all, [](const TextAreaCaret& caret) { return caret.caret != caret.anchor; }))
+    {
+        std::string copied;
+        bool first = true;
+        for (const std::size_t index : order)
+        {
+            if (all[index].caret == all[index].anchor)
+            {
+                continue;
+            }
+            if (!first)
+            {
+                copied += '\n';
+            }
+            first = false;
+            copied += text.substr(lowOf(all[index]), highOf(all[index]) - lowOf(all[index]));
+        }
+        m_clipboardRequest = std::move(copied);
+    }
+    // A paste deals its lines out when it has as many as there are cursors, and goes whole at each otherwise.
+    std::vector<std::string> pieces;
+    if (writable && input.pastePressed && !input.clipboard.empty())
+    {
+        std::string pasted;
+        for (const char letter : input.clipboard)
+        {
+            if (letter != '\r')
+            {
+                pasted.push_back(letter);
+            }
+        }
+        pasted = written(pasted);
+        std::vector<std::string> lines;
+        std::size_t start = 0;
+        for (std::size_t at = 0; at <= pasted.size(); ++at)
+        {
+            if (at == pasted.size() || pasted[at] == '\n')
+            {
+                lines.push_back(pasted.substr(start, at - start));
+                start = at + 1;
+            }
+        }
+        if (lines.size() == all.size())
+        {
+            pieces = std::move(lines);
+        }
+        else
+        {
+            pieces.assign(all.size(), pasted);
+        }
+    }
+    UiInput each = input;
+    each.undoPressed = false;
+    each.redoPressed = false;
+    each.copyPressed = false;
+    each.cutPressed = false;
+    each.pastePressed = false;
+    each.selectAllPressed = false;
+    each.clipboard.clear();
+    const bool cutting = writable && input.cutPressed;
+
+    // From the last in the text to the first: each change leaves the cursors before it where they were, and moves
+    // the ones after it by what it wrote or took.
+    m_textGroup = ++m_textGroups;
+    if (m_textGroup == 0)
+    {
+        m_textGroup = m_textGroups = 1;
+    }
+    for (std::size_t step = order.size(); step-- > 0;)
+    {
+        TextAreaCaret& caret = all[order[step]];
+        state.caret = caret.caret;
+        state.anchor = caret.anchor;
+        state.wantedX = caret.wantedX;
+        const std::size_t length = text.size();
+        if (cutting && state.caret != state.anchor)
+        {
+            changeArea(scene, state, text, lowOf(caret), highOf(caret) - lowOf(caret), {}, false);
+        }
+        if (!pieces.empty())
+        {
+            const std::size_t from = std::min(state.caret, state.anchor);
+            changeArea(scene, state, text, from, std::max(state.caret, state.anchor) - from, pieces[step], false);
+        }
+        editTextArea(scene, state, each, false);
+        caret = TextAreaCaret{.caret = state.caret, .anchor = state.anchor, .wantedX = state.wantedX};
+        const auto moved = static_cast<std::ptrdiff_t>(text.size()) - static_cast<std::ptrdiff_t>(length);
+        for (std::size_t later = step + 1; later < order.size(); ++later)
+        {
+            TextAreaCaret& after = all[order[later]];
+            after.caret = static_cast<std::size_t>(std::max<std::ptrdiff_t>(static_cast<std::ptrdiff_t>(after.caret) + moved, 0));
+            after.anchor = static_cast<std::size_t>(std::max<std::ptrdiff_t>(static_cast<std::ptrdiff_t>(after.anchor) + moved, 0));
+        }
+    }
+    m_textGroup = 0;
+
+    // Cursors that meet become one, the first one kept.
+    state.caret = all.front().caret;
+    state.anchor = all.front().anchor;
+    state.wantedX = all.front().wantedX;
+    state.carets.clear();
+    const auto meet = [&](const TextAreaCaret& one, const TextAreaCaret& other) {
+        return lowOf(one) == lowOf(other) || (lowOf(other) < highOf(one) && lowOf(one) < highOf(other));
+    };
+    for (std::size_t index = 1; index < all.size(); ++index)
+    {
+        if (!meet(all.front(), all[index]) && std::ranges::none_of(state.carets, [&](const TextAreaCaret& kept) { return meet(kept, all[index]); }))
+        {
+            state.carets.push_back(all[index]);
+        }
+    }
+    bool changed = text.size() != lengthBefore || state.carets.size() + 1 != was.size() || was.front() != std::pair{state.caret, state.anchor};
+    for (std::size_t index = 0; !changed && index < state.carets.size(); ++index)
+    {
+        changed = was[index + 1] != std::pair{state.carets[index].caret, state.carets[index].anchor};
+    }
+    if (changed)
+    {
+        m_areaBlink = 0.0f;
+        revealCaret(scene, state);
+    }
+}
+
+void UiWorld::addCaretAt(TextAreaState& state, std::size_t offset)
+{
+    const auto same = std::ranges::find_if(state.carets, [&](const TextAreaCaret& other) { return other.caret == offset && other.anchor == offset; });
+    if (same != state.carets.end())
+    {
+        state.carets.erase(same);
+        return;
+    }
+    if (state.caret == offset && state.anchor == offset)
+    {
+        return;
+    }
+    state.carets.push_back(TextAreaCaret{.caret = state.caret, .anchor = state.anchor, .wantedX = state.wantedX});
+    state.caret = offset;
+    state.anchor = offset;
+}
+
+void UiWorld::addCaretAcross(scene::Scene& scene, TextAreaState& state, int direction)
+{
+    const asset::FontData* font = nullptr;
+    TextAreaMetrics metrics;
+    const LaidOutRect* rect = nullptr;
+    float scale = 1.0f;
+    if (!areaPlace(scene, state.entity, font, metrics, rect, scale) || state.lineStarts.empty())
+    {
+        return;
+    }
+    const auto& shown = scene.get<scene::UiText>(state.entity);
+    const auto& area = scene.get<scene::UiTextArea>(state.entity);
+    // From the cursor furthest that way, at the place across it keeps.
+    std::size_t from = std::min(state.caret, shown.text.size());
+    float wanted = state.wantedX;
+    for (const TextAreaCaret& other : state.carets)
+    {
+        if (direction > 0 ? other.caret > from : other.caret < from)
+        {
+            from = std::min(other.caret, shown.text.size());
+            wanted = other.wantedX;
+        }
+    }
+    const std::size_t index = areaRowOf(state.rows, state.lineStarts, from);
+    if ((direction < 0 && index == 0) || (direction > 0 && index + 1 >= areaRowCount(state.rows, state.lineStarts)))
+    {
+        return;
+    }
+    if (wanted < 0.0f)
+    {
+        const TextAreaRow row = areaRow(state.rows, state.lineStarts, shown.text.size(), index);
+        TextAreaLine placed;
+        layoutAreaLine(*font, rowText(shown.text, row), shown.size, area.tabSize, math::Vec2{0.0f}, placed);
+        wanted = placed.xOf(from - row.begin);
+    }
+    const std::size_t target = direction > 0 ? index + 1 : index - 1;
+    const std::size_t offset = areaOffsetAt(
+        scene, state,
+        math::Vec2{metrics.origin.x - area.scroll.x + wanted, metrics.origin.y - area.scroll.y + (static_cast<float>(target) + 0.5f) * metrics.lineHeight});
+    if (offset == state.caret || std::ranges::any_of(state.carets, [&](const TextAreaCaret& other) { return other.caret == offset; }))
+    {
+        return;
+    }
+    state.carets.push_back(TextAreaCaret{.caret = state.caret, .anchor = state.anchor, .wantedX = state.wantedX});
+    state.caret = offset;
+    state.anchor = offset;
+    state.wantedX = wanted;
+    m_areaBlink = 0.0f;
+    revealCaret(scene, state);
+}
+
+void UiWorld::addNextOccurrence(scene::Scene& scene, TextAreaState& state)
+{
+    const std::string& text = scene.get<scene::UiText>(state.entity).text;
+    state.caret = std::min(state.caret, text.size());
+    state.anchor = std::min(state.anchor, text.size());
+    if (state.caret == state.anchor)
+    {
+        const auto [begin, end] = wordAround(text, state.caret);
+        if (begin < end)
+        {
+            state.anchor = begin;
+            state.caret = end;
+            state.wantedX = -1.0f;
+            m_areaBlink = 0.0f;
+            revealCaret(scene, state);
+        }
+        return;
+    }
+    const std::size_t low = std::min(state.caret, state.anchor);
+    const std::string needle = text.substr(low, std::max(state.caret, state.anchor) - low);
+    // After the last selection in the text, and from the start past the end; a place a cursor already holds is left.
+    std::size_t after = std::max(state.caret, state.anchor);
+    for (const TextAreaCaret& other : state.carets)
+    {
+        after = std::max({after, other.caret, other.anchor});
+    }
+    std::size_t found = text.find(needle, after);
+    if (found == std::string::npos)
+    {
+        found = text.find(needle);
+    }
+    const auto taken = [&](std::size_t at) {
+        return at == low || std::ranges::any_of(state.carets, [&](const TextAreaCaret& other) { return std::min(other.caret, other.anchor) == at; });
+    };
+    if (found == std::string::npos || taken(found))
+    {
+        return;
+    }
+    state.carets.push_back(TextAreaCaret{.caret = state.caret, .anchor = state.anchor, .wantedX = state.wantedX});
+    state.anchor = found;
+    state.caret = found + needle.size();
+    state.wantedX = -1.0f;
+    m_areaBlink = 0.0f;
+    revealCaret(scene, state);
+}
+
+void UiWorld::selectColumn(const scene::Scene& scene, TextAreaState& state, math::Vec2 point, const TextAreaMetrics& metrics,
+                           const scene::UiTextArea& area)
+{
+    const std::size_t rows = areaRowCount(state.rows, state.lineStarts);
+    const auto row = static_cast<std::size_t>(
+        std::clamp(std::floor((point.y - metrics.origin.y + area.scroll.y) / metrics.lineHeight), 0.0f, static_cast<float>(rows - 1)));
+    const float across = point.x - metrics.origin.x + area.scroll.x;
+    // Still where it was pressed: the cursor the press added stays as it is.
+    if (row == m_columnRow && std::abs(across - m_columnAcross) < 2.0f)
+    {
+        return;
+    }
+    const auto at = [&](std::size_t index, float x) {
+        return areaOffsetAt(scene, state,
+                            math::Vec2{metrics.origin.x - area.scroll.x + x, metrics.origin.y - area.scroll.y + (static_cast<float>(index) + 0.5f) * metrics.lineHeight});
+    };
+    state.carets.clear();
+    for (std::size_t index = std::min(row, m_columnRow); index <= std::max(row, m_columnRow); ++index)
+    {
+        if (index != row)
+        {
+            state.carets.push_back(TextAreaCaret{.caret = at(index, across), .anchor = at(index, m_columnAcross)});
+        }
+    }
+    state.caret = at(row, across);
+    state.anchor = at(row, m_columnAcross);
+    state.wantedX = -1.0f;
+    m_areaBlink = 0.0f;
+}
+
+void UiWorld::editTextArea(scene::Scene& scene, TextAreaState& state, const UiInput& input, bool reveal)
 {
     auto* const shown = scene.tryGet<scene::UiText>(state.entity);
     auto* const area = scene.tryGet<scene::UiTextArea>(state.entity);
@@ -1036,7 +1382,10 @@ void UiWorld::editTextArea(scene::Scene& scene, TextAreaState& state, const UiIn
             state.wantedX = -1.0f;
         }
         m_areaBlink = 0.0f;
-        revealCaret(scene, state);
+        if (reveal)
+        {
+            revealCaret(scene, state);
+        }
     }
 }
 
@@ -1096,6 +1445,20 @@ std::pair<std::size_t, std::size_t> UiWorld::visibleTextLines(const scene::Scene
     return {firstLine, areaRow(state->rows, state->lineStarts, size, last).line - firstLine + 1};
 }
 
+std::vector<std::pair<std::size_t, std::size_t>> UiWorld::textCarets(scene::Entity area) const
+{
+    std::vector<std::pair<std::size_t, std::size_t>> carets;
+    if (const TextAreaState* const state = areaState(area))
+    {
+        carets.emplace_back(state->caret, state->anchor);
+        for (const TextAreaCaret& other : state->carets)
+        {
+            carets.emplace_back(other.caret, other.anchor);
+        }
+    }
+    return carets;
+}
+
 std::pair<std::size_t, std::size_t> UiWorld::textSelection(scene::Entity area) const noexcept
 {
     const TextAreaState* const state = areaState(area);
@@ -1113,6 +1476,7 @@ void UiWorld::selectText(scene::Scene& scene, scene::Entity area, std::size_t an
     state.anchor = std::min(anchor, shown->text.size());
     state.caret = std::min(caret, shown->text.size());
     state.wantedX = -1.0f;
+    state.carets.clear();
     m_areaBlink = 0.0f;
     // Sent into a fold, it opens it.
     showCaret(scene, state, true, true);
@@ -1127,10 +1491,16 @@ void UiWorld::undoText(scene::Scene& scene, scene::Entity area)
     {
         return;
     }
-    TextChange change = std::move(state->undo.back());
-    state->undo.pop_back();
-    applyTextChange(scene, *state, shown->text, change, false);
-    state->redo.push_back(std::move(change));
+    // The changes several cursors made together go back together, to one cursor.
+    state->carets.clear();
+    const std::uint32_t group = state->undo.back().group;
+    do
+    {
+        TextChange change = std::move(state->undo.back());
+        state->undo.pop_back();
+        applyTextChange(scene, *state, shown->text, change, false);
+        state->redo.push_back(std::move(change));
+    } while (group != 0 && !state->undo.empty() && state->undo.back().group == group);
     revealCaret(scene, *state);
 }
 
@@ -1142,10 +1512,15 @@ void UiWorld::redoText(scene::Scene& scene, scene::Entity area)
     {
         return;
     }
-    TextChange change = std::move(state->redo.back());
-    state->redo.pop_back();
-    applyTextChange(scene, *state, shown->text, change, true);
-    state->undo.push_back(std::move(change));
+    state->carets.clear();
+    const std::uint32_t group = state->redo.back().group;
+    do
+    {
+        TextChange change = std::move(state->redo.back());
+        state->redo.pop_back();
+        applyTextChange(scene, *state, shown->text, change, true);
+        state->undo.push_back(std::move(change));
+    } while (group != 0 && !state->redo.empty() && state->redo.back().group == group);
     revealCaret(scene, *state);
 }
 
