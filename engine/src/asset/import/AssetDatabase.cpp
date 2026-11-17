@@ -378,8 +378,17 @@ struct ImportJob
     std::vector<AssetInfo> previousArtifacts;
     // The tables of translations of the project, for an importer that reads them.
     std::vector<std::filesystem::path> translations;
+    // Whether the project draws with Compatibility, for an importer that reads it.
+    bool compatibility = false;
     core::JobSystem* jobs = nullptr;
 };
+
+// The hash of the settings of an import, with the rendering method of the project for an importer that reads it.
+[[nodiscard]] std::uint64_t settingsHashOf(const MetaFile& meta, const Importer& importer, bool compatibility)
+{
+    const std::uint64_t hash = importSettingsHash(meta);
+    return importer.readsRenderingMethod && compatibility ? hash ^ 0x9E3779B97F4A7C15ULL : hash;
+}
 
 [[nodiscard]] core::Result<void> writeArtifacts(const ImportJob& job, const ImportResult& result,
                                                 std::vector<AssetInfo>& written)
@@ -426,7 +435,7 @@ void runImport(const ImportJob& job, const std::shared_ptr<SharedState>& shared)
     record.importer = std::string(job.importer->name);
     record.importerVersion = job.importer->version;
     record.layouts = artifactLayouts();
-    record.settingsHash = importSettingsHash(job.meta);
+    record.settingsHash = settingsHashOf(job.meta, *job.importer, job.compatibility);
     if (job.importer->readsTranslations)
     {
         record.translationsHash = translationCharactersHash(job.translations);
@@ -441,6 +450,7 @@ void runImport(const ImportJob& job, const std::shared_ptr<SharedState>& shared)
         .options = job.meta.options,
         .subAssets = SubAssetIds(job.meta.subAssets),
         .translations = job.translations,
+        .compatibility = job.compatibility,
         .jobs = job.jobs,
         .cancelled = &shared->cancelled,
     };
@@ -575,8 +585,13 @@ public:
         {
             return std::unexpected(loaded.error());
         }
+        const bool methodChanged = loaded->renderingMethod != m_project.renderingMethod;
         m_project = std::move(*loaded);
         ++m_revision;
+        if (methodChanged)
+        {
+            refresh();
+        }
         return {};
     }
 
@@ -590,9 +605,20 @@ public:
         {
             return saved;
         }
+        // Shaders compile for WebGPU only in Compatibility: they import again when it is chosen or left.
+        const bool methodChanged = updated.renderingMethod != m_project.renderingMethod;
         m_project = std::move(updated);
         ++m_revision;
+        if (methodChanged)
+        {
+            refresh();
+        }
         return {};
+    }
+
+    [[nodiscard]] bool compatibility() const noexcept
+    {
+        return m_project.renderingMethod == RenderingMethod::Compatibility;
     }
 
     void refresh()
@@ -1409,7 +1435,7 @@ private:
         if (record.importer != source.importer->name ||
             record.importerVersion != source.importer->version ||
             record.layouts != artifactLayouts() ||
-            record.settingsHash != importSettingsHash(source.meta))
+            record.settingsHash != settingsHashOf(source.meta, *source.importer, compatibility()))
         {
             return true;
         }
@@ -1489,6 +1515,7 @@ private:
             .recordFile = recordFile(source.id),
             .previousArtifacts = source.record ? source.record->artifacts : std::vector<AssetInfo>{},
             .translations = source.importer->readsTranslations ? translationFiles() : std::vector<std::filesystem::path>{},
+            .compatibility = source.importer->readsRenderingMethod && compatibility(),
             .jobs = &m_jobs,
         };
         {

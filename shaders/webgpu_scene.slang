@@ -24,8 +24,9 @@ public struct SceneData
     public float specularMipCount;
     // How many decals the frame lays on its surfaces.
     public uint decalCount;
-    public float padding1;
-    public float padding2;
+    // The size of the image in pixels, which the shaders of the project read.
+    public float viewportWidth;
+    public float viewportHeight;
     // The cascades of the sun's shadow: where each ends, how wide its texels are, and how far the shadows go; 1 when
     // the sun casts them.
     public float4x4 cascadeViewProjections[4];
@@ -33,7 +34,8 @@ public struct SceneData
     public float4 cascadeTexelSizes;
     public float shadowDistance;
     public uint sunCastsShadows;
-    public float padding3;
+    // The time of the game in seconds, which the shaders of the project read.
+    public float time;
     public float padding4;
     // The sky's directions from the clip space of the image.
     public float4x4 skyInverseViewProjection;
@@ -183,6 +185,58 @@ public float localShadow(Surface surface, Light light, float3 toSurface)
         return 1.0;
     }
     return lit / 9.0;
+}
+
+// What a light gives a surface: the physical one, or the light() of a shader of the project in its place, as pbr.slang
+// has it for Vulkan.
+public interface IWebLight
+{
+    // The luminance a light adds: it comes from `toLight`, with `color` the illuminance it brings at normal incidence, of
+    // which `attenuation` reaches the surface past its range, its cone and the shadows.
+    float3 shade(Surface surface, float3 toLight, float3 color, float attenuation, bool directional);
+};
+
+public struct WebPhysicalLight : IWebLight
+{
+    public float3 shade(Surface surface, float3 toLight, float3 color, float attenuation, bool directional)
+    {
+        return shadeLight(surface, toLight, color * attenuation);
+    }
+};
+
+// The light of the environment, from its baked maps.
+public float3 environmentLuminance(Surface surface)
+{
+    const float NoV = saturate(dot(surface.normal, surface.view));
+    const float3 reflected = reflect(-surface.view, surface.normal);
+    const float angle = -scene.environmentRotation;
+    const float3 irradiance =
+        irradianceEnvironment.SampleLevel(clampSampler, rotateAroundY(surface.normal, angle), 0.0).rgb * scene.sky;
+    const float lod = surface.roughness * (scene.specularMipCount - 1.0);
+    const float3 prefiltered =
+        specularEnvironment.SampleLevel(clampSampler, rotateAroundY(reflected, angle), lod).rgb * scene.sky;
+    const float2 brdf = brdfLut.SampleLevel(clampSampler, float2(NoV, surface.roughness), 0.0).rg;
+    return ambientLight(surface, irradiance, prefiltered, brdf);
+}
+
+// The light of the local lights, all of them, and of the sun, through a light model.
+public float3 directLuminance<Model : IWebLight>(Surface surface, Model model)
+{
+    float3 luminance = float3(0.0);
+    for (uint index = 0; index < scene.lightCount; ++index)
+    {
+        const Light light = lights[index];
+        const float3 toLight = light.position - surface.position;
+        const float3 direction = toLight * rsqrt(max(dot(toLight, toLight), 1e-8));
+        const float attenuation = localAttenuation(toLight, light.range, light.direction, light.spotScale, light.spotOffset) *
+                                  localShadow(surface, light, -toLight);
+        luminance += model.shade(surface, direction, light.intensity, attenuation, false);
+    }
+    if (scene.sunEnabled != 0)
+    {
+        luminance += model.shade(surface, -scene.sunDirection, scene.sunIlluminance, sunShadow(surface), true);
+    }
+    return luminance;
 }
 
 // The luminance leaving a surface towards the viewer, before exposure: the environment from its baked maps, the local

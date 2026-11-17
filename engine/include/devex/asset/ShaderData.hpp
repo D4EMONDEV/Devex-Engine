@@ -140,6 +140,9 @@ struct DEVEX_API ShaderData
     std::vector<ShaderParameter> parameters;
     // SPIR-V, with the entry points of every pass the kind draws in; empty when it did not compile.
     std::vector<std::uint32_t> code;
+    // WGSL for WebGPU, with the entry points of the passes it draws in, for a project that draws with Compatibility,
+    // which the web needs; empty otherwise, or for a kind WebGPU does not draw from a shader yet.
+    std::string wgsl;
     std::vector<ShaderDiagnostic> diagnostics;
 
     [[nodiscard]] bool compiled() const noexcept

@@ -66,6 +66,8 @@ struct DEVEX_API ImportContext
     SubAssetIds subAssets;
     // The tables of translations of the project, for an importer that reads them.
     std::vector<std::filesystem::path> translations;
+    // Whether the project draws with Compatibility, which the web needs: shaders compile for WebGPU too.
+    bool compatibility = false;
     // Available for parallel work when set.
     core::JobSystem* jobs = nullptr;
     const std::atomic<bool>* cancelled = nullptr;
@@ -107,6 +109,8 @@ struct DEVEX_API Importer
     // Whether the importer reads the tables of translations of the project, which the context
     // gives: a source imports again when one of them changes, comes or goes.
     bool readsTranslations = false;
+    // Whether what it makes depends on the rendering method of the project: a source imports again when it changes.
+    bool readsRenderingMethod = false;
     // The other files a source reads, found without importing it, such as the images next to a
     // model; they are copied with it into the project. Null for formats that read none.
     core::Result<std::vector<std::filesystem::path>> (*findDependencies)(const std::filesystem::path& file) = nullptr;

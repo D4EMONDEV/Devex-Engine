@@ -6012,6 +6012,22 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      coordonnées, que WGSL demande dans les branches. Le terrain jette son ombre dans les cascades et l'atlas ; ces
      passes ne lient rien de la scène, dont elles dessinent les cartes. Un test compare à Vulkan des collines à deux
      couches peintes, avec de l'herbe et l'ombre d'une sphère ;
+   - ✅ **les shaders spatiaux du projet** : l'import d'un shader ou d'un graphe de shader d'un projet en
+     Compatibility génère en plus son code pour WebGPU (`webSpatialTemplate`), que slangc compile en WGSL et que
+     l'artefact garde à côté du SPIR-V ; ce que le WGSL ne sait pas faire devient un avertissement « for the web »,
+     et ses matériaux restent standard dans le navigateur. Changer de méthode de rendu réimporte les shaders (le
+     hash des réglages de l'import en dépend). Le code du joueur est le même : `webgpu_custom.slang` donne aux
+     shaders les mêmes fonctions que `custom.slang`, mais WebGPU n'a pas de textures sans liaison fixe, donc un
+     matériau lie celles de son shader, **huit au plus**, chacune avec l'échantillonneur que demande sa texture ;
+     au-delà, l'import avertit. WGSL ne prend les pentes des coordonnées que hors des branches : `texture()` les
+     prend avant de choisir la texture, puis lit avec elles. La lumière passe par `directLuminance`, générique sur
+     le modèle d'éclairage (`IWebLight`), pour que `light()` remplace celui de Devex. Les uniformes d'instance sont
+     un tampon de l'image ; les ombres ont leur propre groupe, sans la scène qu'elles dessinent. Un test compare à
+     Vulkan un cube texturé avec son `light()`, une sphère pliée par `vertex()` et un découpage qui ombre le sol ;
+   - les shaders 2D, de particules et de ciel, avec les sprites éclairés en 3D qu'il manquait au web (décidé le
+     2026-11-18 : tout ce que Vulkan dessine en Compatibility, dans un second commit). WebGPU ne lie que 16
+     textures par étape : la scène des sprites et des particules laisse de côté les décalcomanies, qu'ils ne lisent
+     pas, pour faire place aux huit du matériau.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

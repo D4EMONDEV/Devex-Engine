@@ -383,9 +383,73 @@ TEST_CASE("The asset database imports shaders, with their errors", "[asset][data
     std::filesystem::remove_all(root);
 }
 
-TEST_CASE("The shaders of the sandbox compile without warnings", "[asset][shader][noweb]")
+TEST_CASE("Shaders compile for WebGPU too when the project draws with Compatibility", "[asset][database][shader][noweb]")
+{
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / ("devex-web-shaders-" + devex::core::Uuid::generate().toString());
+    {
+        devex::asset::Project project = *devex::asset::createProject(root, "Shaded");
+        REQUIRE(devex::core::writeTextFile(project.assetsDirectory() / "water.dvxshader", water));
+        devex::core::JobSystem jobs(2);
+        auto database = devex::asset::AssetDatabase::open(project, jobs, {.watchFiles = false});
+        REQUIRE(database.has_value());
+        const auto imported = [&] {
+            (*database)->waitForImports();
+            static_cast<void>((*database)->update());
+            const auto id = (*database)->findByPath("res://assets/water.dvxshader");
+            REQUIRE(id.has_value());
+            const auto bytes = (*database)->loadArtifact(*id);
+            REQUIRE(bytes.has_value());
+            const auto shader = devex::asset::decodeShader(*bytes);
+            REQUIRE(shader.has_value());
+            REQUIRE(shader->compiled());
+            return *shader;
+        };
+        // Forward+ pays nothing for the web.
+        CHECK(imported().wgsl.empty());
+
+        // Choosing Compatibility imports the shaders again, for Vulkan and for WebGPU; leaving it, again without.
+        project.renderingMethod = devex::asset::RenderingMethod::Compatibility;
+        REQUIRE((*database)->updateProject(project));
+        const ShaderData compatible = imported();
+        CHECK_FALSE(compatible.code.empty());
+        CHECK(compatible.wgsl.find("@fragment") != std::string::npos);
+        project.renderingMethod = devex::asset::RenderingMethod::ForwardPlus;
+        REQUIRE((*database)->updateProject(project));
+        CHECK(imported().wgsl.empty());
+
+        // As when the settings change on disk.
+        project.renderingMethod = devex::asset::RenderingMethod::Compatibility;
+        REQUIRE(devex::asset::saveProject(project));
+        REQUIRE((*database)->reloadProject());
+        CHECK_FALSE(imported().wgsl.empty());
+    }
+    std::filesystem::remove_all(root);
+
+    // A material binds eight textures with WebGPU: a shader that reads more still draws with Vulkan, and says so.
+    std::string many = "shader_type spatial;\n";
+    std::string sum = "float3(0.0)";
+    for (int texture = 0; texture < 9; ++texture)
+    {
+        many += std::format("uniform sampler2D layer{};\n", texture);
+        sum += std::format(" + texture(layer{}, UV).rgb", texture);
+    }
+    many += "void fragment() { ALBEDO = " + sum + "; }\n";
+    devex::asset::ShaderCompiler web = devex::asset::shaderCompiler();
+    web.web = true;
+    const ShaderData layered = devex::asset::compileShader(many, "layered.dvxshader", web);
+    CHECK(layered.compiled());
+    CHECK(layered.wgsl.empty());
+    REQUIRE(layered.diagnostics.size() == 1);
+    CHECK_FALSE(layered.diagnostics.front().error);
+    CHECK(layered.diagnostics.front().message.find("eight textures") != std::string::npos);
+}
+
+TEST_CASE("The shaders of the sandbox compile without warnings, for WebGPU too", "[asset][shader][noweb]")
 {
     const std::filesystem::path folder = std::filesystem::path{DEVEX_SANDBOX_DIRECTORY} / "assets" / "shaders";
+    devex::asset::ShaderCompiler web = devex::asset::shaderCompiler();
+    web.web = true;
     std::size_t count = 0;
     for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(folder))
     {
@@ -395,11 +459,13 @@ TEST_CASE("The shaders of the sandbox compile without warnings", "[asset][shader
         }
         const auto text = devex::core::readTextFile(entry.path());
         REQUIRE(text.has_value());
-        const ShaderData shader = devex::asset::compileShader(*text, entry.path());
+        const ShaderData shader = devex::asset::compileShader(*text, entry.path(), web);
         INFO(entry.path().filename().string());
         INFO((shader.diagnostics.empty() ? std::string{} : shader.diagnostics.front().message));
         CHECK(shader.compiled());
         CHECK(shader.diagnostics.empty());
+        // The kinds WebGPU draws have their WGSL.
+        CHECK(shader.wgsl.empty() == (shader.kind != ShaderKind::Spatial));
         ++count;
     }
     CHECK(count == 9);

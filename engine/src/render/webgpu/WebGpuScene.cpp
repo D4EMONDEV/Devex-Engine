@@ -55,13 +55,15 @@ struct SceneData
     float environmentRotation = 0.0f;
     float specularMipCount = 1.0f;
     std::uint32_t decalCount = 0;
-    float padding[2]{};
+    float viewportWidth = 0.0f;
+    float viewportHeight = 0.0f;
     std::array<math::Mat4, 4> cascadeViewProjections{};
     math::Vec4 cascadeSplits{0.0f};
     math::Vec4 cascadeTexelSizes{0.0f};
     float shadowDistance = 0.0f;
     std::uint32_t sunCastsShadows = 0;
-    float padding1[2]{};
+    float time = 0.0f;
+    float padding1 = 0.0f;
     math::Mat4 skyInverseViewProjection{1.0f};
     math::Vec3 fogColor{0.0f};
     float fogDensity = 0.0f;
@@ -230,8 +232,33 @@ struct InstanceData
     math::Mat4 world{1.0f};
     std::uint32_t firstBone = 0;
     std::uint32_t boneCount = 0;
-    std::uint32_t padding[2]{};
+    // Where the values it gives the instance uniforms of its shader start; none without.
+    std::uint32_t instanceParameters = noInstanceParameters;
+    std::uint32_t padding = 0;
 };
+
+// The vertices of meshes as WebGPU reads them: rigid, then the skin of a skinned one in a second buffer.
+[[nodiscard]] std::array<wgpu::VertexBufferLayout, 2> meshVertexBuffers()
+{
+    static const std::array rigid{
+        wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3, .offset = 0, .shaderLocation = 0},
+        wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x3, .offset = 12, .shaderLocation = 1},
+        wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x2, .offset = 24, .shaderLocation = 2},
+        wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x4, .offset = 32, .shaderLocation = 3},
+    };
+    static const std::array skin{
+        wgpu::VertexAttribute{.format = wgpu::VertexFormat::Uint16x4, .offset = 0, .shaderLocation = 4},
+        wgpu::VertexAttribute{.format = wgpu::VertexFormat::Float32x4, .offset = 8, .shaderLocation = 5},
+    };
+    std::array<wgpu::VertexBufferLayout, 2> buffers{};
+    buffers[0].arrayStride = sizeof(asset::Vertex);
+    buffers[0].attributeCount = rigid.size();
+    buffers[0].attributes = rigid.data();
+    buffers[1].arrayStride = sizeof(asset::VertexSkin);
+    buffers[1].attributeCount = skin.size();
+    buffers[1].attributes = skin.data();
+    return buffers;
+}
 struct MaterialData
 {
     math::Vec4 baseColorFactor{1.0f};
@@ -245,11 +272,19 @@ struct MaterialData
     std::uint32_t doubleSided = 0;
     std::uint32_t padding[2]{};
 };
+// What a draw of meshes reads: its first instance, and for the shaders of the project the time and the camera.
 struct DrawData
 {
     std::uint32_t first = 0;
-    std::uint32_t padding[3]{};
+    float time = 0.0f;
+    std::uint32_t padding[2]{};
+    math::Vec3 cameraPosition{0.0f};
+    std::uint32_t padding1 = 0;
 };
+// The uniforms of the shader of a material, as webgpu_custom.slang has them.
+constexpr std::size_t customSlotCount = 64;
+constexpr std::uint32_t customTextureCount = 8;
+constexpr std::uint32_t customBit = 8;
 struct BakeParameters
 {
     std::uint32_t size = 0;
@@ -341,8 +376,22 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
                                   cubeEntry(4, fragment), cubeEntry(5, fragment), textureEntry(6, fragment), samplerEntry(7, fragment),
                                   storageEntry(8, fragment), cascades, atlas, comparison, textureEntry(12, fragment),
                                   samplerEntry(13, fragment), storageEntry(14, fragment), textureEntry(15, fragment),
-                                  textureEntry(16, fragment), samplerEntry(17, fragment)};
+                                  textureEntry(16, fragment), samplerEntry(17, fragment), storageEntry(18, both)};
     m_sceneLayout = bindGroupLayout(m_device, "Scene", sceneEntries);
+    // The shaders of the project: the slots of the uniforms of a material and its textures; and what their shadows
+    // read in place of the scene: the instances, the bones, the instance uniforms and the view.
+    // Each texture has its sampler, which filters it as the texture asks.
+    std::array<wgpu::BindGroupLayoutEntry, 1 + 2 * customTextureCount> customEntries{};
+    customEntries[0] = uniformEntry(0, both, false, customSlotCount * sizeof(math::Vec4));
+    for (std::uint32_t texture = 0; texture < customTextureCount; ++texture)
+    {
+        customEntries[1 + texture] = textureEntry(1 + texture, both);
+        customEntries[1 + customTextureCount + texture] = samplerEntry(1 + customTextureCount + texture, both);
+    }
+    m_customMaterialLayout = bindGroupLayout(m_device, "Shader material", customEntries);
+    const std::array customShadowEntries{storageEntry(2, wgpu::ShaderStage::Vertex), storageEntry(3, wgpu::ShaderStage::Vertex),
+                                         storageEntry(18, both), uniformEntry(19, wgpu::ShaderStage::Vertex, true, sizeof(math::Mat4))};
+    m_customShadowLayout = bindGroupLayout(m_device, "Shader shadow", customShadowEntries);
     // The blit that draws the textures of the decals into their atlases.
     const std::array blitEntries{uniformEntry(0, both, true, sizeof(BlitData)), textureEntry(1, fragment), samplerEntry(2, fragment)};
     m_blitLayout = bindGroupLayout(m_device, "Decal atlas", blitEntries);
@@ -374,7 +423,7 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
         materialEntries[6 + texture] = samplerEntry(6 + texture, fragment);
     }
     m_materialLayout = bindGroupLayout(m_device, "Material", materialEntries);
-    const std::array drawEntries{uniformEntry(0, wgpu::ShaderStage::Vertex, true, sizeof(DrawData))};
+    const std::array drawEntries{uniformEntry(0, both, true, sizeof(DrawData))};
     m_meshDrawLayout = bindGroupLayout(m_device, "Mesh draw", drawEntries);
 
     const wgpu::ShaderModule mesh = shaderModule("webgpu_mesh");
@@ -737,6 +786,142 @@ wgpu::BindGroup WebGpuRenderer::materialGroup(GpuMaterial& material)
     return material.group;
 }
 
+WebGpuRenderer::GpuShader* WebGpuRenderer::spatialShaderOf(const MaterialDesc& material)
+{
+    GpuShader* const shader = material.shader.isValid() ? m_shaders.find(material.shader) : nullptr;
+    return shader != nullptr && shader->kind == asset::ShaderKind::Spatial && shader->module ? shader : nullptr;
+}
+
+wgpu::BindGroup WebGpuRenderer::customMaterialGroup(GpuMaterial& material)
+{
+    if (material.customGroup && material.customEpoch == m_textureEpoch)
+    {
+        return material.customGroup;
+    }
+    const MaterialDesc& description = material.description;
+    // The values of the uniforms, then the number of its binding in the slot of each texture.
+    std::array<math::Vec4, customSlotCount> slots{};
+    for (std::size_t slot = 0; slot < std::min(description.parameters.size(), slots.size()); ++slot)
+    {
+        slots[slot] = description.parameters[slot];
+    }
+    std::array<wgpu::Texture, customTextureCount> textures;
+    textures.fill(m_white);
+    std::array<wgpu::Sampler, customTextureCount> samplers;
+    samplers.fill(m_linearSampler);
+    for (std::uint32_t index = 0; index < std::min<std::size_t>(description.textures.size(), customTextureCount); ++index)
+    {
+        const MaterialTexture& bound = description.textures[index];
+        const GpuTexture* const texture = m_textures.find(bound.texture);
+        const bool bindable = texture != nullptr && texture->bindable;
+        textures[index] = bindable                                    ? texture->texture
+                          : bound.fallback == TextureFallback::Normal ? m_flatNormal
+                          : bound.fallback == TextureFallback::Black  ? m_black
+                                                                      : m_white;
+        if (bindable && texture->nearest)
+        {
+            samplers[index] = m_nearestSampler;
+        }
+        if (bound.slot < slots.size())
+        {
+            slots[bound.slot].x = std::bit_cast<float>(index);
+        }
+    }
+    if (!material.slots)
+    {
+        wgpu::BufferDescriptor descriptor;
+        descriptor.label = "Shader material";
+        descriptor.size = sizeof(slots);
+        descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+        material.slots = m_device.CreateBuffer(&descriptor);
+    }
+    m_queue.WriteBuffer(material.slots, 0, slots.data(), sizeof(slots));
+    std::array<wgpu::BindGroupEntry, 1 + 2 * customTextureCount> entries{};
+    entries[0] = bufferBinding(0, material.slots, sizeof(slots));
+    for (std::uint32_t texture = 0; texture < customTextureCount; ++texture)
+    {
+        entries[1 + texture] = viewBinding(1 + texture, textures[texture].CreateView());
+        entries[1 + customTextureCount + texture] = samplerBinding(1 + customTextureCount + texture, samplers[texture]);
+    }
+    material.customGroup = bindGroup(m_device, m_customMaterialLayout, entries);
+    material.customEpoch = m_textureEpoch;
+    return material.customGroup;
+}
+
+const wgpu::RenderPipeline& WebGpuRenderer::customMeshPipeline(GpuShader& shader, bool skinned)
+{
+    wgpu::RenderPipeline& pipeline = shader.meshes[skinned ? 1 : 0];
+    if (pipeline)
+    {
+        return pipeline;
+    }
+    const std::array<wgpu::VertexBufferLayout, 2> buffers = meshVertexBuffers();
+    // A blended surface leaves its colour premultiplied, and an additive one an alpha of zero.
+    wgpu::BlendState blend;
+    blend.color = {.operation = wgpu::BlendOperation::Add, .srcFactor = wgpu::BlendFactor::One, .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha};
+    blend.alpha = blend.color;
+    wgpu::ColorTargetState target;
+    target.format = sceneFormat;
+    target.blend = shader.transparent ? &blend : nullptr;
+    wgpu::FragmentState fragmentState;
+    fragmentState.module = shader.module;
+    fragmentState.entryPoint = "sceneFragment";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &target;
+    wgpu::DepthStencilState depth;
+    depth.format = depthFormat;
+    depth.depthWriteEnabled = !shader.transparent;
+    depth.depthCompare = wgpu::CompareFunction::Greater;
+    const std::array groups{m_sceneLayout, m_customMaterialLayout, m_meshDrawLayout};
+    wgpu::RenderPipelineDescriptor descriptor;
+    descriptor.label = "Shader of the project";
+    descriptor.layout = pipelineLayout(m_device, groups);
+    descriptor.vertex.module = shader.module;
+    descriptor.vertex.entryPoint = skinned ? "skinnedVertex" : "meshVertex";
+    descriptor.vertex.bufferCount = skinned ? 2 : 1;
+    descriptor.vertex.buffers = buffers.data();
+    descriptor.primitive.frontFace = wgpu::FrontFace::CCW;
+    descriptor.primitive.cullMode = shader.cull == asset::ShaderCull::Front    ? wgpu::CullMode::Front
+                                    : shader.cull == asset::ShaderCull::Back ? wgpu::CullMode::Back
+                                                                             : wgpu::CullMode::None;
+    descriptor.depthStencil = &depth;
+    descriptor.fragment = &fragmentState;
+    pipeline = m_device.CreateRenderPipeline(&descriptor);
+    return pipeline;
+}
+
+const wgpu::RenderPipeline& WebGpuRenderer::customShadowPipeline(GpuShader& shader, bool skinned, bool atlas)
+{
+    wgpu::RenderPipeline& pipeline = shader.shadows[(skinned ? 1 : 0) + (atlas ? 2 : 0)];
+    if (pipeline)
+    {
+        return pipeline;
+    }
+    const std::array<wgpu::VertexBufferLayout, 2> buffers = meshVertexBuffers();
+    wgpu::FragmentState fragmentState;
+    fragmentState.module = shader.module;
+    fragmentState.entryPoint = "shadowFragment";
+    wgpu::DepthStencilState depth;
+    depth.format = depthFormat;
+    depth.depthWriteEnabled = true;
+    depth.depthCompare = wgpu::CompareFunction::LessEqual;
+    depth.depthBiasSlopeScale = atlas ? 2.0f : 1.5f;
+    const std::array groups{m_customShadowLayout, m_customMaterialLayout, m_meshDrawLayout};
+    wgpu::RenderPipelineDescriptor descriptor;
+    descriptor.label = "Shadow of a shader of the project";
+    descriptor.layout = pipelineLayout(m_device, groups);
+    descriptor.vertex.module = shader.module;
+    descriptor.vertex.entryPoint = skinned ? "skinnedShadowVertex" : "shadowVertex";
+    descriptor.vertex.bufferCount = skinned ? 2 : 1;
+    descriptor.vertex.buffers = buffers.data();
+    descriptor.primitive.cullMode = wgpu::CullMode::None;
+    descriptor.primitive.unclippedDepth = m_unclippedDepth;
+    descriptor.depthStencil = &depth;
+    descriptor.fragment = &fragmentState;
+    pipeline = m_device.CreateRenderPipeline(&descriptor);
+    return pipeline;
+}
+
 void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frustum)
 {
     // The environment follows the sky texture of the world.
@@ -811,6 +996,9 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
     }
     prepareDecals();
     scene.decalCount = m_decalCount;
+    scene.viewportWidth = static_cast<float>(m_sceneSize.width);
+    scene.viewportHeight = static_cast<float>(m_sceneSize.height);
+    scene.time = m_time;
     m_queue.WriteBuffer(m_sceneBuffer, 0, &scene, sizeof(scene));
 
     // The instances the camera sees, by batches of one mesh, submesh, material and way to be drawn; blended ones alone,
@@ -840,8 +1028,16 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
         MaterialHandle material = m_materials.contains(instance.material) ? instance.material : m_defaultMaterial;
         const MaterialDesc& description = m_materials.find(material)->description;
         std::uint32_t pipeline = skinned ? skinnedBit : 0;
-        pipeline |= description.doubleSided ? bothSidesBit : 0;
-        pipeline |= description.alphaMode == asset::AlphaMode::Blend ? blendedBit : 0;
+        // A shader of the project chooses its sides and its blending.
+        if (const GpuShader* const shader = spatialShaderOf(description))
+        {
+            pipeline |= customBit | (shader->transparent ? blendedBit : 0);
+        }
+        else
+        {
+            pipeline |= description.doubleSided ? bothSidesBit : 0;
+            pipeline |= description.alphaMode == asset::AlphaMode::Blend ? blendedBit : 0;
+        }
         visible.push_back({&instance, mesh, material, pipeline, sortDistance(math::Vec3(instance.transform[3]), matrices.cameraPosition)});
     }
     std::ranges::stable_sort(visible, [](const Visible& left, const Visible& right) {
@@ -878,7 +1074,8 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
         ++m_meshBatches.back().instanceCount;
         instances.push_back({.world = entry.instance->transform,
                              .firstBone = entry.instance->firstBone,
-                             .boneCount = entry.instance->boneCount});
+                             .boneCount = entry.instance->boneCount,
+                             .instanceParameters = instanceParametersOf(m_world, entry.instance->instanceParameters)});
     }
 
     // The casters of each view of the shadows, by batches as the camera's, after them: opaque and cut-out surfaces cast
@@ -928,7 +1125,9 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
                 continue;
             }
             const MaterialHandle material = m_materials.contains(instance.material) ? instance.material : m_defaultMaterial;
-            if (m_materials.find(material)->description.alphaMode == asset::AlphaMode::Blend)
+            const MaterialDesc& description = m_materials.find(material)->description;
+            const GpuShader* const shader = spatialShaderOf(description);
+            if (shader != nullptr ? shader->transparent || !shader->castsShadows : description.alphaMode == asset::AlphaMode::Blend)
             {
                 continue;
             }
@@ -937,7 +1136,8 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
             {
                 continue;
             }
-            casters.push_back({&instance, mesh, material, (skinned ? skinnedBit : 0U) | (view.atlas ? atlasBit : 0U)});
+            casters.push_back({&instance, mesh, material,
+                               (skinned ? skinnedBit : 0U) | (view.atlas ? atlasBit : 0U) | (shader != nullptr ? customBit : 0U)});
         }
         std::ranges::sort(casters, [](const Caster& left, const Caster& right) {
             return std::tuple(left.pipeline, left.material.index, left.mesh, left.instance->submesh) <
@@ -963,7 +1163,8 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
             ++m_shadowBatches.back().instanceCount;
             instances.push_back({.world = caster.instance->transform,
                                  .firstBone = caster.instance->firstBone,
-                                 .boneCount = caster.instance->boneCount});
+                                 .boneCount = caster.instance->boneCount,
+                                 .instanceParameters = instanceParametersOf(m_world, caster.instance->instanceParameters)});
         }
         pass.batchCount = static_cast<std::uint32_t>(m_shadowBatches.size()) - pass.firstBatch;
         m_shadowPasses.push_back(pass);
@@ -975,6 +1176,15 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
     growBuffer(m_lightBuffer, m_lightCapacity, lightBytes, wgpu::BufferUsage::Storage, "Lights");
     growBuffer(m_instanceBuffer, m_instanceCapacity, instanceBytes, wgpu::BufferUsage::Storage, "Instances");
     growBuffer(m_boneBuffer, m_boneCapacity, boneBytes, wgpu::BufferUsage::Storage, "Bones");
+    // The values objects give the instance uniforms of their shaders.
+    const std::uint64_t instanceParameterBytes = std::max<std::size_t>(m_world.instanceParameters.size(), 1) * sizeof(math::Vec4);
+    growBuffer(m_instanceParameterBuffer, m_instanceParameterCapacity, instanceParameterBytes, wgpu::BufferUsage::Storage,
+               "Instance parameters");
+    if (!m_world.instanceParameters.empty())
+    {
+        m_queue.WriteBuffer(m_instanceParameterBuffer, 0, m_world.instanceParameters.data(),
+                            m_world.instanceParameters.size() * sizeof(math::Vec4));
+    }
     const std::size_t drawCount = m_meshBatches.size() + m_shadowBatches.size();
     growBuffer(m_meshDrawBuffer, m_meshDrawCapacity, std::max<std::size_t>(drawCount, 1) * uniformStride,
                wgpu::BufferUsage::Uniform, "Mesh draws");
@@ -1012,7 +1222,9 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
     for (std::size_t batch = 0; batch < drawCount; ++batch)
     {
         const DrawData data{.first = batch < m_meshBatches.size() ? m_meshBatches[batch].firstInstance
-                                                                  : m_shadowBatches[batch - m_meshBatches.size()].firstInstance};
+                                                                  : m_shadowBatches[batch - m_meshBatches.size()].firstInstance,
+                            .time = m_time,
+                            .cameraPosition = matrices.cameraPosition};
         std::memcpy(draws.data() + batch * uniformStride, &data, sizeof(data));
     }
     if (!draws.empty())
@@ -1042,11 +1254,16 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
                                   bufferBinding(14, m_decalBuffer, m_decalCapacity),
                                   viewBinding(15, m_decalColors.view ? m_decalColors.view : m_white.CreateView()),
                                   viewBinding(16, m_decalData.view ? m_decalData.view : m_white.CreateView()),
-                                  samplerBinding(17, m_clampSampler)};
+                                  samplerBinding(17, m_clampSampler),
+                                  bufferBinding(18, m_instanceParameterBuffer, m_instanceParameterCapacity)};
     m_sceneGroup = bindGroup(m_device, m_sceneLayout, sceneEntries);
     const std::array shadowEntries{bufferBinding(0, m_instanceBuffer, instanceBytes), bufferBinding(1, m_boneBuffer, boneBytes),
                                    bufferBinding(2, m_shadowMatrixBuffer, sizeof(math::Mat4))};
     m_shadowGroup = bindGroup(m_device, m_shadowLayout, shadowEntries);
+    const std::array customShadowEntries{bufferBinding(2, m_instanceBuffer, instanceBytes), bufferBinding(3, m_boneBuffer, boneBytes),
+                                         bufferBinding(18, m_instanceParameterBuffer, m_instanceParameterCapacity),
+                                         bufferBinding(19, m_shadowMatrixBuffer, sizeof(math::Mat4))};
+    m_customShadowGroup = bindGroup(m_device, m_customShadowLayout, customShadowEntries);
     const std::array drawEntries{bufferBinding(0, m_meshDrawBuffer, sizeof(DrawData))};
     m_meshDrawGroup = bindGroup(m_device, m_meshDrawLayout, drawEntries);
 
@@ -1073,13 +1290,24 @@ void WebGpuRenderer::drawShadows(const wgpu::CommandEncoder& encoder)
             {
                 continue;
             }
-            if (drawn.pipeline != bound)
+            GpuShader* const shader = (drawn.pipeline & customBit) != 0 ? spatialShaderOf(material->description) : nullptr;
+            if (shader != nullptr)
             {
-                pass.SetPipeline(m_shadowPipelines[drawn.pipeline]);
-                pass.SetBindGroup(0, m_shadowGroup, 1, &view);
-                bound = drawn.pipeline;
+                pass.SetPipeline(customShadowPipeline(*shader, (drawn.pipeline & skinnedBit) != 0, shadow.atlas));
+                pass.SetBindGroup(0, m_customShadowGroup, 1, &view);
+                bound = 0xFFFFFFFFU;
+                pass.SetBindGroup(1, customMaterialGroup(*material));
             }
-            pass.SetBindGroup(1, materialGroup(*material));
+            else
+            {
+                if (drawn.pipeline != bound)
+                {
+                    pass.SetPipeline(m_shadowPipelines[drawn.pipeline & ~customBit]);
+                    pass.SetBindGroup(0, m_shadowGroup, 1, &view);
+                    bound = drawn.pipeline;
+                }
+                pass.SetBindGroup(1, materialGroup(*material));
+            }
             const auto offset = static_cast<std::uint32_t>(std::uint64_t{m_meshBatches.size() + batch} * uniformStride);
             pass.SetBindGroup(2, m_meshDrawGroup, 1, &offset);
             pass.SetVertexBuffer(0, drawn.mesh->vertices);
@@ -1142,13 +1370,25 @@ void WebGpuRenderer::drawMeshBatch(const wgpu::RenderPassEncoder& pass, std::uin
     {
         return;
     }
-    if (drawn.pipeline != bound)
+    GpuShader* const shader = (drawn.pipeline & customBit) != 0 ? spatialShaderOf(material->description) : nullptr;
+    if (shader != nullptr)
     {
-        pass.SetPipeline(m_meshPipelines[drawn.pipeline]);
+        // Each shader of the project has pipelines of its own.
+        pass.SetPipeline(customMeshPipeline(*shader, (drawn.pipeline & skinnedBit) != 0));
         pass.SetBindGroup(0, m_sceneGroup);
-        bound = drawn.pipeline;
+        bound = 0xFFFFFFFFU;
+        pass.SetBindGroup(1, customMaterialGroup(*material));
     }
-    pass.SetBindGroup(1, materialGroup(*material));
+    else
+    {
+        if (drawn.pipeline != bound)
+        {
+            pass.SetPipeline(m_meshPipelines[drawn.pipeline & ~customBit]);
+            pass.SetBindGroup(0, m_sceneGroup);
+            bound = drawn.pipeline;
+        }
+        pass.SetBindGroup(1, materialGroup(*material));
+    }
     const auto offset = static_cast<std::uint32_t>(std::uint64_t{batch} * uniformStride);
     pass.SetBindGroup(2, m_meshDrawGroup, 1, &offset);
     pass.SetVertexBuffer(0, drawn.mesh->vertices);

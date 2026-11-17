@@ -1321,6 +1321,7 @@ std::vector<std::byte> encodeShader(const ShaderData& shader)
         writer.write(static_cast<std::uint8_t>(diagnostic.error ? 1 : 0));
         writer.write(diagnostic.node);
     }
+    writer.writeString(shader.wgsl);
     return writer.take();
 }
 
@@ -1363,6 +1364,11 @@ core::Result<ShaderData> decodeShader(std::span<const std::byte> bytes)
         diagnostic.message = reader.readString();
         diagnostic.error = reader.read<std::uint8_t>() != 0;
         diagnostic.node = reader.read<std::uint32_t>();
+    }
+    // Shaders imported before the web had none.
+    if (!reader.failed() && reader.remaining() > 0)
+    {
+        shader.wgsl = reader.readString();
     }
     if (reader.failed() || !valid)
     {

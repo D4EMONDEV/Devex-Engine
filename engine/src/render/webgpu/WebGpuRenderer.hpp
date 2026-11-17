@@ -1,14 +1,16 @@
 #pragma once
 
 // The renderer of WebGPU, with Dawn: in a browser, and on a computer built with DEVEX_WEBGPU, where the tests compare
-// its images with Vulkan's. It draws what the Compatibility method shows, step by step: sprites, tilemaps, text and the
-// interface (web step 2), then meshes lit by the sun, the local lights and the environment, skinned or not (step
-// 3a), over the sky, exposed and tonemapped as Vulkan does. Shadows, particles, fog and the shaders of projects come
-// with the next steps: until then they are kept and not drawn.
+// its images with Vulkan's. It draws what the Compatibility method shows, as Vulkan does and from code shared with it
+// where it can: sprites, tilemaps, text and the interface, the 2D lights; meshes, skinned or not, lit by the sun, the
+// local lights and the environment, with their shadows, decals, terrains and grass, particles and trails, over the
+// sky and in the fog; then bloom, temporal antialiasing, the effects of the lens and the colour table. Spatial shaders
+// of projects draw from the WGSL their import compiles. The air of the atmosphere comes after the 1.0.
 #include "../FramePreparation.hpp"
 #include "../GpuTypes.hpp"
 #include "../RenderBackend.hpp"
 
+#include <devex/asset/ShaderData.hpp>
 #include <devex/core/SlotMap.hpp>
 #include <devex/render/Culling.hpp>
 
@@ -105,6 +107,23 @@ private:
         // Its uniforms and textures; made again when a texture it reads goes.
         wgpu::BindGroup group;
         std::uint64_t textureEpoch = 0;
+        // The same for a shader of the project: the slots of its uniforms, and its textures.
+        wgpu::Buffer slots;
+        wgpu::BindGroup customGroup;
+        std::uint64_t customEpoch = 0;
+    };
+    // A shader of the project: what WebGPU draws with it, its module of WGSL, and its pipelines, made when first drawn:
+    // rigid and skinned meshes, and their shadows into the cascades and into the atlas.
+    struct GpuShader
+    {
+        asset::ShaderKind kind = asset::ShaderKind::Spatial;
+        asset::ShaderCull cull = asset::ShaderCull::Back;
+        asset::ShaderBlend blend = asset::ShaderBlend::Mix;
+        bool transparent = false;
+        bool castsShadows = true;
+        wgpu::ShaderModule module;
+        std::array<wgpu::RenderPipeline, 2> meshes;
+        std::array<wgpu::RenderPipeline, 4> shadows;
     };
     // The meshes of the frame that share a mesh, a submesh, a material and a way to be drawn, at once; a blended one
     // alone, in its order from the farthest.
@@ -218,6 +237,13 @@ private:
     // The 3D, in WebGpuScene.cpp.
     [[nodiscard]] core::Result<void> createScenePipelines();
     [[nodiscard]] wgpu::BindGroup materialGroup(GpuMaterial& material);
+    // The shaders of the project, in WebGpuScene.cpp: the spatial one a material draws with, if WebGPU can; its group,
+    // its pipelines.
+    [[nodiscard]] GpuShader* spatialShaderOf(const MaterialDesc& material);
+    [[nodiscard]] wgpu::BindGroup customMaterialGroup(GpuMaterial& material);
+    [[nodiscard]] const wgpu::RenderPipeline& customMeshPipeline(GpuShader& shader, bool skinned);
+    [[nodiscard]] const wgpu::RenderPipeline& customShadowPipeline(GpuShader& shader, bool skinned, bool atlas);
+    [[nodiscard]] GpuShader gpuShaderOf(const asset::ShaderData& shader) const;
     [[nodiscard]] wgpu::Texture whiteCube() const;
     void bakeBrdfTable();
     void bakeEnvironment(TextureHandle sky);
@@ -376,6 +402,11 @@ private:
     wgpu::Buffer m_decalBuffer;
     std::uint64_t m_decalCapacity = 0;
     std::uint32_t m_decalCount = 0;
+    wgpu::BindGroupLayout m_customMaterialLayout;
+    wgpu::BindGroupLayout m_customShadowLayout;
+    wgpu::BindGroup m_customShadowGroup;
+    wgpu::Buffer m_instanceParameterBuffer;
+    std::uint64_t m_instanceParameterCapacity = 0;
     std::vector<TerrainLayers> m_terrainLayers;
     std::vector<TerrainDrawing> m_terrainDrawings;
     wgpu::BindGroupLayout m_terrainLayout;
@@ -496,7 +527,7 @@ private:
     std::array<wgpu::RenderPipeline, 8> m_lensPipelines;
     wgpu::Buffer m_lensBuffer;
     wgpu::Texture m_black;
-    core::SlotMap<Empty, ShaderTag> m_shaders;
+    core::SlotMap<GpuShader, ShaderTag> m_shaders;
     core::SlotMap<Empty, ReflectionProbeTag> m_probes;
     core::SlotMap<Empty, IrradianceVolumeTag> m_volumes;
 

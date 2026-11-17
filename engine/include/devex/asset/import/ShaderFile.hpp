@@ -80,7 +80,8 @@ struct DEVEX_API ShaderSource
 // - particles: particleVertex and particleFragment;
 // - sky: skyVertex, skyFragment, and bakeFragment, which lays the whole sky out as an
 //   equirectangular image for the light of the environment.
-[[nodiscard]] DEVEX_API std::string generateShaderCode(const ShaderSource& source, std::string_view sourceName);
+// For WebGPU, empty for a kind it does not draw from a shader yet.
+[[nodiscard]] DEVEX_API std::string generateShaderCode(const ShaderSource& source, std::string_view sourceName, bool web = false);
 
 // Where slangc is, and the Slang modules the generated code imports. The editor ships them in the
 // folder "slang" beside its executable, and the modules in "shaders/modules".
@@ -88,6 +89,8 @@ struct DEVEX_API ShaderCompiler
 {
     std::filesystem::path slangc;
     std::filesystem::path modules;
+    // Also compiles WGSL for WebGPU, for a project that draws with Compatibility.
+    bool web = false;
 };
 
 // The compiler beside the executable.

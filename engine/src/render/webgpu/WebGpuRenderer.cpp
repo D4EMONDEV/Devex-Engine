@@ -990,6 +990,7 @@ void WebGpuRenderer::updateMaterial(MaterialHandle handle, const MaterialDesc& m
         stored->description = material;
         // Its group is made again when it is drawn.
         stored->textureEpoch = 0;
+        stored->customEpoch = 0;
     }
 }
 
@@ -998,20 +999,42 @@ void WebGpuRenderer::destroyMaterial(MaterialHandle material)
     static_cast<void>(m_materials.remove(material));
 }
 
+// What WebGPU keeps of a shader of the project: its WGSL, when the project draws with Compatibility; without it, its
+// materials draw as the standard one.
+WebGpuRenderer::GpuShader WebGpuRenderer::gpuShaderOf(const asset::ShaderData& shader) const
+{
+    GpuShader gpu{.kind = shader.kind,
+                  .cull = shader.cull,
+                  .blend = shader.blend,
+                  .transparent = shader.transparent,
+                  .castsShadows = shader.castsShadows};
+    if (!shader.wgsl.empty())
+    {
+        wgpu::ShaderSourceWGSL wgsl;
+        wgsl.code = wgpu::StringView(shader.wgsl.data(), shader.wgsl.size());
+        wgpu::ShaderModuleDescriptor descriptor;
+        descriptor.nextInChain = &wgsl;
+        descriptor.label = "Shader of the project";
+        gpu.module = m_device.CreateShaderModule(&descriptor);
+    }
+    return gpu;
+}
+
 core::Result<ShaderHandle> WebGpuRenderer::createShader(const asset::ShaderData& shader)
 {
-    // The shaders of projects draw from web step 3: until then their materials draw as the standard ones.
-    static_cast<void>(shader);
-    return m_shaders.insert({});
+    return m_shaders.insert(gpuShaderOf(shader));
 }
 
 core::Result<void> WebGpuRenderer::updateShader(ShaderHandle handle, const asset::ShaderData& shader)
 {
-    static_cast<void>(shader);
-    if (!m_shaders.contains(handle))
+    GpuShader* const stored = m_shaders.find(handle);
+    if (stored == nullptr)
     {
         return core::makeError(core::ErrorCode::NotFound, "no such shader");
     }
+    *stored = gpuShaderOf(shader);
+    // The materials that draw with it bind it again.
+    ++m_textureEpoch;
     return {};
 }
 

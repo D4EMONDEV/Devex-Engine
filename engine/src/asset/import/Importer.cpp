@@ -433,7 +433,9 @@ core::Result<ImportResult> importShaderFile(ImportContext& context)
     }
     // A shader that does not compile still imports, with its errors and without code: its
     // materials keep their values and draw as the default material until it is fixed.
-    const ShaderData shader = compileShader(*text, context.source, shaderCompiler(), context.cancelled);
+    ShaderCompiler compiler = shaderCompiler();
+    compiler.web = context.compatibility;
+    const ShaderData shader = compileShader(*text, context.source, compiler, context.cancelled);
     if (context.isCancelled())
     {
         return core::makeError(core::ErrorCode::InvalidState, "the import was cancelled");
@@ -456,7 +458,9 @@ core::Result<ImportResult> importShaderGraphFile(ImportContext& context)
         return std::unexpected(graph.error());
     }
     // As a shader written by hand: a graph that does not compile still imports, with its errors.
-    const ShaderData shader = compileShaderGraph(*graph, context.source, shaderCompiler(), context.cancelled);
+    ShaderCompiler compiler = shaderCompiler();
+    compiler.web = context.compatibility;
+    const ShaderData shader = compileShaderGraph(*graph, context.source, compiler, context.cancelled);
     if (context.isCancelled())
     {
         return core::makeError(core::ErrorCode::InvalidState, "the import was cancelled");
@@ -908,20 +912,22 @@ std::span<const Importer> importers()
         Importer{
             .name = "shader",
             // Increased whenever the generated code or the Slang modules it imports change. 2: the
-            // reflection probes. 3: the atmosphere and the fog. 4: raster-depth reconstruction.
-            .version = 4,
+            // reflection probes. 3: the atmosphere and the fog. 4: raster-depth reconstruction. 5: WGSL.
+            .version = 5,
             .mainType = AssetType::Shader,
             .extensions = {shaderExtension},
             .run = &importShaderFile,
+            .readsRenderingMethod = true,
         },
         Importer{
             .name = "shader_graph",
             // Increased whenever the code of the nodes or the Slang modules change. 2: the
-            // reflection probes. 3: the atmosphere and the fog. 4: raster-depth reconstruction.
-            .version = 4,
+            // reflection probes. 3: the atmosphere and the fog. 4: raster-depth reconstruction. 5: WGSL.
+            .version = 5,
             .mainType = AssetType::Shader,
             .extensions = {shaderGraphExtension},
             .run = &importShaderGraphFile,
+            .readsRenderingMethod = true,
         },
         Importer{
             .name = "scene",

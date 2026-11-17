@@ -3,6 +3,7 @@
 #include "render/webgpu/BlockDecoding.hpp"
 
 #include <devex/asset/Primitives.hpp>
+#include <devex/asset/import/ShaderFile.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/platform/Platform.hpp>
@@ -462,6 +463,99 @@ private:
     return std::move(captured.front());
 }
 
+// A shader of the project, compiled for Vulkan and for WebGPU.
+[[nodiscard]] devex::asset::ShaderData compiledForTheWeb(std::string_view text, std::string_view name)
+{
+    devex::asset::ShaderCompiler compiler = devex::asset::defaultShaderCompiler();
+    compiler.web = true;
+    devex::asset::ShaderData shader = devex::asset::compileShader(text, std::string(name), compiler);
+    for (const devex::asset::ShaderDiagnostic& diagnostic : shader.diagnostics)
+    {
+        UNSCOPED_INFO(diagnostic.message);
+    }
+    REQUIRE(shader.compiled());
+    REQUIRE_FALSE(shader.wgsl.empty());
+    return shader;
+}
+
+// The window of meshes drawn by shaders of the project, by one API: a lit one reading a texture and a uniform with its
+// own light(), one bent by vertex() and unshaded, and a cut-out that casts its shadow on the ground.
+[[nodiscard]] devex::render::CapturedImage drawShaded(devex::render::RenderApi api, const std::array<devex::asset::ShaderData, 3>& shaders)
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform.has_value());
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window.has_value());
+    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true, .meshLodError = 0.0f, .api = api});
+    if (!renderer)
+    {
+        FAIL(std::format("{}", renderer.error()));
+    }
+    devex::asset::TextureData checker{.format = devex::asset::TextureFormat::Rgba8Srgb, .filter = devex::asset::TextureFilter::Nearest};
+    checker.mips.push_back({.width = 2,
+                            .height = 2,
+                            .bytes = {std::byte{230}, std::byte{230}, std::byte{230}, std::byte{255}, std::byte{40}, std::byte{90},
+                                      std::byte{200}, std::byte{255}, std::byte{40}, std::byte{90}, std::byte{200}, std::byte{255},
+                                      std::byte{230}, std::byte{230}, std::byte{230}, std::byte{255}}});
+    const auto texture = renderer->createTexture(checker);
+    REQUIRE(texture.has_value());
+    std::array<devex::render::ShaderHandle, 3> handles;
+    for (std::size_t index = 0; index < shaders.size(); ++index)
+    {
+        const auto created = renderer->createShader(shaders[index]);
+        REQUIRE(created.has_value());
+        handles[index] = *created;
+    }
+    const devex::render::MaterialHandle lit = renderer->createMaterial(
+        {.shader = handles[0], .parameters = {{1.0f, 0.6f, 0.3f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}}, .textures = {{.slot = 1, .texture = *texture}}});
+    const devex::render::MaterialHandle bent = renderer->createMaterial({.shader = handles[1], .parameters = {{0.2f, 0.8f, 0.4f, 0.0f}}});
+    const devex::render::MaterialHandle cutout =
+        renderer->createMaterial({.shader = handles[2], .parameters = {{0.0f, 0.0f, 0.0f, 0.0f}}, .textures = {{.slot = 0, .texture = *texture}}});
+    const devex::render::MaterialHandle ground = renderer->createMaterial({.baseColorFactor = {0.4f, 0.45f, 0.4f, 1.0f}});
+    const auto sphere = renderer->createMesh(devex::asset::makeUvSphere(0.6f));
+    const auto cube = renderer->createMesh(devex::asset::makeCube());
+    const auto plane = renderer->createMesh(devex::asset::makePlane(8.0f));
+    REQUIRE((sphere && cube && plane));
+
+    std::vector<devex::render::CapturedImage> captured;
+    for (int frame = 0; frame < 12 && captured.empty(); ++frame)
+    {
+        devex::render::RenderWorld& world = renderer->beginFrame();
+        world.camera.view = devex::math::lookAt(devex::math::Vec3{0.0f, 2.0f, 5.0f}, devex::math::Vec3{0.0f, 0.4f, 0.0f},
+                                                devex::math::Vec3{0.0f, 1.0f, 0.0f});
+        world.camera.autoExposure = false;
+        world.camera.ev100 = 0.0f;
+        world.camera.antialiasing = devex::render::Antialiasing::None;
+        world.camera.bloom = 0.0f;
+        world.camera.ambientOcclusion = 0.0f;
+        world.camera.screenReflections = 0.0f;
+        world.environment.color = {0.8f, 0.9f, 1.0f};
+        world.environment.intensity = 0.8f;
+        world.sun.direction = {-0.4f, -1.0f, -0.5f};
+        world.sun.illuminance = {2.5f, 2.4f, 2.2f};
+        world.sun.castShadows = true;
+        world.meshes.push_back({.mesh = *plane, .material = ground});
+        world.meshes.push_back({.mesh = *cube, .material = lit, .transform = at(-1.3f, 0.5f, 0.0f)});
+        world.meshes.push_back({.mesh = *sphere, .material = bent, .transform = at(0.0f, 0.7f, -0.4f)});
+        world.meshes.push_back({.mesh = *cube, .material = cutout, .transform = at(1.3f, 0.8f, 0.3f)});
+        if (frame == 4)
+        {
+            static_cast<void>(renderer->requestWindowCapture());
+        }
+        const devex::core::Result<void> presented = renderer->endFrame();
+        if (!presented)
+        {
+            FAIL(std::format("frame {}: {}", frame, presented.error()));
+        }
+        for (devex::render::CapturedImage& image : renderer->takeCaptures())
+        {
+            captured.push_back(std::move(image));
+        }
+    }
+    REQUIRE(captured.size() == 1);
+    return std::move(captured.front());
+}
+
 // The window of a 2D scene under 2D lights drawn by one API: a point light and a directional one, which cast shadows
 // from occluders, over a dark canvas, on a floor and on a sprite with a normal map.
 [[nodiscard]] devex::render::CapturedImage drawLights2D(devex::render::RenderApi api)
@@ -647,6 +741,42 @@ TEST_CASE("WebGPU draws terrains, their layers, their shadows and their grass as
     const ErrorCapture capture;
     const devex::render::CapturedImage vulkan = drawTerrain(devex::render::RenderApi::Vulkan);
     const devex::render::CapturedImage webgpu = drawTerrain(devex::render::RenderApi::WebGpu);
+    REQUIRE(webgpu.rgba.size() == vulkan.rgba.size());
+    const Difference difference = compare(vulkan, webgpu, 8);
+    INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));
+    CHECK(difference.channels < vulkan.rgba.size() / 100);
+    CHECK(difference.mean < 1.5);
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("WebGPU draws meshes with the spatial shaders of a project as Vulkan does", "[render][gpu][webgpu][shader]")
+{
+    const std::array shaders{compiledForTheWeb(R"(shader_type spatial;
+uniform float3 tint : source_color = float3(1.0, 0.6, 0.3);
+uniform sampler2D pattern;
+void fragment() { ALBEDO = tint * texture(pattern, UV).rgb; ROUGHNESS = 0.4; METALLIC = 0.2; }
+void light() { DIFFUSE_LIGHT += saturate(dot(NORMAL, LIGHT)) * ATTENUATION * LIGHT_COLOR / PI; }
+)",
+                                                   "lit.dvxshader"),
+                             compiledForTheWeb(R"(shader_type spatial;
+render_mode unshaded;
+uniform float3 color : source_color = float3(0.2, 0.8, 0.4);
+void vertex() { VERTEX += NORMAL * 0.1 * sin(VERTEX.y * 8.0); }
+void fragment() { ALBEDO = color * (0.5 + 0.5 * NORMAL.y); }
+)",
+                                               "bent.dvxshader"),
+                             compiledForTheWeb(R"(shader_type spatial;
+uniform sampler2D mask : hint_default_white;
+void fragment() { ALBEDO = float3(0.8, 0.8, 0.85); ALPHA = texture(mask, UV).r; ALPHA_SCISSOR_THRESHOLD = 0.5; }
+)",
+                                               "cutout.dvxshader")};
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawShaded(devex::render::RenderApi::Vulkan, shaders);
+    const devex::render::CapturedImage webgpu = drawShaded(devex::render::RenderApi::WebGpu, shaders);
     REQUIRE(webgpu.rgba.size() == vulkan.rgba.size());
     const Difference difference = compare(vulkan, webgpu, 8);
     INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));
