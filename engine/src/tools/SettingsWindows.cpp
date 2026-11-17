@@ -1360,6 +1360,13 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     const FormRow backRow = formRow(application, "Android Quit On Back");
     quitOnBack = toggle(backRow.editor);
     tooltip(backRow.row, "On Android, the Back button quits the game, unless an input action uses the Back key");
+    const FormRow mouseRow = formRow(application, "Emulate Mouse From Touch");
+    mouseFromTouch = toggle(mouseRow.editor);
+    tooltip(mouseRow.row, "The first finger on a touch screen is also the left button of the mouse, for games and interfaces "
+                          "made for the mouse");
+    const FormRow touchRow = formRow(application, "Emulate Touch From Mouse");
+    touchFromMouse = toggle(touchRow.editor);
+    tooltip(touchRow.row, "The mouse is also a finger, to try a game made for touch, and its on-screen controls, on the desktop");
     Section& run = pageCard(kit, runPage, "");
     const FormRow startupRow = formRow(run, "Startup Scene");
     startup = choice(startupRow.editor);
@@ -1564,6 +1571,8 @@ void ProjectSettingsUi::sync(ToolsState& state, EditorUiKit& kit)
     scene().get<scene::UiDropdown>(icon).placeholder = assetLabel(state, project.window.icon);
     setToggle(desktopEntry, project.window.desktopEntry);
     setToggle(quitOnBack, project.window.quitOnBack);
+    setToggle(mouseFromTouch, project.window.emulateMouseFromTouch);
+    setToggle(touchFromMouse, project.window.emulateTouchFromMouse);
 
     // Window and physics.
     setNumber(size[0], static_cast<float>(project.window.width));
@@ -1680,6 +1689,14 @@ void ProjectSettingsUi::answer(ToolsState& state, EditorUiKit& kit)
     if (world.wasChanged(quitOnBack))
     {
         project.window.quitOnBack = scene().get<scene::UiToggle>(quitOnBack).value;
+    }
+    if (world.wasChanged(mouseFromTouch))
+    {
+        project.window.emulateMouseFromTouch = scene().get<scene::UiToggle>(mouseFromTouch).value;
+    }
+    if (world.wasChanged(touchFromMouse))
+    {
+        project.window.emulateTouchFromMouse = scene().get<scene::UiToggle>(touchFromMouse).value;
     }
 
     // Window and physics.

@@ -200,6 +200,8 @@ struct ProjectSettingsUi : SettingsUi
     std::vector<asset::AssetId> icons;
     scene::Entity desktopEntry;
     scene::Entity quitOnBack;
+    scene::Entity mouseFromTouch;
+    scene::Entity touchFromMouse;
     // Window.
     std::vector<scene::Entity> size;
     scene::Entity windowMode;

@@ -322,6 +322,27 @@ void recordToolsInput(const SDL_Event& event, Input& input)
     }
 }
 
+// The size of the window a finger touches, in window coordinates: SDL places fingers from 0 to 1 across it. A finger
+// without a window is on the first one.
+[[nodiscard]] math::Vec2 touchedWindowSize(SDL_WindowID id) noexcept
+{
+    SDL_Window* window = SDL_GetWindowFromID(id);
+    if (window == nullptr)
+    {
+        int count = 0;
+        SDL_Window** const windows = SDL_GetWindows(&count);
+        window = windows != nullptr && count > 0 ? windows[0] : nullptr;
+        SDL_free(static_cast<void*>(windows));
+    }
+    int width = 0;
+    int height = 0;
+    if (window != nullptr)
+    {
+        SDL_GetWindowSize(window, &width, &height);
+    }
+    return math::Vec2{static_cast<float>(width), static_cast<float>(height)};
+}
+
 // The window an event happened in, or 0 when it has none.
 [[nodiscard]] std::uint32_t eventWindow(const SDL_Event& event) noexcept
 {
@@ -345,6 +366,11 @@ void recordToolsInput(const SDL_Event& event, Input& input)
         return event.button.windowID;
     case SDL_EVENT_MOUSE_WHEEL:
         return event.wheel.windowID;
+    case SDL_EVENT_FINGER_DOWN:
+    case SDL_EVENT_FINGER_UP:
+    case SDL_EVENT_FINGER_MOTION:
+    case SDL_EVENT_FINGER_CANCELED:
+        return event.tfinger.windowID;
     case SDL_EVENT_DROP_FILE:
     case SDL_EVENT_DROP_TEXT:
     case SDL_EVENT_DROP_BEGIN:
@@ -462,6 +488,27 @@ void dispatchEvent(const SDL_Event& event, Input& input, InputCapture capture,
             input.scrollMouse(delta);
         }
         callback(MouseWheelScrolled{delta});
+        break;
+    }
+
+    case SDL_EVENT_FINGER_DOWN:
+    case SDL_EVENT_FINGER_UP:
+    case SDL_EVENT_FINGER_MOTION:
+    case SDL_EVENT_FINGER_CANCELED: {
+        const math::Vec2 size = touchedWindowSize(event.tfinger.windowID);
+        const math::Vec2 position{event.tfinger.x * size.x, event.tfinger.y * size.y};
+        if (event.type == SDL_EVENT_FINGER_DOWN)
+        {
+            input.pressTouch(event.tfinger.fingerID, position);
+        }
+        else if (event.type == SDL_EVENT_FINGER_MOTION)
+        {
+            input.moveTouch(event.tfinger.fingerID, position, math::Vec2{event.tfinger.dx * size.x, event.tfinger.dy * size.y});
+        }
+        else
+        {
+            input.releaseTouch(event.tfinger.fingerID, position);
+        }
         break;
     }
 
@@ -1217,6 +1264,12 @@ void useParentTerminal()
         printTo("CONOUT$");
     }
 #endif
+}
+
+void setTouchEmulation(bool mouseFromTouch, bool touchFromMouse)
+{
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, mouseFromTouch ? "1" : "0");
+    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, touchFromMouse ? "1" : "0");
 }
 
 void showTerminal(bool shown)

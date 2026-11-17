@@ -25,9 +25,57 @@ public enum MouseMode
     ConfinedHidden = 4,
 }
 
+/// <summary>A finger on the screen, in pixels of the window as the mouse.</summary>
+public readonly struct Touch
+{
+    /// <summary>The same while the finger stays on the screen.</summary>
+    public readonly ulong Id;
+    public readonly Vec2 Position;
+    /// <summary>How far it moved since the previous frame.</summary>
+    public readonly Vec2 Delta;
+    /// <summary>Put down this frame.</summary>
+    public readonly bool Pressed;
+    /// <summary>Lifted this frame: it is gone the next.</summary>
+    public readonly bool Released;
+
+    public Touch(ulong id, Vec2 position, Vec2 delta, bool pressed, bool released)
+    {
+        Id = id;
+        Position = position;
+        Delta = delta;
+        Pressed = pressed;
+        Released = released;
+    }
+}
+
 /// <summary>Keyboard and mouse of the current frame. "Pressed" is true only on the frame of the press.</summary>
 public static unsafe class Input
 {
+    /// <summary>
+    /// The fingers on the screen this frame, in the order they touched it, with those lifted this frame. The first one
+    /// is also the mouse while the project emulates the mouse from touch.
+    /// </summary>
+    public static Touch[] Touches
+    {
+        get
+        {
+            int count = Bootstrap.Native.TouchCount();
+            var touches = new Touch[count];
+            float* values = stackalloc float[4];
+            for (int index = 0; index < count; ++index)
+            {
+                ulong id = 0;
+                int state = 0;
+                if (Bootstrap.Native.TouchAt(index, &id, values, &state) == 0)
+                {
+                    return touches[..index];
+                }
+                touches[index] = new Touch(id, new Vec2(values[0], values[1]), new Vec2(values[2], values[3]), (state & 1) != 0, (state & 2) != 0);
+            }
+            return touches;
+        }
+    }
+
     public static bool IsKeyDown(Key key) => Bootstrap.Native.IsKeyDown((int)key) != 0;
 
     public static bool WasKeyPressed(Key key) => Bootstrap.Native.WasKeyPressed((int)key) != 0;

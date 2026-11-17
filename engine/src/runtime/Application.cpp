@@ -3953,6 +3953,7 @@ struct Session
     if (config.useProjectWindowSettings && launchSettings)
     {
         const asset::WindowSettings& settings = launchSettings->window;
+        platform::setTouchEmulation(settings.emulateMouseFromTouch, settings.emulateTouchFromMouse);
         effective.title = launchSettings->name;
         effective.width = settings.width;
         effective.height = settings.height;

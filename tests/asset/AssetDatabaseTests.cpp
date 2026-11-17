@@ -638,8 +638,10 @@ TEST_CASE("Window and export settings of projects are saved and read back", "[as
     project.window.width = 1920;
     CHECK(devex::asset::writeProjectText(project).find("desktop_entry") == std::string::npos);
     CHECK(devex::asset::writeProjectText(project).find("quit_on_back") == std::string::npos);
+    CHECK(devex::asset::writeProjectText(project).find("emulate_") == std::string::npos);
     project.window = {.width = 1920, .height = 1080, .fullscreen = true, .vsyncMode = devex::asset::VSyncMode::Disabled, .maxFrameRate = 144,
-                      .icon = AssetId::generate(), .desktopEntry = false, .quitOnBack = false};
+                      .icon = AssetId::generate(), .desktopEntry = false, .quitOnBack = false, .emulateMouseFromTouch = false,
+                      .emulateTouchFromMouse = true};
     project.exportSettings = {.scenes = {"res://assets/scenes/a.dvxscene", "res://assets/scenes/b.dvxscene"},
                               .includeFolders = {"res://assets/data"},
                               .output = "builds/game",

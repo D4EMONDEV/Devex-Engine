@@ -65,6 +65,47 @@ TEST_CASE("Key presses and releases last one frame", "[platform][input]")
     CHECK(input.wasKeyReleased(Key::W));
 }
 
+TEST_CASE("Fingers on the screen are listed in the order they touched it, and a lifted one stays for its frame", "[platform][input]")
+{
+    Input input;
+    input.beginFrame();
+    input.pressTouch(7, {10.0f, 20.0f});
+    input.pressTouch(3, {50.0f, 60.0f});
+    REQUIRE(input.touches().size() == 2);
+    CHECK(input.touches()[0].id == 7);
+    CHECK(input.touches()[0].pressed);
+    CHECK(input.touches()[1].position == devex::math::Vec2{50.0f, 60.0f});
+
+    // A frame later they are still, and held; motion adds up within the frame.
+    input.beginFrame();
+    CHECK_FALSE(input.touches()[0].pressed);
+    input.moveTouch(7, {12.0f, 20.0f}, {2.0f, 0.0f});
+    input.moveTouch(7, {15.0f, 21.0f}, {3.0f, 1.0f});
+    CHECK(input.touches()[0].position == devex::math::Vec2{15.0f, 21.0f});
+    CHECK(input.touches()[0].delta == devex::math::Vec2{5.0f, 1.0f});
+    input.moveTouch(99, {0.0f, 0.0f}, {1.0f, 1.0f});
+    CHECK(input.touches().size() == 2);
+
+    // Lifted, a finger stays released for the frame; a tap within a frame is pressed and released.
+    input.releaseTouch(7, {16.0f, 21.0f});
+    input.pressTouch(9, {1.0f, 1.0f});
+    input.releaseTouch(9, {1.0f, 1.0f});
+    REQUIRE(input.touches().size() == 3);
+    CHECK(input.touches()[0].released);
+    CHECK(input.touches()[2].pressed);
+    CHECK(input.touches()[2].released);
+    input.beginFrame();
+    REQUIRE(input.touches().size() == 1);
+    CHECK(input.touches()[0].id == 3);
+    CHECK(input.touches()[0].delta == devex::math::Vec2{0.0f});
+
+    // A window that loses the focus lifts them all.
+    input.releaseAll();
+    CHECK(input.touches()[0].released);
+    input.beginFrame();
+    CHECK(input.touches().empty());
+}
+
 TEST_CASE("A tap shorter than a frame is still reported", "[platform][input]")
 {
     Input input;

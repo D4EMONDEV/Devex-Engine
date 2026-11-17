@@ -282,6 +282,8 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
             readUnsigned(section, "max_frame_rate", window.maxFrameRate);
             readBool(section, "desktop_entry", window.desktopEntry);
             readBool(section, "quit_on_back", window.quitOnBack);
+            readBool(section, "emulate_mouse_from_touch", window.emulateMouseFromTouch);
+            readBool(section, "emulate_touch_from_mouse", window.emulateTouchFromMouse);
             const serialization::TextValue* const icon = section.findAttribute("icon");
             const serialization::TextCall* const call = icon != nullptr ? serialization::asCall(*icon, "asset") : nullptr;
             const std::string* const uuid =
@@ -904,6 +906,14 @@ std::string writeProjectText(const Project& project)
         if (!settings.quitOnBack)
         {
             window.attributes.push_back({"quit_on_back", serialization::TextValue(false)});
+        }
+        if (!settings.emulateMouseFromTouch)
+        {
+            window.attributes.push_back({"emulate_mouse_from_touch", serialization::TextValue(false)});
+        }
+        if (settings.emulateTouchFromMouse)
+        {
+            window.attributes.push_back({"emulate_touch_from_mouse", serialization::TextValue(true)});
         }
     }
 

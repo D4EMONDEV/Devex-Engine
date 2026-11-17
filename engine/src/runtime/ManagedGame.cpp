@@ -382,6 +382,8 @@ struct NativeApi
     void (*setSettingsWindowMode)(int mode);
     int (*mouseMode)();
     void (*setMouseMode)(int mode);
+    int (*touchCount)();
+    int (*touchAt)(int index, std::uint64_t* id, float* values, int* state);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -821,6 +823,28 @@ void apiSetMouseCaptured(int captured)
 int apiMouseMode()
 {
     return static_cast<int>(window() != nullptr ? window()->mouseMode() : platform::MouseMode::Visible);
+}
+
+int apiTouchCount()
+{
+    return input() != nullptr ? static_cast<int>(input()->touches().size()) : 0;
+}
+
+// A finger of the frame: its place and motion in `values`, and in `state` 1 when it was pressed, 2 lifted, 3 both.
+int apiTouchAt(int index, std::uint64_t* id, float* values, int* state)
+{
+    if (input() == nullptr || index < 0 || static_cast<std::size_t>(index) >= input()->touches().size())
+    {
+        return 0;
+    }
+    const platform::Touch& touch = input()->touches()[static_cast<std::size_t>(index)];
+    *id = touch.id;
+    values[0] = touch.position.x;
+    values[1] = touch.position.y;
+    values[2] = touch.delta.x;
+    values[3] = touch.delta.y;
+    *state = (touch.pressed ? 1 : 0) | (touch.released ? 2 : 0);
+    return 1;
 }
 
 void apiSetMouseMode(int mode)
@@ -3327,6 +3351,8 @@ int apiRaycastSolid(const math::Vec3* origin, const math::Vec3* direction, float
         .setSettingsWindowMode = &apiSetSettingsWindowMode,
         .mouseMode = &apiMouseMode,
         .setMouseMode = &apiSetMouseMode,
+        .touchCount = &apiTouchCount,
+        .touchAt = &apiTouchAt,
     };
 }
 

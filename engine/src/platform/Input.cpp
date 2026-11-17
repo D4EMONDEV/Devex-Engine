@@ -1,5 +1,7 @@
 #include <devex/platform/Input.hpp>
 
+#include <algorithm>
+
 namespace devex::platform {
 namespace {
 
@@ -155,6 +157,13 @@ void Input::beginFrame() noexcept
     m_mouseDelta = math::Vec2{0.0f};
     m_mouseWheel = math::Vec2{0.0f};
     m_typedText.clear();
+    // The fingers lifted last frame go; the others start the frame still.
+    std::erase_if(m_touches, [](const Touch& touch) { return touch.released; });
+    for (Touch& touch : m_touches)
+    {
+        touch.pressed = false;
+        touch.delta = math::Vec2{0.0f};
+    }
     for (Gamepad& gamepad : m_gamepads)
     {
         gamepad.pressed.reset();
@@ -288,6 +297,42 @@ void Input::scrollMouse(math::Vec2 delta) noexcept
     m_mouseWheel += delta;
 }
 
+std::span<const Touch> Input::touches() const noexcept
+{
+    return m_touches;
+}
+
+void Input::pressTouch(std::uint64_t id, math::Vec2 position)
+{
+    const auto held = std::ranges::find_if(m_touches, [&](const Touch& touch) { return touch.id == id && !touch.released; });
+    if (held != m_touches.end())
+    {
+        held->position = position;
+        return;
+    }
+    m_touches.push_back(Touch{.id = id, .position = position, .pressed = true});
+}
+
+void Input::moveTouch(std::uint64_t id, math::Vec2 position, math::Vec2 delta) noexcept
+{
+    const auto held = std::ranges::find_if(m_touches, [&](const Touch& touch) { return touch.id == id && !touch.released; });
+    if (held != m_touches.end())
+    {
+        held->position = position;
+        held->delta = held->delta + delta;
+    }
+}
+
+void Input::releaseTouch(std::uint64_t id, math::Vec2 position) noexcept
+{
+    const auto held = std::ranges::find_if(m_touches, [&](const Touch& touch) { return touch.id == id && !touch.released; });
+    if (held != m_touches.end())
+    {
+        held->position = position;
+        held->released = true;
+    }
+}
+
 void Input::releaseAll() noexcept
 {
     m_keysReleased |= m_keysDown;
@@ -295,6 +340,10 @@ void Input::releaseAll() noexcept
     m_lettersDown.reset();
     m_buttonsReleased |= m_buttonsDown;
     m_buttonsDown.reset();
+    for (Touch& touch : m_touches)
+    {
+        touch.released = true;
+    }
     for (Gamepad& gamepad : m_gamepads)
     {
         gamepad.released |= gamepad.down;

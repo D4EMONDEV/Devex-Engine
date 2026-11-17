@@ -8,10 +8,26 @@
 #include <array>
 #include <bitset>
 #include <cstddef>
+#include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace devex::platform {
+
+// A finger on the screen, in window coordinates as the mouse. A finger lifted stays in the list for the frame it
+// was lifted in, released; one put down and lifted within a frame is both pressed and released.
+struct DEVEX_API Touch
+{
+    // The same while the finger stays on the screen.
+    std::uint64_t id = 0;
+    math::Vec2 position{0.0f};
+    // Its motion this frame.
+    math::Vec2 delta{0.0f};
+    bool pressed = false;
+    bool released = false;
+};
 
 // Keyboard and mouse state for the current frame. "Pressed" and "released" transitions last
 // exactly one frame, so read them from onUpdate rather than onFixedUpdate.
@@ -43,6 +59,10 @@ public:
     [[nodiscard]] math::Vec2 mouseDelta() const noexcept;
     // Wheel scrolling accumulated this frame; positive y scrolls away from the user.
     [[nodiscard]] math::Vec2 mouseWheel() const noexcept;
+
+    // The fingers on the screen this frame, in the order they touched it, and those lifted this frame. The first
+    // finger is also the left button of the mouse while the project emulates the mouse from touch.
+    [[nodiscard]] std::span<const Touch> touches() const noexcept;
 
     // What was typed this frame, in UTF-8, while text input is on. Keys and characters are two
     // different things: a key is a place on the keyboard, a character is what the layout, the
@@ -76,6 +96,9 @@ public:
     void setGamepadAxis(GamepadAxis axis, std::size_t pad, float value) noexcept;
     void moveMouse(math::Vec2 position, math::Vec2 delta) noexcept;
     void scrollMouse(math::Vec2 delta) noexcept;
+    void pressTouch(std::uint64_t id, math::Vec2 position);
+    void moveTouch(std::uint64_t id, math::Vec2 position, math::Vec2 delta) noexcept;
+    void releaseTouch(std::uint64_t id, math::Vec2 position) noexcept;
     void addTypedText(std::string_view text);
     // Releases every key and button, for instance when the window loses focus.
     void releaseAll() noexcept;
@@ -94,6 +117,7 @@ private:
     math::Vec2 m_mousePosition{0.0f};
     math::Vec2 m_mouseDelta{0.0f};
     math::Vec2 m_mouseWheel{0.0f};
+    std::vector<Touch> m_touches;
     std::string m_typedText;
 
     struct DEVEX_API Gamepad

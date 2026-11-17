@@ -115,6 +115,10 @@ struct DEVEX_API WindowSettings
     bool desktopEntry = true;
     // On Android, the Back button quits the game when no input action uses it, as in Godot.
     bool quitOnBack = true;
+    // The first finger on a touch screen is also the left button of the mouse, and the mouse is a finger, for a game
+    // made for touch to be tried on the desktop; as in Godot, the first is on and the second off.
+    bool emulateMouseFromTouch = true;
+    bool emulateTouchFromMouse = false;
 
     bool operator==(const WindowSettings&) const = default;
 };

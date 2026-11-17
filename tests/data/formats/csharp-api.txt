@@ -584,6 +584,7 @@ Devex.Input: Boolean WasActionReleased(System.String)
 Devex.Input: Boolean WasKeyPressed(Devex.Key)
 Devex.Input: Boolean WasMouseButtonPressed(Devex.MouseButton)
 Devex.Input: Devex.MouseMode MouseMode
+Devex.Input: Devex.Touch[] Touches
 Devex.Input: Devex.Vec2 ActionVector(System.String)
 Devex.Input: Devex.Vec2 MouseDelta
 Devex.Input: Devex.Vec2 MousePosition
@@ -1401,6 +1402,12 @@ Devex.Time: Double Elapsed
 Devex.Time: Int64 Frame
 Devex.Time: Single Delta
 Devex.Time: Single Scale
+Devex.Touch: Boolean Pressed
+Devex.Touch: Boolean Released
+Devex.Touch: Devex.Vec2 Delta
+Devex.Touch: Devex.Vec2 Position
+Devex.Touch: UInt64 Id
+Devex.Touch: Void .ctor(UInt64, Devex.Vec2, Devex.Vec2, Boolean, Boolean)
 Devex.TrailRenderer: Boolean& Emitting
 Devex.TrailRenderer: Boolean& Lit
 Devex.TrailRenderer: Devex.AssetId& Texture
@@ -2077,6 +2084,7 @@ type Devex.Tilemap
 type Devex.TilemapCollider2D
 type Devex.Tilemaps
 type Devex.Time
+type Devex.Touch
 type Devex.TrailRenderer
 type Devex.TrailRendererBlend
 type Devex.Transform

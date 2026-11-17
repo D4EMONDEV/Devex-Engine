@@ -274,6 +274,8 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<int, void> SetSettingsWindowMode;
     public delegate* unmanaged<int> MouseMode;
     public delegate* unmanaged<int, void> SetMouseMode;
+    public delegate* unmanaged<int> TouchCount;
+    public delegate* unmanaged<int, ulong*, float*, int*, int> TouchAt;
 }
 
 /// <summary>An event an animation passed, as the engine gives it: its name lives until the next frame.</summary>

@@ -5957,6 +5957,20 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      ligne, et coller autant de lignes qu'il y a de curseurs les distribue. `UiInput` gagne Alt (`caretModifier`) et
      Ctrl+D, que l'éditeur et les jeux remplissent.
 
+5. **Android tactile**, en trois commits. Décidé le 2026-11-17, avant le code, comme Godot :
+   - **le multi-touch : une liste de doigts, et la souris émulée gardée**. `Input::touches()` (et `Input.Touches` en
+     C#) donne les doigts de l'image dans l'ordre où ils ont touché l'écran, en coordonnées de la fenêtre comme la
+     souris, avec leur déplacement, appuyés ou levés dans l'image ; un doigt levé reste listé l'image où il l'est.
+     Le premier doigt reste le bouton gauche de la souris tant que **Emulate Mouse From Touch** est cochée (par
+     défaut), si bien que les jeux et les interfaces faits pour la souris marchent sans rien changer, et **Emulate
+     Touch From Mouse** fait de la souris un doigt, pour essayer un jeu tactile sur le bureau. Ce sont deux réglages
+     de la fenêtre du projet, que le jeu donne à SDL en démarrant ; l'éditeur garde les siens. Une liste plutôt que
+     des événements, parce que l'entrée de Devex se lit à chaque image ;
+   - **les commandes à l'écran : des composants d'interface** liés aux actions d'entrée, un bouton tactile et un
+     joystick virtuel, affichés seulement sur un écran tactile sauf choix contraire ;
+   - **la qualité mobile : des réglages par plateforme** dans Project Settings > Rendering, une colonne Android qui
+     remplace les réglages lourds, avec un préréglage Mobile qui les coupe.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.
