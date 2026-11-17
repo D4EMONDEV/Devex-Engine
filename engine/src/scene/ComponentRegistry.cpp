@@ -207,6 +207,8 @@ ComponentRegistry& componentRegistry()
         builtins.add<UiPlot>();
         builtins.add<UiLine>();
         builtins.add<UiTextArea>();
+        builtins.add<UiTouchButton>();
+        builtins.add<UiTouchStick>();
         return builtins;
     }();
     return registry;

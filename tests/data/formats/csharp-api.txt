@@ -1847,6 +1847,23 @@ Devex.UiTooltip: Single& Delay
 Devex.UiTooltip: System.String Text
 Devex.UiTooltip: System.String TypeName
 Devex.UiTooltip: UInt64 LayoutHash
+Devex.UiTouchButton: Boolean& Held
+Devex.UiTouchButton: Boolean& TouchScreenOnly
+Devex.UiTouchButton: Devex.UiTouchButton At(Void*)
+Devex.UiTouchButton: Devex.Vec4& PressedTint
+Devex.UiTouchButton: System.String Action
+Devex.UiTouchButton: System.String TypeName
+Devex.UiTouchButton: UInt64 LayoutHash
+Devex.UiTouchStick: Boolean& TouchScreenOnly
+Devex.UiTouchStick: Devex.UiTouchStick At(Void*)
+Devex.UiTouchStick: Devex.Vec2& Knob
+Devex.UiTouchStick: Devex.Vec4& BaseColor
+Devex.UiTouchStick: Devex.Vec4& KnobColor
+Devex.UiTouchStick: Single& DeadZone
+Devex.UiTouchStick: Single& KnobSize
+Devex.UiTouchStick: System.String Action
+Devex.UiTouchStick: System.String TypeName
+Devex.UiTouchStick: UInt64 LayoutHash
 Devex.UiVirtualList: Devex.UiVirtualList At(Void*)
 Devex.UiVirtualList: Single& ItemSize
 Devex.UiVirtualList: System.String TypeName
@@ -2132,6 +2149,8 @@ type Devex.UiTextSpan
 type Devex.UiTextVerticalAlign
 type Devex.UiToggle
 type Devex.UiTooltip
+type Devex.UiTouchButton
+type Devex.UiTouchStick
 type Devex.UiVirtualList
 type Devex.Uuid
 type Devex.Vec2

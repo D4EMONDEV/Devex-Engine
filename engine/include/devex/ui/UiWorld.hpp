@@ -34,6 +34,15 @@ struct RenderWorld;
 
 namespace devex::ui {
 
+// A finger on the screen, for the touch buttons and joysticks: in pixels of the image as the pointer.
+struct DEVEX_API UiTouch
+{
+    std::uint64_t id = 0;
+    math::Vec2 position{0.0f};
+    bool pressed = false;
+    bool released = false;
+};
+
 // What drives the interface in one frame. The pointer is in pixels of the image the interface is
 // drawn over, from its top left corner; the steps come from the keyboard or from the pad, and are
 // sent once per press.
@@ -83,6 +92,8 @@ struct DEVEX_API UiInput
     bool caretModifier = false;
     // Ctrl+D: the next place that holds what the cursor selects gets a cursor too, the word under it first.
     bool nextOccurrencePressed = false;
+    // The fingers on the screen, for the touch buttons and joysticks.
+    std::vector<UiTouch> touches;
 };
 
 // How the tooltips look: the interface world draws them over every canvas, in pixels.
@@ -269,6 +280,13 @@ public:
     [[nodiscard]] std::int32_t textBlockAt(scene::Entity area, std::size_t line) const noexcept;
     // The area that takes what is typed, if any.
     [[nodiscard]] scene::Entity editedTextArea() const noexcept;
+
+    // Whether the touch buttons and joysticks made for touch screens show: on a touch screen, where the mouse plays a
+    // finger, and in the editor. Hidden, they hold nothing.
+    void setTouchScreen(bool shown) noexcept;
+    // The input actions the touch controls hold this frame, each with how far: 1 across for a button, the knob of a
+    // joystick with y up.
+    [[nodiscard]] std::span<const std::pair<std::string, math::Vec2>> touchActions() const noexcept;
 
     // What the pointer carries, if anything.
     [[nodiscard]] const Carried* carried() const noexcept;
@@ -707,6 +725,15 @@ private:
     // The group the changes being made belong to, and the last one given.
     std::uint32_t m_textGroup = 0;
     std::uint32_t m_textGroups = 0;
+
+    // The touch controls: hidden where they do not show, then held by the fingers.
+    void hideTouchControls(const scene::Scene& scene);
+    void updateTouchControls(scene::Scene& scene, const UiInput& input);
+    bool m_touchScreen = false;
+    // The finger that holds each joystick, the buttons held with their tint, and the actions they hold.
+    std::vector<std::pair<scene::Entity, std::uint64_t>> m_stickFingers;
+    std::vector<std::pair<scene::Entity, math::Vec4>> m_heldButtons;
+    std::vector<std::pair<std::string, math::Vec2>> m_touchActions;
 };
 
 // The text a number field shows: at most `decimals` digits after the point, without the zeros that

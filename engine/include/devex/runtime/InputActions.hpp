@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -38,6 +39,9 @@ public:
     // Reads the devices, once per frame before the updates. The keyboard counts for nothing while
     // text is typed into the interface.
     void update(const platform::Input& input, bool typing);
+    // What the touch buttons and joysticks of the interface hold, read with the devices at the next updates: each
+    // action with how far, 1 across for a button, a direction with y up for a joystick.
+    void setTouchHeld(std::span<const std::pair<std::string, math::Vec2>> held);
 
     [[nodiscard]] bool hasAction(std::string_view action) const;
     // A button held down; an axis or a vector pushed at least halfway.
@@ -138,6 +142,7 @@ private:
     [[nodiscard]] std::optional<platform::InputSource> answer(const platform::Input& input) const;
 
     std::vector<Action> m_actions;
+    std::vector<std::pair<std::string, math::Vec2>> m_touchHeld;
     std::unordered_map<std::string, std::size_t, StringHash, std::equal_to<>> m_actionIndices;
     std::vector<Context> m_contexts;
     std::optional<Listening> m_listening;

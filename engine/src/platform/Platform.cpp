@@ -1272,6 +1272,14 @@ void setTouchEmulation(bool mouseFromTouch, bool touchFromMouse)
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, touchFromMouse ? "1" : "0");
 }
 
+bool hasTouchScreen() noexcept
+{
+    int count = 0;
+    SDL_TouchID* const devices = SDL_GetTouchDevices(&count);
+    SDL_free(static_cast<void*>(devices));
+    return count > 0;
+}
+
 void showTerminal(bool shown)
 {
 #ifdef _WIN32

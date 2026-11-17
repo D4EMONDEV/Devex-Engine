@@ -5966,8 +5966,14 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      Touch From Mouse** fait de la souris un doigt, pour essayer un jeu tactile sur le bureau. Ce sont deux réglages
      de la fenêtre du projet, que le jeu donne à SDL en démarrant ; l'éditeur garde les siens. Une liste plutôt que
      des événements, parce que l'entrée de Devex se lit à chaque image ;
-   - **les commandes à l'écran : des composants d'interface** liés aux actions d'entrée, un bouton tactile et un
-     joystick virtuel, affichés seulement sur un écran tactile sauf choix contraire ;
+   - **les commandes à l'écran : des composants d'interface**, `UiTouchButton` et `UiTouchStick`, comme le
+     TouchScreenButton de Godot. Le bouton tient son action tant qu'un doigt est dessus, y compris un doigt qui
+     glisse jusqu'à lui ; le joystick suit le doigt posé sur lui jusqu'à ce qu'il se lève, et pousse son action
+     (un vecteur, y vers le haut, ou un axe) d'autant que le bouton est loin du centre, au-delà d'une zone morte.
+     Ils n'appuient pas sur des touches : ils tiennent des actions, que `InputActions` ajoute aux appareils, si
+     bien qu'un jeu qui lit ses actions n'a rien à changer pour le tactile. Ils ne s'affichent que sur un écran
+     tactile, là où la souris joue un doigt, et dans l'éditeur, sauf si on décoche Touch Screen Only. Le bouton
+     prend son image d'un UiImage, comme UiButton ; le joystick dessine son disque et son bouton ;
    - **la qualité mobile : des réglages par plateforme** dans Project Settings > Rendering, une colonne Android qui
      remplace les réglages lourds, avec un préréglage Mobile qui les coupe.
 

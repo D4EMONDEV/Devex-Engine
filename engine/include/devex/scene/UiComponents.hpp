@@ -224,6 +224,36 @@ struct DEVEX_API UiTextArea
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(UiTextArea);
 
+// A button for the fingers, as TouchScreenButton in Godot: it holds an input action of the project down while a
+// finger is on it, one that slides onto it as well, and its image takes the pressed tint meanwhile.
+struct DEVEX_API UiTouchButton
+{
+    std::string action;
+    // Shown only on a touch screen, or where the mouse plays a finger; the editor shows it always.
+    bool touchScreenOnly = true;
+    math::Vec4 pressedTint{0.7f, 0.7f, 0.7f, 1.0f};
+    // Whether a finger holds it, which the interface writes.
+    bool held = false;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(UiTouchButton);
+
+// A joystick for a finger: the one put down on it drags its knob, which pushes an input action of the project as far
+// as it is from the centre, a vector with y up or an axis, and comes back when the finger goes. A disc and its knob
+// are drawn in the square of its rectangle.
+struct DEVEX_API UiTouchStick
+{
+    std::string action;
+    bool touchScreenOnly = true;
+    // Of the radius: how small a push counts for nothing, and the radius of the knob.
+    float deadZone = 0.15f;
+    float knobSize = 0.45f;
+    math::Vec4 baseColor{1.0f, 1.0f, 1.0f, 0.18f};
+    math::Vec4 knobColor{1.0f, 1.0f, 1.0f, 0.55f};
+    // Where the knob is, from -1 to 1 each way with y down, which the interface writes.
+    math::Vec2 knob{0.0f};
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(UiTouchStick);
+
 // Answers the mouse, the keyboard and the pad on the rectangle of its entity. It tints the UiImage
 // of the entity as the pointer comes and goes, and reports its clicks to the scripts under the
 // name of its action.

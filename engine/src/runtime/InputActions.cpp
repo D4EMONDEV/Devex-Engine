@@ -189,6 +189,16 @@ void InputActions::evaluate(Action& action, const platform::Input& input, bool t
         axis += value * signOf(binding.direction);
         vector += value * directionOf(binding.direction);
     }
+    // The touch controls on the screen add to the devices.
+    for (const auto& [name, value] : active ? std::span(m_touchHeld) : std::span<const std::pair<std::string, math::Vec2>>())
+    {
+        if (name == action.name)
+        {
+            down = down || math::length(value) >= pressPoint;
+            axis += value.x;
+            vector += value;
+        }
+    }
 
     switch (action.kind)
     {
@@ -254,6 +264,11 @@ std::optional<InputSource> InputActions::answer(const platform::Input& input) co
         }
     }
     return std::nullopt;
+}
+
+void InputActions::setTouchHeld(std::span<const std::pair<std::string, math::Vec2>> held)
+{
+    m_touchHeld.assign(held.begin(), held.end());
 }
 
 void InputActions::update(const platform::Input& input, bool typing)

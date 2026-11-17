@@ -1361,6 +1361,10 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
     m_application.m_scene->updateTransforms();
     if (m_actions)
     {
+        if (m_ui)
+        {
+            m_actions->setTouchHeld(m_ui->touchActions());
+        }
         m_actions->update(m_services.platform.input(), m_ui && m_ui->isEditing());
     }
     if (m_saves)
@@ -3090,6 +3094,24 @@ void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
         uiInput.pointerPressed = input.wasMouseButtonPressed(platform::MouseButton::Left);
         uiInput.pointerReleased = input.wasMouseButtonReleased(platform::MouseButton::Left);
         uiInput.pointerMoved = input.mouseDelta() != math::Vec2{0.0f};
+    }
+    // The fingers, for the touch buttons and joysticks, which show on a touch screen, where the mouse plays a finger,
+    // and in the editor; there the mouse plays one when the project says so.
+    const asset::AssetSource* const touchSource = assetSource();
+    const bool touchFromMouse = touchSource != nullptr && touchSource->project().window.emulateTouchFromMouse;
+    m_ui->setTouchScreen(isEditor() || touchFromMouse || platform::hasTouchScreen());
+    if (playing && !isEditor())
+    {
+        const math::Extent2D points = m_services.window.size();
+        const float scale = points.width > 0 ? size.x / static_cast<float>(points.width) : 1.0f;
+        for (const platform::Touch& touch : input.touches())
+        {
+            uiInput.touches.push_back(ui::UiTouch{.id = touch.id, .position = touch.position * scale, .pressed = touch.pressed, .released = touch.released});
+        }
+    }
+    else if (playing && pointerAvailable && touchFromMouse && (uiInput.pointerDown || uiInput.pointerReleased))
+    {
+        uiInput.touches.push_back(ui::UiTouch{.position = pointer, .pressed = uiInput.pointerPressed, .released = uiInput.pointerReleased});
     }
     if (playing && pointerAvailable)
     {

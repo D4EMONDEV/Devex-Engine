@@ -748,3 +748,14 @@ UiTextArea.scrollbar_size float
 UiTextArea.scrollbar_color vec4
 UiTextArea.interactable bool
 UiTextArea.action string
+UiTouchButton.action string
+UiTouchButton.touch_screen_only bool
+UiTouchButton.pressed_tint vec4
+UiTouchButton.held bool
+UiTouchStick.action string
+UiTouchStick.touch_screen_only bool
+UiTouchStick.dead_zone float
+UiTouchStick.knob_size float
+UiTouchStick.base_color vec4
+UiTouchStick.knob_color vec4
+UiTouchStick.knob vec2

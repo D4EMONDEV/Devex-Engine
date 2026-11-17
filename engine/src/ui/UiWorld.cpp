@@ -311,6 +311,7 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
         DEVEX_PROFILE_SCOPE("UI layout");
         layoutCanvases(scene);
     }
+    hideTouchControls(scene);
     findModal(scene);
 
     // What stands over the canvases takes the pointer first: the list of an open dropdown, the
@@ -366,6 +367,7 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
     const bool editedBefore = m_editing.entity.isValid() || m_areaFocus.isValid();
     updateFields(scene, rest, delta);
     updateTextAreas(scene, rest, delta);
+    updateTouchControls(scene, input);
     // A number field that stopped being typed into reads what was typed.
     finishNumberEdit(scene);
     // While a field takes what is typed, the keys belong to it rather than to the menu around it.
@@ -1772,8 +1774,128 @@ bool UiWorld::pointerOverInterface() const noexcept
     return m_pointerOverInterface;
 }
 
+void UiWorld::setTouchScreen(bool shown) noexcept
+{
+    m_touchScreen = shown;
+}
+
+std::span<const std::pair<std::string, math::Vec2>> UiWorld::touchActions() const noexcept
+{
+    return m_touchActions;
+}
+
+void UiWorld::hideTouchControls(const scene::Scene& scene)
+{
+    if (m_touchScreen)
+    {
+        return;
+    }
+    for (CanvasLayout& canvas : m_canvases)
+    {
+        std::vector<LaidOutRect>& rects = canvas.layout.rects;
+        for (std::size_t index = 0; index < rects.size(); ++index)
+        {
+            const auto* const button = scene.tryGet<scene::UiTouchButton>(rects[index].entity);
+            const auto* const stick = scene.tryGet<scene::UiTouchStick>(rects[index].entity);
+            if ((button == nullptr || !button->touchScreenOnly) && (stick == nullptr || !stick->touchScreenOnly))
+            {
+                continue;
+            }
+            // With what it holds.
+            const std::size_t end = std::min<std::size_t>(index + rects[index].descendants + 1, rects.size());
+            for (std::size_t inside = index; inside < end; ++inside)
+            {
+                rects[inside].visible = false;
+            }
+        }
+    }
+}
+
+void UiWorld::updateTouchControls(scene::Scene& scene, const UiInput& input)
+{
+    m_touchActions.clear();
+    m_heldButtons.clear();
+    // A joystick lets go of the finger lifted, or gone.
+    std::erase_if(m_stickFingers, [&](const std::pair<scene::Entity, std::uint64_t>& held) {
+        const auto finger = std::ranges::find(input.touches, held.second, &UiTouch::id);
+        return finger == input.touches.end() || finger->released || !scene.isAlive(held.first) || !scene.has<scene::UiTouchStick>(held.first);
+    });
+    for (const CanvasLayout& canvas : m_canvases)
+    {
+        const float scale = canvas.layout.scale > 0.0f ? canvas.layout.scale : 1.0f;
+        for (const LaidOutRect& rect : canvas.layout.rects)
+        {
+            auto* const button = scene.tryGet<scene::UiTouchButton>(rect.entity);
+            auto* const stick = scene.tryGet<scene::UiTouchStick>(rect.entity);
+            if (button == nullptr && stick == nullptr)
+            {
+                continue;
+            }
+            const auto place = [&](const UiTouch& touch) { return touch.position * (1.0f / scale); };
+            const auto inside = [&](const UiTouch& touch) {
+                const math::Vec2 point = place(touch);
+                return rect.visible && point.x >= rect.min.x && point.x <= rect.max.x && point.y >= rect.min.y && point.y <= rect.max.y;
+            };
+            if (button != nullptr)
+            {
+                // Any finger on it, one that slid onto it too; a tap shorter than a frame holds it for that frame.
+                button->held = std::ranges::any_of(input.touches, [&](const UiTouch& touch) { return (!touch.released || touch.pressed) && inside(touch); });
+                if (button->held)
+                {
+                    m_heldButtons.emplace_back(rect.entity, button->pressedTint);
+                    if (!button->action.empty())
+                    {
+                        m_touchActions.emplace_back(button->action, math::Vec2{1.0f, 0.0f});
+                    }
+                }
+            }
+            if (stick != nullptr)
+            {
+                auto held = std::ranges::find(m_stickFingers, rect.entity, &std::pair<scene::Entity, std::uint64_t>::first);
+                if (held == m_stickFingers.end())
+                {
+                    // A finger put down on it takes it, unless that finger holds another one.
+                    const auto finger = std::ranges::find_if(input.touches, [&](const UiTouch& touch) {
+                        return touch.pressed && !touch.released && inside(touch) &&
+                               std::ranges::none_of(m_stickFingers, [&](const std::pair<scene::Entity, std::uint64_t>& other) { return other.second == touch.id; });
+                    });
+                    if (finger != input.touches.end())
+                    {
+                        m_stickFingers.emplace_back(rect.entity, finger->id);
+                        held = std::prev(m_stickFingers.end());
+                    }
+                }
+                math::Vec2 knob{0.0f};
+                if (held != m_stickFingers.end() && rect.visible)
+                {
+                    const auto finger = std::ranges::find(input.touches, held->second, &UiTouch::id);
+                    const math::Vec2 centre = (rect.min + rect.max) * 0.5f;
+                    const float radius = std::max(std::min(rect.size().x, rect.size().y) * 0.5f, 1.0f);
+                    knob = (place(*finger) - centre) * (1.0f / radius);
+                    if (const float length = math::length(knob); length > 1.0f)
+                    {
+                        knob = knob * (1.0f / length);
+                    }
+                }
+                stick->knob = knob;
+                const float length = math::length(knob);
+                const float dead = std::clamp(stick->deadZone, 0.0f, 0.95f);
+                if (length > dead && !stick->action.empty())
+                {
+                    const math::Vec2 pushed = knob * ((length - dead) / (1.0f - dead) / length);
+                    m_touchActions.emplace_back(stick->action, math::Vec2{pushed.x, -pushed.y});
+                }
+            }
+        }
+    }
+}
+
 math::Vec4 UiWorld::tint(scene::Entity entity) const
 {
+    if (const auto held = std::ranges::find(m_heldButtons, entity, &std::pair<scene::Entity, math::Vec4>::first); held != m_heldButtons.end())
+    {
+        return held->second;
+    }
     const auto found = std::ranges::find(m_buttons, entity, &ButtonState::entity);
     return found != m_buttons.end() ? found->tint : math::Vec4{1.0f};
 }

@@ -89,6 +89,25 @@ DEVEX_REFLECT(UiPlot)
         .field("marker_color", &UiPlot::markerColor, {.color = true});
 }
 
+DEVEX_REFLECT(UiTouchButton)
+{
+    type.field("action", &UiTouchButton::action, {.group = "Touch Button"})
+        .field("touch_screen_only", &UiTouchButton::touchScreenOnly)
+        .field("pressed_tint", &UiTouchButton::pressedTint, {.color = true, .group = "Appearance"})
+        .field("held", &UiTouchButton::held, {.group = "State"});
+}
+
+DEVEX_REFLECT(UiTouchStick)
+{
+    type.field("action", &UiTouchStick::action, {.group = "Touch Joystick"})
+        .field("touch_screen_only", &UiTouchStick::touchScreenOnly)
+        .field("dead_zone", &UiTouchStick::deadZone)
+        .field("knob_size", &UiTouchStick::knobSize, {.group = "Appearance"})
+        .field("base_color", &UiTouchStick::baseColor, {.color = true})
+        .field("knob_color", &UiTouchStick::knobColor, {.color = true})
+        .field("knob", &UiTouchStick::knob, {.group = "State"});
+}
+
 DEVEX_REFLECT(UiTextArea)
 {
     type.field("selection_color", &UiTextArea::selectionColor,

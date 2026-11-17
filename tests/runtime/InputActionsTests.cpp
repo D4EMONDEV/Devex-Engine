@@ -54,6 +54,26 @@ void pressKey(Input& input, Key key, bool down)
 
 } // namespace
 
+TEST_CASE("The touch controls hold actions beside the devices, while their context is active", "[runtime][input]")
+{
+    InputActions actions(settings());
+    Input input;
+    const std::vector<std::pair<std::string, Vec2>> held{{"Jump", Vec2{1.0f, 0.0f}}, {"Move", Vec2{0.0f, 1.0f}}};
+    actions.setTouchHeld(held);
+    actions.update(input, false);
+    CHECK(actions.wasPressed("Jump"));
+    CHECK(actions.vector("Move").y == Approx(1.0f));
+    CHECK(actions.isDown("Move"));
+    actions.setContextActive("Gameplay", false);
+    actions.update(input, false);
+    CHECK(actions.wasReleased("Jump"));
+    actions.setContextActive("Gameplay", true);
+    actions.setTouchHeld({});
+    actions.update(input, false);
+    CHECK_FALSE(actions.isDown("Jump"));
+    CHECK(actions.vector("Move") == Vec2{0.0f});
+}
+
 TEST_CASE("Button actions follow any of their bindings, for one frame on each change", "[runtime][input]")
 {
     InputActions actions(settings());

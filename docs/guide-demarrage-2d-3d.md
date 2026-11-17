@@ -172,6 +172,8 @@ En 2D, le script utilise seulement la composante horizontale de `Move`. En 3D, i
 
 Arrêter puis relancer Play après avoir changé l'Input Map. Pendant Play, cliquer dans la fenêtre du jeu pour lui donner le clavier (dans la vue Game en mode Inside Editor).
 
+Pour un téléphone, il suffit d'ajouter des commandes à l'écran, sans toucher aux scripts : un élément d'interface avec le composant **Touch joystick** dont l'action est `Move`, et un autre avec **Touch button** pour un saut. Ils tiennent les mêmes actions que le clavier, et ne s'affichent que sur un écran tactile (et dans l'éditeur). Pour les essayer à la souris, cocher **Emulate Touch From Mouse** dans **Project Settings > Application**. Un script qui veut les doigts eux-mêmes lit `Input.Touches`.
+
 ### Créer et attacher un script
 
 1. Clic droit sur `code` dans FileSystem, puis **Create New > Script**.

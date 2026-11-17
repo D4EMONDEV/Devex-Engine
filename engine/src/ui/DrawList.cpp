@@ -510,6 +510,28 @@ void fill(Builder& builder, math::Vec2 min, math::Vec2 max, math::Vec4 color)
     builder.quad(draw, min, max, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, color);
 }
 
+// A joystick for a finger: a disc in the square of its rectangle, and its knob where the finger took it.
+void drawTouchStick(Builder& builder, const LaidOutRect& rect, const scene::UiTouchStick& stick)
+{
+    const math::Vec2 centre = (rect.min + rect.max) * 0.5f;
+    const float radius = std::min(rect.size().x, rect.size().y) * 0.5f;
+    const auto disc = [&](math::Vec2 at, float size, math::Vec4 color) {
+        if (color.w <= 0.0f || size <= 0.0f)
+        {
+            return;
+        }
+        const math::Vec2 min = at - math::Vec2{size};
+        const math::Vec2 max = at + math::Vec2{size};
+        render::UiDraw& draw =
+            builder.batch(render::UiDrawKind::RoundedQuad, render::TextureHandle{},
+                          math::Vec4{min.x * builder.scale, min.y * builder.scale, max.x * builder.scale, max.y * builder.scale},
+                          size * builder.scale, 1.0f);
+        builder.quad(draw, min, max, math::Vec2{0.0f}, math::Vec2{1.0f}, color);
+    };
+    disc(centre, radius, withOpacity(stick.baseColor, rect.opacity));
+    disc(centre + stick.knob * radius, radius * std::clamp(stick.knobSize, 0.05f, 1.0f), withOpacity(stick.knobColor, rect.opacity));
+}
+
 // A thin line that follows no row of pixels, with soft edges, since the interface has no antialiasing.
 void softStroke(Builder& builder, math::Vec2 from, math::Vec2 to, float halfWidth, math::Vec4 color)
 {
@@ -1625,6 +1647,10 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout, const 
         if (const scene::UiLine* const line = scene.tryGet<scene::UiLine>(rect.entity))
         {
             drawLine(builder, rect, *line);
+        }
+        if (const scene::UiTouchStick* const stick = scene.tryGet<scene::UiTouchStick>(rect.entity))
+        {
+            drawTouchStick(builder, rect, *stick);
         }
         if (const scene::UiText* const text = scene.tryGet<scene::UiText>(rect.entity))
         {

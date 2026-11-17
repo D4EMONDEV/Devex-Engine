@@ -93,6 +93,52 @@ struct Screen
 
 } // namespace
 
+TEST_CASE("Touch buttons and joysticks show on touch screens, and hold actions while fingers are on them", "[ui][controls]")
+{
+    using devex::ui::UiTouch;
+    Screen screen;
+    const Entity jump = screen.element({}, {0.0f, 0.0f}, {100.0f, 100.0f}, "Jump");
+    screen.scene.add<UiImage>(jump);
+    screen.scene.add<devex::scene::UiTouchButton>(jump, devex::scene::UiTouchButton{.action = "Jump"});
+    const Entity stick = screen.element({}, {200.0f, 0.0f}, {400.0f, 200.0f}, "Stick");
+    screen.scene.add<devex::scene::UiTouchStick>(stick, devex::scene::UiTouchStick{.action = "Move", .deadZone = 0.0f});
+
+    // Without a touch screen they hide, and hold nothing.
+    screen.update(UiInput{.touches = {UiTouch{.id = 1, .position = {50.0f, 50.0f}, .pressed = true}}});
+    REQUIRE(screen.rectOf(jump) != nullptr);
+    CHECK_FALSE(screen.rectOf(jump)->visible);
+    CHECK(screen.world.touchActions().empty());
+
+    // A finger on the button holds its action; one put down on the joystick drags its knob, y up for the action.
+    screen.world.setTouchScreen(true);
+    screen.update(UiInput{.touches = {UiTouch{.id = 1, .position = {50.0f, 50.0f}, .pressed = true},
+                                      UiTouch{.id = 2, .position = {300.0f, 100.0f}, .pressed = true}}});
+    CHECK(screen.rectOf(jump)->visible);
+    CHECK(screen.scene.get<devex::scene::UiTouchButton>(jump).held);
+    screen.update(UiInput{.touches = {UiTouch{.id = 1, .position = {50.0f, 50.0f}}, UiTouch{.id = 2, .position = {300.0f, 0.0f}}}});
+    REQUIRE(screen.world.touchActions().size() == 2);
+    CHECK(screen.world.touchActions()[0].first == "Jump");
+    CHECK(screen.world.touchActions()[1].first == "Move");
+    CHECK(screen.world.touchActions()[1].second.y == Catch::Approx(1.0f));
+    CHECK(screen.scene.get<devex::scene::UiTouchStick>(stick).knob.y == Catch::Approx(-1.0f));
+    // Past its edge the knob stays on it; the finger keeps the joystick wherever it goes.
+    screen.update(UiInput{.touches = {UiTouch{.id = 2, .position = {700.0f, 100.0f}}}});
+    CHECK(screen.scene.get<devex::scene::UiTouchStick>(stick).knob.x == Catch::Approx(1.0f));
+    CHECK_FALSE(screen.scene.get<devex::scene::UiTouchButton>(jump).held);
+    // A finger that slides onto the button presses it; the one lifted lets the joystick go.
+    screen.update(UiInput{.touches = {UiTouch{.id = 2, .position = {50.0f, 60.0f}, .released = true}}});
+    CHECK(screen.scene.get<devex::scene::UiTouchStick>(stick).knob == Vec2{0.0f});
+    screen.update(UiInput{.touches = {UiTouch{.id = 3, .position = {150.0f, 50.0f}, .pressed = true}}});
+    screen.update(UiInput{.touches = {UiTouch{.id = 3, .position = {60.0f, 50.0f}}}});
+    CHECK(screen.scene.get<devex::scene::UiTouchButton>(jump).held);
+    // A finger that slides onto the joystick does not take it.
+    screen.update(UiInput{.touches = {UiTouch{.id = 3, .position = {300.0f, 100.0f}}}});
+    CHECK(screen.world.touchActions().empty());
+    devex::render::RenderWorld drawn;
+    screen.world.build(screen.scene, devex::ui::DrawContext{}, drawn);
+    CHECK_FALSE(drawn.uiVertices.empty());
+}
+
 TEST_CASE("A context menu opens under the pointer and closes once used", "[ui][controls]")
 {
     Screen screen;
