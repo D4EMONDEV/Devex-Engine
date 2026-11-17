@@ -1,6 +1,7 @@
 #include <devex/asset/Addon.hpp>
 
 #include <devex/asset/import/MetaFile.hpp>
+#include <devex/core/BuildInfo.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/core/Uuid.hpp>
@@ -376,10 +377,40 @@ core::Result<AddonInfo> readAddon(const Path& directory)
                     .author = attribute(section, "author"),
                     .description = attribute(section, "description"),
                     .license = attribute(section, "license"),
+                    .engine = attribute(section, "engine"),
+                    .category = attribute(section, "category"),
+                    .icon = attribute(section, "icon"),
                     .directory = directory};
     if (!validAddonId(addon.id) || addon.name.empty() || addon.version.empty())
         return core::makeError(core::ErrorCode::InvalidArgument,
                                "An addon needs a valid lowercase id, a name and a version");
+    // "studio.base 1.2.0, studio.ui": an id, then the oldest version that works, if any.
+    const std::string dependencies = attribute(section, "dependencies");
+    std::string_view list = dependencies;
+    while (!list.empty())
+    {
+        const std::size_t comma = list.find(',');
+        std::string_view item = list.substr(0, comma);
+        list.remove_prefix(comma == std::string_view::npos ? list.size() : comma + 1);
+        while (!item.empty() && std::isspace(static_cast<unsigned char>(item.front())) != 0)
+            item.remove_prefix(1);
+        while (!item.empty() && std::isspace(static_cast<unsigned char>(item.back())) != 0)
+            item.remove_suffix(1);
+        if (item.empty())
+            continue;
+        const std::size_t space = item.find_first_of(" \t");
+        AddonDependency dependency{.id = std::string(item.substr(0, space))};
+        if (space != std::string_view::npos)
+        {
+            std::string_view version = item.substr(space);
+            while (!version.empty() && std::isspace(static_cast<unsigned char>(version.front())) != 0)
+                version.remove_prefix(1);
+            dependency.version = std::string(version);
+        }
+        if (!validAddonId(dependency.id))
+            return core::makeError(core::ErrorCode::InvalidArgument, "A dependency of the addon is no addon id: {}", item);
+        addon.dependencies.push_back(std::move(dependency));
+    }
     return addon;
 }
 
@@ -408,6 +439,22 @@ std::vector<AddonInfo> installedAddons(const Project& project)
     }
     std::ranges::sort(addons, {}, &AddonInfo::id);
     return addons;
+}
+
+std::vector<std::string> missingAddonDependencies(const Project& project, const AddonInfo& addon)
+{
+    std::vector<std::string> missing;
+    const std::vector<AddonInfo> installed = installedAddons(project);
+    for (const AddonDependency& dependency : addon.dependencies)
+    {
+        const auto found = std::ranges::find(installed, dependency.id, &AddonInfo::id);
+        const std::string wanted = dependency.version.empty() ? dependency.id : dependency.id + " " + dependency.version;
+        if (found == installed.end())
+            missing.push_back(std::format("Needs {}, which this project does not have", wanted));
+        else if (!dependency.version.empty() && core::compareVersions(found->version, dependency.version) < 0)
+            missing.push_back(std::format("Needs {} or later, and this project has {}", wanted, found->version));
+    }
+    return missing;
 }
 
 bool addonEnabled(const Project& project, std::string_view id)
@@ -510,6 +557,22 @@ core::Result<AddonPreview> previewAddon(const Project& project, const Path& sour
     }
     forEachFile(source / "code", true, {}, [&](const Path&) { ++preview.scripts; });
     preview.conflicts = findConflicts(project, source, preview.addon.id);
+    // Made for a later Devex: the API it calls may not be there.
+    if (!preview.addon.engine.empty() && core::compareVersions(core::version(), preview.addon.engine) < 0)
+        preview.conflicts.insert(preview.conflicts.begin(),
+                                 std::format("It needs Devex {} or later, and this is Devex {}", preview.addon.engine, core::version()));
+    const std::vector<AddonInfo> installed = installedAddons(project);
+    for (const AddonDependency& dependency : preview.addon.dependencies)
+    {
+        const auto found = std::ranges::find(installed, dependency.id, &AddonInfo::id);
+        AddonPreview::Dependency status{.needed = dependency};
+        if (found != installed.end())
+        {
+            status.installed = found->version;
+            status.satisfied = dependency.version.empty() || core::compareVersions(found->version, dependency.version) >= 0;
+        }
+        preview.dependencies.push_back(std::move(status));
+    }
     return preview;
 }
 
@@ -520,7 +583,7 @@ core::Result<AddonInfo> installAddon(const Project& project, const Path& source)
         return std::unexpected(preview.error());
     if (preview->installedVersion)
         return core::makeError(core::ErrorCode::InvalidState,
-                               "Addon {} is already installed: use Update from Folder on its card",
+                               "Addon {} is already installed: use Update on its card",
                                preview->addon.id);
     if (!preview->conflicts.empty())
         return core::makeError(core::ErrorCode::InvalidState, "Addon {} cannot be installed: {}",

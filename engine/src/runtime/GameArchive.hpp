@@ -18,7 +18,4 @@ namespace devex::runtime::detail {
 [[nodiscard]] DEVEX_API core::Result<std::filesystem::path> packGame(const std::filesystem::path& folder, std::string_view root,
                                                                      const std::filesystem::path& archive);
 
-// Writes the files of a folder into a ZIP, stored as they are, at its root: what itch.io takes for a game for the web.
-[[nodiscard]] DEVEX_API core::Result<void> writeZip(const std::filesystem::path& folder, const std::filesystem::path& zipFile);
-
 } // namespace devex::runtime::detail

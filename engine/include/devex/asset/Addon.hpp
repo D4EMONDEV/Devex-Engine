@@ -13,6 +13,15 @@ inline constexpr std::string_view addonManifest = "addon.dvxaddon";
 // The class createAddon writes a first editor command in, under code/addons/<id>.
 inline constexpr std::string_view addonExampleScript = "Commands.cs";
 
+// Another addon that one needs, with the oldest version of it that works; any version when empty.
+struct DEVEX_API AddonDependency
+{
+    std::string id;
+    std::string version;
+
+    bool operator==(const AddonDependency&) const = default;
+};
+
 // A local source package. Install copies its content under assets/addons/<id>, and its code under
 // code/addons/<id>, where the existing game builders and external IDEs discover it.
 struct DEVEX_API AddonInfo
@@ -23,6 +32,13 @@ struct DEVEX_API AddonInfo
     std::string author;
     std::string description;
     std::string license;
+    // The oldest Devex it works with, such as "0.11.0"; empty when it says none.
+    std::string engine;
+    // What it is, for the list of addons: "Tools", "Materials".
+    std::string category;
+    // An image of the package, relative to its folder.
+    std::string icon;
+    std::vector<AddonDependency> dependencies;
     std::filesystem::path directory;
     std::string error;
 };
@@ -58,6 +74,14 @@ struct DEVEX_API AddonPreview
     std::optional<std::string> installedVersion;
     // The source files of code/, which compile with the project and run in the editor.
     std::size_t scripts = 0;
+    // Its dependencies, with the version of each that the project has, none when it has not.
+    struct Dependency
+    {
+        AddonDependency needed;
+        std::optional<std::string> installed;
+        bool satisfied = false;
+    };
+    std::vector<Dependency> dependencies;
     // What stops it from being installed, one line each.
     std::vector<std::string> conflicts;
 };
@@ -67,6 +91,8 @@ struct DEVEX_API AddonPreview
 // Invalid installed manifests are returned with an error, so the editor can explain them.
 [[nodiscard]] DEVEX_API std::vector<AddonInfo> installedAddons(const Project& project);
 [[nodiscard]] DEVEX_API bool addonEnabled(const Project& project, std::string_view id);
+// What an addon needs that the project has not, or not recent enough, one line each.
+[[nodiscard]] DEVEX_API std::vector<std::string> missingAddonDependencies(const Project& project, const AddonInfo& addon);
 // Lowercase letters and digits joined by dashes: "Scene Tools" gives "scene-tools".
 [[nodiscard]] DEVEX_API std::string addonIdFromName(std::string_view name);
 // What stops a draft from being created, for the window that asks for one.

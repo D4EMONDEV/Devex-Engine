@@ -24,9 +24,12 @@ Le bouton **Guide** de la page ouvre ce document en ligne.
 
 ## Installer et utiliser
 
-1. Cliquer **Install from Folder...**, puis choisir le dossier contenant `addon.dvxaddon`.
+1. Cliquer **Install...**, puis choisir le `.zip` de l'addon, ou le fichier `addon.dvxaddon` de son
+   dossier. Le paquet d'un zip est à sa racine, ou dans son unique dossier, comme dans l'archive d'un
+   dépôt GitHub.
 2. Une fenêtre montre l'addon avant de le copier. Elle prévient s'il contient du code, qui compile
-   avec le projet et s'exécute dans l'éditeur dès l'installation, et refuse les conflits (plus bas).
+   avec le projet et s'exécute dans l'éditeur dès l'installation, liste ses dépendances (plus bas)
+   et refuse les conflits.
 3. Attendre la compilation des scripts et les imports. En compilation manuelle, lancer **Ctrl+B**.
 4. Le contenu est disponible dans **FileSystem > assets > addons > identifiant** ; le code se
    trouve sous **code > addons > identifiant**, inclus dans Game.csproj et le CMake du projet.
@@ -55,15 +58,15 @@ qu'au chargement du code : Output l'indique et le composant est ignoré.
 
 ## Exporter, mettre à jour et désinstaller
 
-- **Export to Folder...** écrit le package dans un nouveau dossier `<id>` du dossier choisi, hors de
-  `assets` et `code` : le contenu de `assets/addons/<id>` à sa racine, et `code/addons/<id>` dans
-  `code/`. C'est ce dossier qu'on partage et qu'**Install from Folder...** prend dans un autre projet.
-  Augmenter la version dans le manifeste à chaque publication, et ajouter un fichier `LICENSE`.
-- **Update from Folder...** remplace tous les fichiers de l'addon par ceux d'un package de même id,
-  après avoir montré les deux versions. Tout est remplacé ou rien : les fichiers absents du nouveau
-  package disparaissent, et les changements faits dans le projet sont perdus. **Install from
-  Folder...** sur un addon déjà présent propose la même chose. Garder les `.dvxmeta` d'une version à
-  l'autre conserve les références des scènes.
+- **Export...** écrit l'addon dans un `.zip` (`<id>-<version>.zip` d'office) dont l'unique dossier
+  `<id>` est le package : le contenu de `assets/addons/<id>` à sa racine, et `code/addons/<id>` dans
+  `code/`. C'est ce zip qu'on partage et qu'**Install...** prend dans un autre projet. Augmenter la
+  version dans le manifeste à chaque publication, et ajouter un fichier `LICENSE`.
+- **Update...** remplace tous les fichiers de l'addon par ceux d'un package de même id, un `.zip` ou
+  le `addon.dvxaddon` d'un dossier, après avoir montré les deux versions. Tout est remplacé ou rien :
+  les fichiers absents du nouveau package disparaissent, et les changements faits dans le projet sont
+  perdus. **Install...** sur un addon déjà présent propose la même chose. Garder les `.dvxmeta` d'une
+  version à l'autre conserve les références des scènes.
 - **Uninstall...** supprime définitivement les deux dossiers et le réglage du projet, après
   confirmation. Les onglets de leurs fichiers se ferment, avec leurs changements non enregistrés. Les
   scènes qui utilisent ses ressources ou ses composants les gardent, non résolus.
@@ -84,6 +87,20 @@ mon-addon/
 ```ini
 [addon format=1 id="studio.scene-tools" name="Scene Tools" version="0.1.0" author="Mon studio" license="MIT" description="Outils et contenu réutilisables."]
 ```
+
+Les attributs facultatifs disent ce dont il a besoin et ce qu'il est :
+
+```ini
+[addon format=1 id="studio.scene-tools" name="Scene Tools" version="0.2.0" engine="0.11.0" category="Tools" icon="icon.png" dependencies="studio.base 1.2.0, studio.ui"]
+```
+
+- `engine` : la plus ancienne version de Devex avec laquelle il marche. Une version plus ancienne
+  refuse de l'installer et dit pourquoi.
+- `dependencies` : les autres addons qu'il demande, séparés par des virgules, chacun avec la plus
+  ancienne version qui convient s'il y en a une. La fenêtre d'installation les liste, en rouge ceux
+  qui manquent ou sont trop anciens, et installe quand même : il n'y a pas encore de catalogue pour
+  les chercher. La carte de l'addon le rappelle tant qu'il en manque.
+- `category` s'affiche sur sa carte, et `icon`, une image du package, servira au catalogue.
 
 `id`, `name` et `version` sont obligatoires. L'id est stable, en minuscules, commence par une
 lettre et utilise lettres ASCII, chiffres, tirets, underscores et points. Les séparateurs de

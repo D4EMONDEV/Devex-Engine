@@ -1,11 +1,14 @@
 #include "SettingsUi.hpp"
 
+#include <devex/asset/import/Zip.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 
 #include <algorithm>
 #include <format>
+#include <system_error>
 #include <utility>
+#include <vector>
 
 namespace devex::tools::detail
 {
@@ -20,6 +23,54 @@ constexpr const char* addonGuideUrl =
 constexpr const char* createAction = "create addon";
 // What the window can show of what stops a package.
 constexpr std::size_t shownConflicts = 4;
+
+// A package to install or update from: a ZIP, or the manifest of a folder.
+void choosePackage(ToolsState& state)
+{
+    const std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
+    state.platform.showFileDialog(dialogParent(state),
+                                  {.type = platform::FileDialogType::OpenFile,
+                                   .filters = {{"Addon: a ZIP, or the addon.dvxaddon of its folder", "zip;dvxaddon"}}},
+                                  [answers](std::optional<std::filesystem::path> chosen) {
+                                      if (const auto inbox = answers.lock(); inbox && chosen)
+                                          inbox->installAddon = std::move(*chosen);
+                                  });
+}
+
+// The folder of the package a chosen file names: that of an addon.dvxaddon, or a ZIP extracted into the cache of the
+// project, whose package is at its root or in its one folder, as an archive of a repository has it.
+[[nodiscard]] core::Result<std::filesystem::path> packageFolder(const asset::Project& project, const std::filesystem::path& chosen)
+{
+    if (chosen.extension() != ".zip")
+        return chosen.filename() == asset::addonManifest ? chosen.parent_path() : chosen;
+    const std::filesystem::path extracted = project.cacheDirectory() / "addon-package";
+    std::error_code error;
+    std::filesystem::remove_all(extracted, error);
+    if (core::Result<void> done = asset::extractZip(chosen, extracted); !done)
+        return std::unexpected(done.error());
+    if (std::filesystem::exists(extracted / asset::addonManifest, error))
+        return extracted;
+    std::vector<std::filesystem::path> folders;
+    for (std::filesystem::directory_iterator entry(extracted, error), end; !error && entry != end; entry.increment(error))
+        if (entry->is_directory(error))
+            folders.push_back(entry->path());
+    if (folders.size() == 1 && std::filesystem::exists(folders.front() / asset::addonManifest, error))
+        return folders.front();
+    return core::makeError(core::ErrorCode::NotFound, "{} has no {} at its root, nor in its one folder", core::toUtf8(chosen.filename()),
+                           asset::addonManifest);
+}
+
+// The addon as a ZIP whose one folder, named after its id, holds the package, as it is shared.
+[[nodiscard]] core::Result<void> exportAddonZip(const asset::Project& project, const std::string& id, const std::filesystem::path& zip)
+{
+    const std::filesystem::path staged = project.cacheDirectory() / "addon-export";
+    std::error_code error;
+    std::filesystem::remove_all(staged, error);
+    const core::Result<std::filesystem::path> exported = asset::exportAddon(project, id, staged);
+    core::Result<void> written = exported ? asset::writeZip(staged, zip) : core::Result<void>(std::unexpected(exported.error()));
+    std::filesystem::remove_all(staged, error);
+    return written;
+}
 
 } // namespace
 
@@ -37,12 +88,13 @@ void ProjectSettingsUi::buildAddons(EditorUiKit& kit)
     auto& install = pageCard(kit, addonsPage, "Addons");
     note(&install,
          "An addon is a folder of reusable content and code, with a manifest that names it. Create "
-         "one to work on it here and export it to share it, or install one from a folder.",
+         "one to work on it here and export it as a ZIP to share it, or install one from a ZIP or a folder.",
          "dim", 2);
     const auto row = formRow(install, "Add");
     const scene::Entity adding = buttonRow(row.editor);
     createAddonButton = button(kit, adding, Icon::Plus, "Create Addon...", "primary", font * 11, line);
-    installAddon = button(kit, adding, Icon::FolderOpen, "Install from Folder...", "flat", font * 13, line);
+    installAddon = button(kit, adding, Icon::Package, "Install...", "flat", font * 8, line);
+    tooltip(installAddon.entity, "A .zip of an addon, or the addon.dvxaddon of its folder");
     addonGuide = button(kit, adding, Icon::BookOpen, "Guide", "flat", font * 7, line);
     tooltip(addonGuide.entity, "How to make an addon and its commands, in the documentation");
     refreshAddons = toolButton(kit, row.editor, Icon::Refresh, rightButton(closeButtonSize(), 0));
@@ -54,7 +106,10 @@ void ProjectSettingsUi::buildAddons(EditorUiKit& kit)
     for (const auto& addon : addonPackages)
     {
         auto& card = pageCard(kit, addonsPage, addon.name);
-        note(&card, addon.id + "   " + addon.version, "dim", 1);
+        note(&card, addon.id + "   " + addon.version + (addon.category.empty() ? std::string{} : "   " + addon.category), "dim", 1);
+        if (const auto index = static_cast<std::size_t>(&addon - addonPackages.data()); index < addonMissing.size())
+            for (const std::string& missing : addonMissing[index])
+                note(&card, missing, "warning", 1);
         if (!addon.author.empty())
             note(&card, "By " + addon.author, "dim", 1);
         if (!addon.description.empty())
@@ -83,10 +138,10 @@ void ProjectSettingsUi::buildAddons(EditorUiKit& kit)
         }
         const scene::Entity actions = buttonRow(formRow(card, "Package").editor);
         made.folder = button(kit, actions, Icon::FolderOpen, "Open Folder", "flat", font * 9, line);
-        made.exported = button(kit, actions, Icon::Package, "Export to Folder...", "flat", font * 11.5f, line);
-        tooltip(made.exported.entity, "Writes a package, which Install from Folder takes in another project");
-        made.update = button(kit, actions, Icon::Refresh, "Update from Folder...", "flat", font * 12.5f, line);
-        tooltip(made.update.entity, "Replaces its files by those of a newer package");
+        made.exported = button(kit, actions, Icon::Package, "Export...", "flat", font * 8, line);
+        tooltip(made.exported.entity, "Writes the addon as a ZIP, which Install takes in another project");
+        made.update = button(kit, actions, Icon::Refresh, "Update...", "flat", font * 8, line);
+        tooltip(made.update.entity, "Replaces its files by those of a newer package: a .zip, or the addon.dvxaddon of its folder");
         made.remove = button(kit, actions, Icon::Trash, "Uninstall...", "flat", font * 8.5f, line);
         addonRows.push_back(made);
     }
@@ -208,8 +263,19 @@ void ProjectSettingsUi::askAboutPackage(ToolsState& state, EditorUiKit& kit, con
         about += "License: " + addon.license + ". ";
     about += addon.description;
     std::string warning;
+    // What it needs: shown, and installed anyway, there being no catalog to fetch it from yet.
+    for (const asset::AddonPreview::Dependency& dependency : preview->dependencies)
+    {
+        const std::string wanted = dependency.needed.version.empty() ? dependency.needed.id
+                                                                     : dependency.needed.id + " " + dependency.needed.version;
+        if (dependency.satisfied)
+            about += std::format("\nNeeds {}: the project has {}.", wanted, *dependency.installed);
+        else
+            warning += dependency.installed ? std::format("It needs {}, and the project has {}: update it. ", wanted, *dependency.installed)
+                                            : std::format("It needs {}, which the project does not have: install it too. ", wanted);
+    }
     if (preview->installedVersion)
-        warning = "Its installed files are replaced: changes made to them in this project are lost. ";
+        warning += "Its installed files are replaced: changes made to them in this project are lost. ";
     if (preview->scripts > 0)
         warning += std::format("It holds {} code file{}: its code compiles with the project and runs in the editor as "
                                "soon as it is installed, even with its Editor Tools off. Install only addons you trust.",
@@ -344,12 +410,21 @@ void ProjectSettingsUi::answerAddons(ToolsState& state, EditorUiKit& kit, scene:
         if (world.wasClicked(addonRows[i].exported.entity))
         {
             addonTarget = addon.id;
-            showFolderDialog(state, &DialogAnswers::exportAddon);
+            const std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
+            state.platform.showFileDialog(dialogParent(state),
+                                          {.type = platform::FileDialogType::SaveFile,
+                                           .filters = {{"ZIP", "zip"}},
+                                           .defaultLocation = state.database->project().root.parent_path() /
+                                                              core::pathFromUtf8(std::format("{}-{}.zip", addon.id, addon.version))},
+                                          [answers](std::optional<std::filesystem::path> chosen) {
+                                              if (const auto inbox = answers.lock(); inbox && chosen)
+                                                  inbox->exportAddon = std::move(*chosen);
+                                          });
         }
         if (world.wasClicked(addonRows[i].update.entity))
         {
             updatingAddon = addon.id;
-            showFolderDialog(state, &DialogAnswers::installAddon);
+            choosePackage(state);
         }
         if (world.wasClicked(addonRows[i].remove.entity))
         {
@@ -371,7 +446,7 @@ void ProjectSettingsUi::answerAddons(ToolsState& state, EditorUiKit& kit, scene:
     if (world.wasClicked(installAddon.entity))
     {
         updatingAddon.clear();
-        showFolderDialog(state, &DialogAnswers::installAddon);
+        choosePackage(state);
     }
     if (world.wasClicked(createAddonButton.entity))
     {
@@ -380,12 +455,19 @@ void ProjectSettingsUi::answerAddons(ToolsState& state, EditorUiKit& kit, scene:
         scene().get<scene::UiText>(draftVersion).text = "0.1.0";
         world.openPopup(scene(), addonCreateDialog);
     }
-    if (auto source = std::exchange(state.dialogAnswers->installAddon, {}))
-        askAboutPackage(state, kit, *source);
-    if (auto parent = std::exchange(state.dialogAnswers->exportAddon, {}))
+    if (auto chosen = std::exchange(state.dialogAnswers->installAddon, {}))
     {
-        if (auto exported = asset::exportAddon(state.database->project(), addonTarget, *parent))
-            addonFinished(state, "Exported " + addonTarget + " to " + core::toUtf8(*exported) + ".");
+        if (core::Result<std::filesystem::path> source = packageFolder(state.database->project(), *chosen))
+            askAboutPackage(state, kit, *source);
+        else
+            addonFailed("Cannot read the addon", source.error());
+    }
+    if (auto zip = std::exchange(state.dialogAnswers->exportAddon, {}))
+    {
+        if (zip->extension() != ".zip")
+            *zip += ".zip";
+        if (core::Result<void> exported = exportAddonZip(state.database->project(), addonTarget, *zip))
+            addonFinished(state, "Exported " + addonTarget + " to " + core::toUtf8(*zip) + ".");
         else
             addonFailed("Cannot export the addon", exported.error());
     }

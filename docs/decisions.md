@@ -5919,6 +5919,15 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
      collision, comme Bake Mesh Instance de Godot ; le solide reste. Le `.dvxmesh` a sa propre disposition (format 1),
      pas celle des caches d'import, qui change : il se lit dans les versions suivantes. Le glTF, écarté, aurait perdu
      les matières du projet.
+3. ✅ **Les add-ons en zip** (étape 2 de leur plan). Décidé le 2026-11-17, avant le code : **une version de Devex trop
+   ancienne refuse l'add-on**, avec la raison, plutôt que de casser le projet ; **les dépendances sont listées** dans le
+   dialogue d'installation, présentes en vert, absentes ou trop anciennes en rouge, et l'installation se fait quand
+   même, la carte de l'add-on gardant l'avertissement tant qu'il en manque : il n'y a pas encore de catalogue pour les
+   chercher. Le manifeste gagne `engine` (la plus ancienne version de Devex qu'il demande), `category`, `icon` (une
+   image du paquet) et `dependencies` (« id version, id », séparés par des virgules). **Install...** et **Update...**
+   prennent un `.zip` ou le `addon.dvxaddon` d'un dossier, **Export...** écrit un `.zip` dont le dossier `<id>` est la
+   racine, comme on le partage. Le zip se lit par le décodeur deflate de stb_image, déjà dans le moteur, plutôt qu'avec
+   une dépendance de plus ; son écriture passe du runtime au module d'import, que l'export web appelle.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

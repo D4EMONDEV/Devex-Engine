@@ -260,6 +260,8 @@ struct ProjectSettingsUi : SettingsUi
     void answerGlobals();
 
     std::vector<asset::AddonInfo> addonPackages;
+    // What each of them needs that the project has not, one line each.
+    std::vector<std::vector<std::string>> addonMissing;
     std::vector<asset::AddonCommand> addonCommands;
     struct AddonRow
     {

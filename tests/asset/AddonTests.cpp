@@ -1,10 +1,16 @@
 #include <devex/asset/Addon.hpp>
 #include <devex/asset/import/MetaFile.hpp>
+#include <devex/asset/import/Zip.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/core/Uuid.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include <array>
+#include <cstdint>
+#include <string>
+#include <vector>
 
 namespace
 {
@@ -293,4 +299,104 @@ TEST_CASE("Commands naming an addon the project does not have are found", "[asse
     const auto unknown = devex::asset::commandsWithoutAddon(fixture.project, commands);
     REQUIRE(unknown.size() == 1);
     CHECK(unknown[0].name == "Misspelled");
+}
+
+TEST_CASE("An addon says the Devex and the addons it needs, which its install checks", "[asset][addon]")
+{
+    AddonFixture fixture;
+    // An addon the project has, at an older version than the one needed.
+    const std::filesystem::path base = fixture.root / "base";
+    REQUIRE(devex::core::writeTextFile(base / "addon.dvxaddon", "[addon format=1 id=\"test.base\" name=\"Base\" version=\"1.0.0\"]\n"));
+    REQUIRE(devex::asset::installAddon(fixture.project, base));
+    REQUIRE(devex::core::writeTextFile(fixture.source / "addon.dvxaddon",
+                                       "[addon format=1 id=\"test.tools\" name=\"Test Tools\" version=\"1.2.3\" engine=\"0.1.0\" "
+                                       "category=\"Tools\" icon=\"icon.png\" dependencies=\"test.base 1.5, test.ui\"]\n"));
+    const auto read = devex::asset::readAddon(fixture.source);
+    REQUIRE(read);
+    CHECK(read->engine == "0.1.0");
+    CHECK(read->category == "Tools");
+    CHECK(read->icon == "icon.png");
+    CHECK(read->dependencies == std::vector<devex::asset::AddonDependency>{{"test.base", "1.5"}, {"test.ui", ""}});
+
+    // What it needs is shown, and the install goes on: there is no catalog to fetch it from yet.
+    const auto preview = devex::asset::previewAddon(fixture.project, fixture.source);
+    REQUIRE(preview);
+    CHECK(preview->conflicts.empty());
+    REQUIRE(preview->dependencies.size() == 2);
+    CHECK(preview->dependencies[0].installed == "1.0.0");
+    CHECK_FALSE(preview->dependencies[0].satisfied);
+    CHECK_FALSE(preview->dependencies[1].installed.has_value());
+    const auto installed = devex::asset::installAddon(fixture.project, fixture.source);
+    REQUIRE(installed);
+    const std::vector<std::string> missing = devex::asset::missingAddonDependencies(fixture.project, *installed);
+    REQUIRE(missing.size() == 2);
+    CHECK(missing[0].find("test.base 1.5 or later") != std::string::npos);
+    CHECK(missing[1].find("test.ui") != std::string::npos);
+
+    // Made for a later Devex: refused, with the reason.
+    const std::filesystem::path later = fixture.root / "later";
+    REQUIRE(devex::core::writeTextFile(later / "addon.dvxaddon",
+                                       "[addon format=1 id=\"test.later\" name=\"Later\" version=\"1.0.0\" engine=\"999.0.0\"]\n"));
+    const auto refused = devex::asset::previewAddon(fixture.project, later);
+    REQUIRE(refused);
+    REQUIRE_FALSE(refused->conflicts.empty());
+    CHECK(refused->conflicts.front().find("needs Devex 999.0.0 or later") != std::string::npos);
+    CHECK_FALSE(devex::asset::installAddon(fixture.project, later));
+    // A dependency that is no addon id makes no manifest.
+    REQUIRE(devex::core::writeTextFile(later / "addon.dvxaddon",
+                                       "[addon format=1 id=\"test.later\" name=\"Later\" version=\"1.0.0\" dependencies=\"Not An Id\"]\n"));
+    CHECK_FALSE(devex::asset::readAddon(later));
+}
+
+TEST_CASE("ZIPs read as most tools write them, and nothing in them leaves their folder", "[asset][addon][zip]")
+{
+    AddonFixture fixture;
+    const auto text = [](const devex::asset::ZipEntry& entry) {
+        return std::string(reinterpret_cast<const char*>(entry.bytes.data()), entry.bytes.size());
+    };
+    // Stored, as Devex writes them.
+    REQUIRE(devex::core::writeTextFile(fixture.root / "folder" / "a.txt", "alpha"));
+    REQUIRE(devex::core::writeTextFile(fixture.root / "folder" / "sub" / "b.txt", "beta"));
+    REQUIRE(devex::asset::writeZip(fixture.root / "folder", fixture.root / "stored.zip"));
+    const auto stored = devex::asset::readZip(fixture.root / "stored.zip");
+    REQUIRE(stored);
+    REQUIRE(stored->size() == 2);
+    CHECK((*stored)[0].path == "a.txt");
+    CHECK(text((*stored)[0]) == "alpha");
+    CHECK((*stored)[1].path == "sub/b.txt");
+    CHECK(text((*stored)[1]) == "beta");
+
+    // Compressed with deflate, with an entry for its folder and an empty file, as Python's zipfile writes it.
+    constexpr std::array<std::uint8_t, 339> deflated{0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xAD, 0x1A, 0x71, 0x5D, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x70, 0x61, 0x63, 0x6B, 0x2F, 0x03, 0x00, 0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xAD, 0x1A, 0x71, 0x5D, 0x45, 0x4F, 0x4F, 0xA6, 0x13, 0x00, 0x00, 0x00, 0x70, 0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00, 0x70, 0x61, 0x63, 0x6B, 0x2F, 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x2E, 0x74, 0x78, 0x74, 0xF3, 0x48, 0xCD, 0xC9, 0xC9, 0xD7, 0x51, 0x70, 0x49, 0x2D, 0x4B, 0xAD, 0x50, 0x54, 0xF0, 0xA0, 0x39, 0x0F, 0x00, 0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xAD, 0x1A, 0x71, 0x5D, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00, 0x70, 0x61, 0x63, 0x6B, 0x2F, 0x65, 0x6D, 0x70, 0x74, 0x79, 0x2E, 0x74, 0x78, 0x74, 0x03, 0x00, 0x50, 0x4B, 0x01, 0x02, 0x14, 0x00, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xAD, 0x1A, 0x71, 0x5D, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0xFD, 0x41, 0x00, 0x00, 0x00, 0x00, 0x70, 0x61, 0x63, 0x6B, 0x2F, 0x50, 0x4B, 0x01, 0x02, 0x14, 0x00, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xAD, 0x1A, 0x71, 0x5D, 0x45, 0x4F, 0x4F, 0xA6, 0x13, 0x00, 0x00, 0x00, 0x70, 0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0x25, 0x00, 0x00, 0x00, 0x70, 0x61, 0x63, 0x6B, 0x2F, 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x2E, 0x74, 0x78, 0x74, 0x50, 0x4B, 0x01, 0x02, 0x14, 0x00, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xAD, 0x1A, 0x71, 0x5D, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0x64, 0x00, 0x00, 0x00, 0x70, 0x61, 0x63, 0x6B, 0x2F, 0x65, 0x6D, 0x70, 0x74, 0x79, 0x2E, 0x74, 0x78, 0x74, 0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x03, 0x00, 0xAB, 0x00, 0x00, 0x00, 0x92, 0x00, 0x00, 0x00, 0x00, 0x00};
+    const std::vector<std::byte> zip(reinterpret_cast<const std::byte*>(deflated.data()),
+                                     reinterpret_cast<const std::byte*>(deflated.data()) + deflated.size());
+    REQUIRE(devex::core::writeFileAtomically(fixture.root / "deflated.zip", zip));
+    REQUIRE(devex::asset::extractZip(fixture.root / "deflated.zip", fixture.root / "out"));
+    std::string hello;
+    for (int i = 0; i < 8; ++i)
+    {
+        hello += "Hello, Devex! ";
+    }
+    CHECK(*devex::core::readTextFile(fixture.root / "out" / "pack" / "hello.txt") == hello);
+    CHECK(std::filesystem::is_regular_file(fixture.root / "out" / "pack" / "empty.txt"));
+
+    // A byte changed in what is compressed is seen.
+    std::vector<std::byte> damaged = zip;
+    damaged[67 + 14 + 5] ^= std::byte{0x5A};
+    REQUIRE(devex::core::writeFileAtomically(fixture.root / "damaged.zip", damaged));
+    CHECK_FALSE(devex::asset::readZip(fixture.root / "damaged.zip"));
+
+    // A path that climbs out of the folder is refused.
+    const devex::core::Result<std::vector<std::byte>> bytes = devex::core::readBinaryFile(fixture.root / "stored.zip");
+    REQUIRE(bytes);
+    std::string climbing(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+    for (std::size_t at = climbing.find("a.txt"); at != std::string::npos; at = climbing.find("a.txt", at + 5))
+    {
+        climbing.replace(at, 5, "../ab");
+    }
+    REQUIRE(devex::core::writeTextFile(fixture.root / "climbing.zip", climbing));
+    const auto refused = devex::asset::readZip(fixture.root / "climbing.zip");
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().message.find("leaves its folder") != std::string::npos);
+    CHECK_FALSE(devex::asset::readZip(fixture.root / "folder" / "a.txt"));
 }

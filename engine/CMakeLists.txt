@@ -325,6 +325,7 @@ target_sources(devex_asset_import
         src/asset/import/ShaderGraphFile.cpp
         src/asset/import/SpriteFramesFile.cpp
         src/asset/import/StbImage.cpp
+        src/asset/import/Zip.cpp
         src/asset/import/TextureProcessing.cpp
         src/asset/import/ThemeFile.cpp
         src/asset/import/TilesetFile.cpp
@@ -342,6 +343,7 @@ target_sources(devex_asset_import
             include/devex/asset/import/ShaderFile.hpp
             include/devex/asset/import/ShaderGraphFile.hpp
             include/devex/asset/import/SpriteFramesFile.hpp
+            include/devex/asset/import/Zip.hpp
             include/devex/asset/import/TextureProcessing.hpp
             include/devex/asset/import/TilesetFile.hpp
             include/devex/asset/import/AnimatorFile.hpp

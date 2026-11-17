@@ -5,6 +5,7 @@
 #include <devex/asset/Artifact.hpp>
 #include <devex/asset/Package.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
+#include <devex/asset/import/Zip.hpp>
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Hash.hpp>
@@ -1414,7 +1415,7 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
     if (!plan.webArchive.empty() && !plan.packageOnly)
     {
         report("Packing the game", 0.96f);
-        if (core::Result<void> zipped = detail::writeZip(plan.output, plan.webArchive); !zipped)
+        if (core::Result<void> zipped = asset::writeZip(plan.output, plan.webArchive); !zipped)
         {
             return std::unexpected(zipped.error());
         }

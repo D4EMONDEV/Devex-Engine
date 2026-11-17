@@ -1891,6 +1891,9 @@ void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
     if (std::chrono::steady_clock::now() >= nextAddonScan)
     {
         addonPackages = asset::installedAddons(saved);
+        addonMissing.clear();
+        for (const asset::AddonInfo& addon : addonPackages)
+            addonMissing.push_back(asset::missingAddonDependencies(saved, addon));
         addonCommands = state.addonCommands;
         nextAddonScan = std::chrono::steady_clock::now() + std::chrono::seconds(1);
     }
