@@ -77,6 +77,6 @@ DEVEX_UPDATE_FORMATS=1 ctest --test-dir out/build/x64-debug -R csharp_api
 
 1. Monter la version dans `CMakeLists.txt`, et `engine="…"` dans `samples/sandbox/Sandbox.dvxproj`.
 2. Lancer les deux commandes ci-dessus, puis `devex_runtime_tests "The saves of every version read"` avec la même variable :
-   elles créent `tests/data/formats/<version>` avec la scène, le terrain et la sauvegarde.
+   elles créent `tests/data/formats/<version>` avec la scène, le terrain, le maillage de Bake to Mesh et la sauvegarde.
 3. Y copier à la main un fichier de chaque autre sorte, et un `project.dvxproj` de nom `Frozen`.
 4. Ne plus jamais modifier ce dossier.

@@ -1,0 +1,104 @@
+[shader_graph format=1 type="spatial"]
+render_modes = list("unshaded", "blend_add", "cull_disabled")
+
+[node id=1 type="output" function="vertex"]
+position = vec2(400, 0)
+values = list(vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0))
+
+[node id=2 type="output" function="fragment"]
+position = vec2(900, 40)
+values = list(vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0))
+
+[node id=3 type="output" function="light"]
+position = vec2(400, 0)
+values = list(vec4(0, 0, 0, 0), vec4(0, 0, 0, 0))
+
+[node id=4 type="parameter" function="fragment"]
+position = vec2(360, -160)
+type = "color"
+name = "glow"
+value = vec4(0.25, 0.7, 1, 1)
+range = vec4(0, 1, 0, 0)
+
+[node id=5 type="fresnel" function="fragment"]
+position = vec2(120, -60)
+values = list(vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(2.5, 0, 0, 0))
+
+[node id=6 type="input" function="fragment"]
+position = vec2(-560, 120)
+name = "VERTEX"
+
+[node id=7 type="input" function="fragment"]
+position = vec2(-800, 260)
+name = "TIME"
+
+[node id=8 type="parameter" function="fragment"]
+position = vec2(-800, 380)
+type = "float"
+name = "speed"
+hint = "range"
+range = vec4(0, 3, 0, 0)
+value = vec4(0.6, 0, 0, 0)
+
+[node id=9 type="operator" function="fragment"]
+position = vec2(-560, 300)
+type = "float"
+op = "multiply"
+values = list(vec4(0, 0, 0, 0), vec4(1, 0, 0, 0))
+
+[node id=10 type="compose" function="fragment"]
+position = vec2(-320, 280)
+type = "vec3"
+values = list(vec4(0, 0, 0, 0), vec4(0, 0, 0, 0), vec4(0, 0, 0, 0))
+
+[node id=11 type="operator" function="fragment"]
+position = vec2(-100, 160)
+type = "vec3"
+op = "add"
+values = list(vec4(0, 0, 0, 0), vec4(0, 0, 0, 0))
+
+[node id=12 type="noise" function="fragment"]
+position = vec2(120, 160)
+octaves = vec4(2, 0, 0, 0)
+values = list(vec4(0, 0, 0, 0), vec4(3, 0, 0, 0))
+
+[node id=13 type="smoothstep" function="fragment"]
+position = vec2(360, 160)
+type = "float"
+values = list(vec4(0.55, 0, 0, 0), vec4(0.62, 0, 0, 0), vec4(0.5, 0, 0, 0))
+
+[node id=14 type="operator" function="fragment"]
+position = vec2(360, 20)
+type = "float"
+op = "add"
+values = list(vec4(0, 0, 0, 0), vec4(0, 0, 0, 0))
+
+[node id=15 type="operator" function="fragment"]
+position = vec2(600, 20)
+type = "vec3"
+op = "multiply"
+values = list(vec4(0, 0, 0, 0), vec4(1, 1, 1, 0))
+
+[link from=6 from_port=0 to=11 to_port=0]
+
+[link from=7 from_port=0 to=9 to_port=0]
+
+[link from=8 from_port=0 to=9 to_port=1]
+
+[link from=9 from_port=0 to=10 to_port=1]
+
+[link from=10 from_port=0 to=11 to_port=1]
+
+[link from=11 from_port=0 to=12 to_port=0]
+
+[link from=12 from_port=0 to=13 to_port=2]
+
+[link from=5 from_port=0 to=14 to_port=0]
+
+[link from=13 from_port=0 to=14 to_port=1]
+
+[link from=4 from_port=0 to=15 to_port=0]
+
+[link from=14 from_port=0 to=15 to_port=1]
+
+[link from=15 from_port=0 to=2 to_port=0]

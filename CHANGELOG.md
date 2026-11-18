@@ -5,30 +5,62 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 
 ## À venir
 
-- **Premier pas vers le web** : le moteur se compile en WebAssembly (préréglage `web`, avec Emscripten), et ses tests de ce que fait un jeu passent dans Node.
+## 0.11.0 — 2026-11-18
+
+Les jeux Devex tournent dans un navigateur, en 2D comme en 3D, avec WebGPU : tout ce que dessine la méthode Compatibility, sauf
+l'air physique, avec les shaders du projet. Les jeux Android se jouent au doigt, et Devex Script renomme, replie le code et a
+plusieurs curseurs. C'est toujours un aperçu.
+
+**Télécharger**
+
+- Windows : `devex-0.11.0-windows-x64-setup.exe`, sans droits administrateur, ou le `.zip` à extraire. L'installateur n'est pas
+  signé : si Windows affiche « Windows a protégé votre ordinateur », cliquer sur *Informations complémentaires*, puis *Exécuter quand même*.
+- Linux : `devex-0.11.0-linux-x64.tar.gz`, à extraire, puis lancer `bin/devex-editor`. Ubuntu 24.04 ou plus récent.
+- Le lecteur web vient avec l'éditeur, dans `platforms/web` : exporter un jeu pour le navigateur ne demande rien de plus,
+  sauf Emscripten 7.0.0 pour un jeu dont le C++ fait quelque chose (voir [docs/web.md](docs/web.md)).
+
+**Mettre à jour**
+
+- L'installateur remplace la version déjà installée, au même endroit. Ni les projets ni les réglages n'y sont : ils restent. Un projet
+  enregistré avec une version précédente demande confirmation à son ouverture, et ses fichiers sont copiés dans `.devex/backups/` avant
+  de changer de format.
+- Le code C++ et C# des jeux est recompilé à leur ouverture, et les shaders du projet sont réimportés une fois.
+
+**Nouveautés : le web**
+
 - **Un jeu 2D dans le navigateur** : un renderer WebGPU dessine les sprites, les tilemaps, le texte et l'interface comme Vulkan, et le lecteur web joue le paquet d'un jeu exporté, une image à chaque rafraîchissement de la page.
 - **La 3D avec WebGPU** : les maillages, skinnés ou non, avec leurs matériaux, éclairés par le soleil, les lumières locales et l'environnement, sur le ciel, comme Vulkan. Les ombres du soleil et des lumières locales aussi, les lumières 2D sur les sprites, le brouillard de hauteur, les particules et les traînées. Puis le bloom et l'antialiasing temporel. L'air physique (le ciel de l'atmosphère) viendra après la 1.0.
-- **Export Web** : **Web** dans la fenêtre d'export, qui produit la page, le lecteur et le paquet du jeu, et un ZIP prêt pour itch.io, et **Run in Browser**, qui sert le jeu sur cet ordinateur et ouvre le navigateur. Un projet doit être en Compatibility ; son C++ est compilé par Emscripten 7.0.0, installé avec emsdk, et lié au moteur dans un lecteur propre au jeu ; le C# ne tourne pas encore dans un navigateur. Dans le navigateur, les sauvegardes, les réglages et les touches du joueur sont gardés dans IndexedDB, et un jeu qui quitte laisse la page dire qu'il est fini.
-- **Renommer un symbole et couper les lignes dans Devex Script** : **F2** renomme ce qui est sous le curseur partout où le serveur de langage le trouve, en ouvrant les fichiers touchés pour les relire avant de sauvegarder ; **Wrap Lines**, dans Editor Settings > Script Editors, coupe les lignes trop longues au bord du panneau, entre deux mots. Les zones de texte de l'interface des jeux ont la même case, `wrap`.
-- **Le repli du code dans Devex Script** : une flèche dans la marge, ou **Alt+F**, replie ce que tiennent des accolades ou ce qui est indenté sous une ligne, et **Edit > Folding** replie ou déplie tout. Les zones de texte des jeux ont la même case, `folding`.
-- **Un guide pour publier sur le web** : [docs/web.md](docs/web.md) dit ce qu'il faut, comment exporter, essayer et mettre en ligne un jeu pour le navigateur, sur itch.io ou ailleurs, avec ou sans Thread Support, et ce qui diffère encore du bureau.
-- **Les shaders du projet dans le navigateur** : dans un projet en Compatibility, l'import compile aussi les shaders et les graphes de shaders en WGSL, gardé dans le cache comme le SPIR-V, et WebGPU dessine avec eux comme Vulkan les maillages et leurs ombres, les sprites et les tilemaps, les particules, et le ciel, dont il tire la lumière de l'environnement ; jusqu'à huit textures par matériau. Changer de méthode de rendu réimporte les shaders ; un projet en Forward+ ne paie rien. Les sprites éclairés par les lumières 3D se dessinent aussi dans le navigateur, et `TIME` y compte des secondes, comme sur le bureau.
 - **Les terrains et l'herbe dans le navigateur** : WebGPU dessine les terrains (blocs à niveaux de détail, couches peintes et par règles, triplanaire, trous), leur ombre et leur herbe comme Vulkan, depuis un code partagé ; les textures des couches y sont rangées dans des tableaux.
 - **Les décalcomanies dans le navigateur** : WebGPU pose les décalcomanies (albédo, normales, ORM, émission, fondus) comme Vulkan, depuis un code partagé, leurs textures rangées dans deux atlas comme le fait Godot sur mobile.
 - **Les effets d'image dans le navigateur** : la profondeur de champ, le flou de mouvement, l'aberration chromatique et la table de couleurs se dessinent avec WebGPU comme avec Vulkan, depuis un code partagé. Le flou de mouvement y suit la caméra.
-- **La qualité mobile** : dans Project Settings > Rendering, la carte **Android** dit ce que le jeu coupe sur un téléphone (antialiasing temporel, occlusion ambiante, reflets, bloom, effets d'objectif, brouillard volumétrique, ombres des lumières locales) ou s'il y dessine en Compatibility ; **Mobile Preset** coupe tout ce qui est lourd. Le bureau, le web et l'éditeur gardent leur image.
+- **Les shaders du projet dans le navigateur** : dans un projet en Compatibility, l'import compile aussi les shaders et les graphes de shaders en WGSL, gardé dans le cache comme le SPIR-V, et WebGPU dessine avec eux comme Vulkan les maillages et leurs ombres, les sprites et les tilemaps, les particules, et le ciel, dont il tire la lumière de l'environnement ; jusqu'à huit textures par matériau. Changer de méthode de rendu réimporte les shaders ; un projet en Forward+ ne paie rien. Les sprites éclairés par les lumières 3D se dessinent aussi dans le navigateur, et `TIME` y compte des secondes, comme sur le bureau.
+- **Export Web** : **Web** dans la fenêtre d'export, qui produit la page, le lecteur et le paquet du jeu, et un ZIP prêt pour itch.io, et **Run in Browser**, qui sert le jeu sur cet ordinateur et ouvre le navigateur. Un projet doit être en Compatibility ; son C++ est compilé par Emscripten 7.0.0, installé avec emsdk, et lié au moteur dans un lecteur propre au jeu ; le C# ne tourne pas encore dans un navigateur. Dans le navigateur, les sauvegardes, les réglages et les touches du joueur sont gardés dans IndexedDB, et un jeu qui quitte laisse la page dire qu'il est fini.
+- **Thread Support pour le web** : cochée dans la fenêtre d'export, elle ajoute le lecteur avec threads, qui charge en arrière-plan et répartit les tâches. La page le prend quand l'hébergeur envoie les en-têtes COOP et COEP (itch.io, case « SharedArrayBuffer support », et Run in Browser), et joue sur un thread ailleurs.
+- **Le multijoueur dans le navigateur** : un jeu web rejoint une partie par WebSocket, et l'hôte écoute ENet et WebSocket sur le même port, pour que les joueurs du bureau et ceux du navigateur jouent ensemble. Derrière un proxy comme Caddy, les pages en https (itch.io) se connectent en `wss://`.
+- **Un guide pour publier sur le web** : [docs/web.md](docs/web.md) dit ce qu'il faut, comment exporter, essayer et mettre en ligne un jeu pour le navigateur, sur itch.io ou ailleurs, avec ou sans Thread Support, et ce qui diffère encore du bureau.
+- **Premier pas vers le web** : le moteur se compile en WebAssembly (préréglage `web`, avec Emscripten), et ses tests de ce que fait un jeu passent dans Node.
+
+**Nouveautés : le tactile et les téléphones**
+
 - **Le multi-touch** : `Input::touches()` en C++ et `Input.Touches` en C# donnent les doigts posés sur l'écran, avec leur place, leur déplacement, et s'ils viennent d'être posés ou levés. Le premier doigt reste la souris tant que **Emulate Mouse From Touch** est cochée, et **Emulate Touch From Mouse** fait de la souris un doigt pour essayer un jeu tactile sur le bureau (Project Settings > Application).
 - **Des commandes à l'écran** : **Touch button** tient une action d'entrée tant qu'un doigt est dessus, **Touch joystick** pousse une action vecteur ou axe avec le doigt qui le tire. Ils ne s'affichent que sur un écran tactile (et dans l'éditeur), et un jeu qui lit ses actions n'a rien à changer.
+- **La qualité mobile** : dans Project Settings > Rendering, la carte **Android** dit ce que le jeu coupe sur un téléphone (antialiasing temporel, occlusion ambiante, reflets, bloom, effets d'objectif, brouillard volumétrique, ombres des lumières locales) ou s'il y dessine en Compatibility ; **Mobile Preset** coupe tout ce qui est lourd. Le bureau, le web et l'éditeur gardent leur image.
+
+**Nouveautés : Devex Script**
+
+- **Renommer un symbole et couper les lignes dans Devex Script** : **F2** renomme ce qui est sous le curseur partout où le serveur de langage le trouve, en ouvrant les fichiers touchés pour les relire avant de sauvegarder ; **Wrap Lines**, dans Editor Settings > Script Editors, coupe les lignes trop longues au bord du panneau, entre deux mots. Les zones de texte de l'interface des jeux ont la même case, `wrap`.
+- **Le repli du code dans Devex Script** : une flèche dans la marge, ou **Alt+F**, replie ce que tiennent des accolades ou ce qui est indenté sous une ligne, et **Edit > Folding** replie ou déplie tout. Les zones de texte des jeux ont la même case, `folding`.
 - **Plusieurs curseurs dans Devex Script**, comme dans Godot : **Alt+clic** en ajoute un, **Maj+Alt+Haut/Bas** au-dessus ou en dessous, **Ctrl+D** prend l'occurrence suivante, **Alt** et glisser sélectionne une colonne, **Échap** revient à un seul. Ce qu'on tape se fait à chacun, et s'annule d'un coup. Les zones de texte des jeux les ont aussi.
+
+**Nouveautés : l'éditeur et les projets**
+
+- **Forward+ ou Compatibility**, dans **Project Settings > Rendering** : Compatibility laisse de côté l'occlusion ambiante, les reflets de l'écran et le brouillard volumétrique, dans l'éditeur comme dans le jeu. C'est ce que demande l'export web.
+- **Create New Project comme Godot**, dans une vraie fenêtre : nom, chemin avec **Create Folder** et **Browse**, un message en vert ou en rouge, le **renderer**, **Version Control Metadata** (Git écrit un `.gitignore` et un `.gitattributes`) et **Edit Now**. Le dossier proposé est celui du dernier projet, ou Documents.
+- **Des icônes nettes** : chaque icône de l'éditeur est dessinée à la taille exacte où elle s'affiche, sur des pixels entiers, comme Godot dessine ses SVG. Elles étaient dessinées une fois en 64 pixels puis réduites, ce qui les rendait floues.
+- **Editor Settings > Export** : les chemins du SDK Android, du NDK, de Java et d'Emscripten. Vides, l'éditeur trouve les outils seul et montre ce qu'il a trouvé ; choisis, ils passent avant tout, et l'export en ligne de commande les prend aussi.
 - **Les add-ons en zip** : **Install...** et **Update...** prennent un `.zip` ou le `addon.dvxaddon` d'un dossier, **Export...** écrit un `.zip`. Le manifeste dit la version de Devex qu'il demande (une plus ancienne refuse de l'installer), ses dépendances (listées, en rouge celles qui manquent), sa catégorie et son icône.
 - **Les traductions en PO** : le panneau Translations exporte une table pour les traducteurs, un `.pot` et un `.po` par langue (la clé dans `msgctxt`), et remplit la colonne d'une langue depuis le `.po` qu'ils rendent. Un `.po` posé dans le projet est lu comme une table.
 - **Bake to Mesh** pour les blocs CSG : le solide est écrit en `.dvxmesh`, avec ses matières, et une entité le dessine à sa place avec sa collision.
-- **Editor Settings > Export** : les chemins du SDK Android, du NDK, de Java et d'Emscripten. Vides, l'éditeur trouve les outils seul et montre ce qu'il a trouvé ; choisis, ils passent avant tout, et l'export en ligne de commande les prend aussi.
-- **Thread Support pour le web** : cochée dans la fenêtre d'export, elle ajoute le lecteur avec threads, qui charge en arrière-plan et répartit les tâches. La page le prend quand l'hébergeur envoie les en-têtes COOP et COEP (itch.io, case « SharedArrayBuffer support », et Run in Browser), et joue sur un thread ailleurs.
-- **Le multijoueur dans le navigateur** : un jeu web rejoint une partie par WebSocket, et l'hôte écoute ENet et WebSocket sur le même port, pour que les joueurs du bureau et ceux du navigateur jouent ensemble. Derrière un proxy comme Caddy, les pages en https (itch.io) se connectent en `wss://`.
-- **Des icônes nettes** : chaque icône de l'éditeur est dessinée à la taille exacte où elle s'affiche, sur des pixels entiers, comme Godot dessine ses SVG. Elles étaient dessinées une fois en 64 pixels puis réduites, ce qui les rendait floues.
-- **Create New Project comme Godot**, dans une vraie fenêtre : nom, chemin avec **Create Folder** et **Browse**, un message en vert ou en rouge, le **renderer**, **Version Control Metadata** (Git écrit un `.gitignore` et un `.gitattributes`) et **Edit Now**. Le dossier proposé est celui du dernier projet, ou Documents.
-- **Forward+ ou Compatibility**, dans **Project Settings > Rendering** : Compatibility laisse de côté l'occlusion ambiante, les reflets de l'écran et le brouillard volumétrique, dans l'éditeur comme dans le jeu. C'est ce que demandera l'export web.
 
 ## 0.10.1 — 2026-11-07
 

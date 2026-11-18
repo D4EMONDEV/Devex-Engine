@@ -6046,6 +6046,10 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
    pour les navigateurs plutôt que de figer leurs versions. La relecture a mis le web dans le README (direction,
    renderer, construction, CI), le guide de démarrage et la page des versions publiées, et le tactile dans le README et
    l'API C# ; elle a retiré ce qui était annoncé pour plus tard et qui est fait (les add-ons en zip, l'export web).
+8. ✅ **La 0.11.0**, préparée le 2026-11-18 une fois commité le travail sur les tests de formats, qu'elle touchait : la
+   version dans `CMakeLists.txt` et le bac à sable, sa section du journal (le web, le tactile, Devex Script, l'éditeur),
+   et ses formats figés dans `tests/data/formats/0.11.0`, avec le premier `.dvxmesh`, que le test écrit lui-même en
+   figeant une version et relit octet pour octet. Le tag, qui fait publier la release en brouillon, reste à l'utilisateur.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

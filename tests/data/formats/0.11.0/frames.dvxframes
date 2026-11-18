@@ -1,0 +1,4 @@
+[frames format=1]
+
+[animation name="spin" fps=10 loop=true]
+frames = list(asset("e38c27bb-c150-5fef-9956-a870471fe23a"), asset("11a7ff12-1f02-5762-982e-73b14a8c97a9"), asset("f416ee90-adf7-5d66-ba65-3cc9d1c4f1dd"), asset("1617f437-3c0e-5bb8-8f85-eba1fa6edaea"), asset("8dca1747-3aca-5113-b3bb-fe9f9a26bfd0"), asset("efb13061-dcdb-53db-b7d2-cdcfbdde6bb5"))

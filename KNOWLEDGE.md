@@ -4042,13 +4042,12 @@ public:
 - `TIME` et le vent : `m_shaderTime`, en secondes depuis le démarrage, modulo une heure, comme Vulkan ; `m_time` compte les
   images (le grain).
 
-## Formats ajoutés après les formats figés
+## Formats figés depuis la 0.11.0
 
 - `.dvxmesh` (Bake to Mesh, `asset::encodeMeshFile`) : « DVXMESH\0 », format 1, nombres de sommets, d'indices et de
   sous-maillages, puis position, normale et UV par sommet, les indices, et par sous-maillage son premier indice, son
-  nombre et les 16 octets de l'UUID de sa matière. Le test de compatibilité des formats (`FormatCompatibilityTests`) ne
-  le connaît pas encore : à la prochaine version figée, lui ajouter son lecteur en même temps qu'on copie un `.dvxmesh`
-  dans `tests/data/formats/<version>`.
+  nombre et les 16 octets de l'UUID de sa matière. `FormatCompatibilityTests` l'écrit en figeant une version
+  (`baked.dvxmesh`, un carré de deux sous-maillages) et relit celui de chaque version qui en a un, octet pour octet.
 - `.po` et `.pot` (traductions) sont du texte de gettext, pas un format de Devex.
 
 ## Les threads sur le web

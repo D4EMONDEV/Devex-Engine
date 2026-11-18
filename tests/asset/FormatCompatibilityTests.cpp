@@ -2,6 +2,7 @@
 // tests/data/formats are never edited: each one holds what a released version wrote.
 
 #include <devex/asset/Artifact.hpp>
+#include <devex/asset/MeshData.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/TerrainMaps.hpp>
 #include <devex/asset/import/AnimatorFile.hpp>
@@ -43,6 +44,9 @@ namespace {
 constexpr std::string_view everyComponent = "every_component.dvxscene";
 constexpr std::string_view smallTerrain = "small.dvxterrain";
 constexpr std::uint32_t smallTerrainResolution = 33;
+// The mesh Bake to Mesh writes, frozen from 0.11.0 on: a quad of two submeshes, the second with a material.
+constexpr std::string_view bakedMesh = "baked.dvxmesh";
+constexpr std::string_view bakedMaterial = "6f9619ff-8b86-d011-b42d-00c04fc964ff";
 
 [[nodiscard]] fs::path formats()
 {
@@ -218,6 +222,19 @@ void freezeThisVersion()
         maps.holes.assign(samples, 0);
         maps.grass.assign(samples, 9);
         REQUIRE(core::writeFileAtomically(file, asset::encodeTerrain(maps)));
+    }
+    if (const fs::path file = folder / bakedMesh; !fs::exists(file))
+    {
+        asset::MeshData mesh;
+        mesh.vertices = {{.position = {0.0f, 0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .uv = {0.0f, 1.0f}},
+                         {.position = {1.0f, 0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .uv = {1.0f, 1.0f}},
+                         {.position = {1.0f, 1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .uv = {1.0f, 0.0f}},
+                         {.position = {0.0f, 1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .uv = {0.0f, 0.0f}}};
+        mesh.indices = {0, 1, 2, 0, 2, 3};
+        const auto material = core::Uuid::parse(bakedMaterial);
+        REQUIRE(material);
+        mesh.submeshes = {{.firstIndex = 0, .indexCount = 3}, {.firstIndex = 3, .indexCount = 3, .material = asset::AssetId{*material}}};
+        REQUIRE(core::writeFileAtomically(file, asset::encodeMeshFile(mesh)));
     }
 }
 
@@ -515,7 +532,8 @@ TEST_CASE("The asset files of every version can be saved and reopened", "[format
             const fs::path& file = entry.path();
             const std::string extension = core::toUtf8(file.extension());
             kinds.insert(extension);
-            if (extension == ".dvxscene" || extension == ".dvxterrain" || extension == ".dvxproj" || entry.is_directory())
+            if (extension == ".dvxscene" || extension == ".dvxterrain" || extension == ".dvxmesh" || extension == ".dvxproj" ||
+                entry.is_directory())
             {
                 continue;
             }
@@ -562,6 +580,41 @@ TEST_CASE("The terrain of every version reads: it is sculpted by hand and comes 
         CHECK(reopened->holes == terrain->holes);
         CHECK(reopened->grass == terrain->grass);
     }
+}
+
+TEST_CASE("The baked mesh of every version reads, and reads the same after saving it again", "[format]")
+{
+    if (updating())
+    {
+        SUCCEED("Recording");
+        return;
+    }
+    std::size_t versions = 0;
+    for (const fs::path& folder : versionFolders())
+    {
+        // Bake to Mesh came with 0.11.0.
+        if (!fs::exists(folder / bakedMesh))
+        {
+            continue;
+        }
+        ++versions;
+        INFO(core::toUtf8(folder));
+        const core::Result<std::vector<std::byte>> bytes = core::readBinaryFile(folder / bakedMesh);
+        REQUIRE(bytes);
+        const core::Result<asset::MeshData> mesh = asset::decodeMeshFile(*bytes);
+        // A layout that changes without a reader of the former one fails here.
+        REQUIRE(mesh);
+        REQUIRE(mesh->vertices.size() == 4);
+        CHECK(mesh->vertices[2].position == math::Vec3{1.0f, 1.0f, 0.0f});
+        CHECK(mesh->vertices[3].uv == math::Vec2{0.0f, 0.0f});
+        CHECK(mesh->indices == std::vector<std::uint32_t>{0, 1, 2, 0, 2, 3});
+        REQUIRE(mesh->submeshes.size() == 2);
+        CHECK(mesh->submeshes[1].firstIndex == 3);
+        CHECK_FALSE(mesh->submeshes[0].material.isValid());
+        CHECK(mesh->submeshes[1].material.uuid.toString() == bakedMaterial);
+        CHECK(asset::encodeMeshFile(*mesh) == *bytes);
+    }
+    CHECK(versions > 0);
 }
 
 TEST_CASE("The project of every version can be saved and reopened", "[format]")
