@@ -5,6 +5,8 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 
 ## À venir
 
+- **Les sauvegardes du navigateur ne se perdent plus** : une page qui démarrait cachée, comme un onglet ouvert derrière les autres, ou quittée des yeux pendant le chargement, pouvait écrire dans IndexedDB son dossier encore vide et y effacer les sauvegardes, les réglages et les touches du joueur. L'écriture attend maintenant que le jeu ait relu ce qu'il gardait, et rien n'est écrit quand cette lecture échoue.
+
 ## 0.11.0 — 2026-11-18
 
 Les jeux Devex tournent dans un navigateur, en 2D comme en 3D, avec WebGPU : tout ce que dessine la méthode Compatibility, sauf

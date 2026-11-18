@@ -1042,7 +1042,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE void devexUserFilesRestored()
 }
 
 // The folder on IDBFS, read from IndexedDB; then one write back at a time, another following when files changed during
-// it, and one when the page is hidden, as it is before it closes.
+// it, and one when the page is hidden, as it is before it closes. Nothing is written back while the files are read: the
+// folder is still empty then, and writing it would take from IndexedDB what the player kept. A page hidden while it
+// loads, as a tab opened behind the others, writes once the files are there.
 EM_JS(void, devexRestoreUserFiles, (const char* folder), {
     const path = UTF8ToString(folder);
     if (typeof IDBFS === 'undefined') {
@@ -1051,8 +1053,11 @@ EM_JS(void, devexRestoreUserFiles, (const char* folder), {
     }
     FS.mkdirTree(path);
     FS.mount(IDBFS, {}, path);
-    const files = {syncing: false, again: false};
+    const files = {syncing: true, again: false, unread: false};
     Module.devexPersistUserFiles = () => {
+        if (files.unread) {
+            return;
+        }
         if (files.syncing) {
             files.again = true;
             return;
@@ -1076,9 +1081,16 @@ EM_JS(void, devexRestoreUserFiles, (const char* folder), {
     });
     FS.syncfs(true, (error) => {
         if (error) {
-            console.warn('What the game kept cannot be read from IndexedDB: ' + error);
+            // Writing back what could not be read would wipe it out: this game keeps nothing this time.
+            console.warn('What the game kept cannot be read from IndexedDB, and nothing is written back to it: ' + error);
+            files.unread = true;
         }
+        files.syncing = false;
         _devexUserFilesRestored();
+        if (files.again && !files.syncing) {
+            files.again = false;
+            Module.devexPersistUserFiles();
+        }
     });
 });
 
