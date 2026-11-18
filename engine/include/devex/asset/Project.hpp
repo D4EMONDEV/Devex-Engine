@@ -170,8 +170,9 @@ struct DEVEX_API AndroidExportSettings
     std::int32_t versionCode = 1;
     // "landscape", "portrait" or "sensor".
     std::string orientation = "landscape";
-    // The architectures: of phones, and of the emulator on a PC.
+    // The architectures: of phones, of the phones whose Android is 32 bits, and of the emulator on a PC.
     bool arm64 = true;
+    bool arm32 = false;
     bool x86_64 = false;
     // "apk", to install directly, or "aab", for the Play Store.
     std::string format = "apk";

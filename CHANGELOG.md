@@ -5,6 +5,9 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 
 ## À venir
 
+- **Android sans Vulkan 1.3** : un téléphone qui n'a que Vulkan 1.1, comme beaucoup d'entrée de gamme, dessine avec le renderer WebGPU du web, par Dawn, au lieu de refuser le jeu ; l'APK ne demande plus que Vulkan 1.1. Ces téléphones ont l'image de Compatibility, et les shaders du projet y demandent que le projet soit en Compatibility.
+- **Les téléphones 32 bits** : **Phones, 32 Bits (armeabi-v7a)** dans l'export Android, avec le préréglage `android-arm32`, pour les Android 32 bits, que font tourner bien des téléphones d'entrée de gamme même avec un processeur 64 bits.
+
 ## 0.11.1 — 2026-11-18
 
 Les jeux web sur téléphone : plus fluides, le son sans grésillement, et l'arène du bac à sable jouable au doigt. Et les

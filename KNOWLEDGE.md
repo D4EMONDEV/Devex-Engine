@@ -4090,6 +4090,10 @@ public:
   premier doigt.
 - Sur un téléphone (`isMobile()`), le lecteur web crée sa fenêtre sans `SDL_WINDOW_HIGH_PIXEL_DENSITY` (les pixels de
   la page), WebGPU fait ses cartes d'ombre moitié moins grandes, et miniaudio mixe par 4096 images.
+- Android sans Vulkan 1.3 : `Renderer::create` essaie Vulkan, et en `RenderApi::Automatic` passe à WebGPU (Dawn, compilé
+  avec `DEVEX_WEBGPU` dans les préréglages Android). `adb shell setprop debug.devex.renderer webgpu` le force. La surface
+  WebGPU se refait quand `Window::native().window` change (`m_surfaceWindow`). L'export donne à Gradle `ndkPath` et
+  `ndkVersion`, sans lesquels il n'épure pas les bibliothèques.
 
 ## C++ des jeux pour le web (étape 5 du web)
 

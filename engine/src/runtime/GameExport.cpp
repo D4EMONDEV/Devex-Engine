@@ -1442,7 +1442,7 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
 {
     constexpr std::string_view usage = "usage: devex-editor --export <project.dvxproj> [--output <folder>] "
                                        "[--configuration <Release|Debug>] [--platform <desktop|windows|linux|android|web>] "
-                                       "[--abi <arm64-v8a|x86_64>]... [--format <apk|aab>] [--release] [--install] [--package-only]";
+                                       "[--abi <arm64-v8a|armeabi-v7a|x86_64>]... [--format <apk|aab>] [--release] [--install] [--package-only]";
     if (arguments.size() < 2 || arguments.front() != "--export")
     {
         DEVEX_LOG_ERROR("{}", usage);
@@ -1583,6 +1583,7 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
         if (!abis.empty())
         {
             android.arm64 = std::ranges::contains(abis, "arm64-v8a");
+            android.arm32 = std::ranges::contains(abis, "armeabi-v7a");
             android.x86_64 = std::ranges::contains(abis, "x86_64");
         }
         android.format = format.value_or(android.format);

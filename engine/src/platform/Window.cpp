@@ -382,6 +382,9 @@ NativeWindow Window::native() const noexcept
         native.display = x11;
         native.x11Window = static_cast<std::uint64_t>(SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
     }
+#elif defined(__ANDROID__)
+    native.window = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+    native.kind = native.window != nullptr ? NativeWindow::Kind::Android : NativeWindow::Kind::None;
 #else
     static_cast<void>(properties);
 #endif

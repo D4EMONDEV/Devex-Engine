@@ -3,10 +3,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     android:installLocation="auto">
 
-    <!-- The renderer needs Vulkan 1.3: stores leave out the devices that lack it. -->
+    <!-- Vulkan 1.1 at least: Vulkan 1.3 draws everything, and WebGPU, through Dawn, the phones that have only 1.1.
+         Stores leave out the devices without it. -->
     <uses-feature
         android:name="android.hardware.vulkan.version"
-        android:version="0x403000"
+        android:version="0x401000"
         android:required="true" />
     <uses-feature
         android:name="android.hardware.touchscreen"

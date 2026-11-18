@@ -71,7 +71,7 @@ public:
 
     ShaderModule(ShaderModule&& other) noexcept
         : m_device(other.m_device)
-        , m_module(std::exchange(other.m_module, VK_NULL_HANDLE))
+        , m_module(std::exchange(other.m_module, {}))
     {
     }
 
@@ -142,9 +142,9 @@ Pipeline::Pipeline(VkDevice device, VkPipelineLayout layout, VkPipeline pipeline
 }
 
 Pipeline::Pipeline(Pipeline&& other) noexcept
-    : m_device(std::exchange(other.m_device, VK_NULL_HANDLE))
-    , m_layout(std::exchange(other.m_layout, VK_NULL_HANDLE))
-    , m_pipeline(std::exchange(other.m_pipeline, VK_NULL_HANDLE))
+    : m_device(std::exchange(other.m_device, {}))
+    , m_layout(std::exchange(other.m_layout, {}))
+    , m_pipeline(std::exchange(other.m_pipeline, {}))
 {
 }
 
@@ -153,9 +153,9 @@ Pipeline& Pipeline::operator=(Pipeline&& other) noexcept
     if (this != &other)
     {
         destroy();
-        m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
-        m_layout = std::exchange(other.m_layout, VK_NULL_HANDLE);
-        m_pipeline = std::exchange(other.m_pipeline, VK_NULL_HANDLE);
+        m_device = std::exchange(other.m_device, {});
+        m_layout = std::exchange(other.m_layout, {});
+        m_pipeline = std::exchange(other.m_pipeline, {});
     }
     return *this;
 }

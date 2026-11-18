@@ -14,7 +14,7 @@ namespace {
 
 constexpr const char* validationLayerName = "VK_LAYER_KHRONOS_validation";
 
-VkBool32 VKAPI_CALL forwardDebugMessage(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+VKAPI_ATTR VkBool32 VKAPI_CALL forwardDebugMessage(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
                                         VkDebugUtilsMessageTypeFlagsEXT types,
                                         const VkDebugUtilsMessengerCallbackDataEXT* data,
                                         void* /*userData*/)
@@ -170,8 +170,8 @@ core::Result<Instance> Instance::create(const InstanceConfig& config)
 }
 
 Instance::Instance(Instance&& other) noexcept
-    : m_instance(std::exchange(other.m_instance, VK_NULL_HANDLE))
-    , m_messenger(std::exchange(other.m_messenger, VK_NULL_HANDLE))
+    : m_instance(std::exchange(other.m_instance, {}))
+    , m_messenger(std::exchange(other.m_messenger, {}))
     , m_validation(std::exchange(other.m_validation, false))
     , m_canChooseExclusiveDisplay(std::exchange(other.m_canChooseExclusiveDisplay, false))
 {
@@ -182,8 +182,8 @@ Instance& Instance::operator=(Instance&& other) noexcept
     if (this != &other)
     {
         destroy();
-        m_instance = std::exchange(other.m_instance, VK_NULL_HANDLE);
-        m_messenger = std::exchange(other.m_messenger, VK_NULL_HANDLE);
+        m_instance = std::exchange(other.m_instance, {});
+        m_messenger = std::exchange(other.m_messenger, {});
         m_validation = std::exchange(other.m_validation, false);
         m_canChooseExclusiveDisplay = std::exchange(other.m_canChooseExclusiveDisplay, false);
     }
@@ -231,8 +231,8 @@ Surface::Surface(VkInstance instance, VkSurfaceKHR surface) noexcept
 }
 
 Surface::Surface(Surface&& other) noexcept
-    : m_instance(std::exchange(other.m_instance, VK_NULL_HANDLE))
-    , m_surface(std::exchange(other.m_surface, VK_NULL_HANDLE))
+    : m_instance(std::exchange(other.m_instance, {}))
+    , m_surface(std::exchange(other.m_surface, {}))
 {
 }
 
@@ -241,8 +241,8 @@ Surface& Surface::operator=(Surface&& other) noexcept
     if (this != &other)
     {
         destroy();
-        m_instance = std::exchange(other.m_instance, VK_NULL_HANDLE);
-        m_surface = std::exchange(other.m_surface, VK_NULL_HANDLE);
+        m_instance = std::exchange(other.m_instance, {});
+        m_surface = std::exchange(other.m_surface, {});
     }
     return *this;
 }

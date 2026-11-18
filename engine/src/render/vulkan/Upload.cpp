@@ -33,11 +33,11 @@ core::Result<UploadContext> UploadContext::create(const Device& device)
 }
 
 UploadContext::UploadContext(UploadContext&& other) noexcept
-    : m_device(std::exchange(other.m_device, VK_NULL_HANDLE))
-    , m_queue(std::exchange(other.m_queue, VK_NULL_HANDLE))
-    , m_commandPool(std::exchange(other.m_commandPool, VK_NULL_HANDLE))
-    , m_commandBuffer(std::exchange(other.m_commandBuffer, VK_NULL_HANDLE))
-    , m_completed(std::exchange(other.m_completed, VK_NULL_HANDLE))
+    : m_device(std::exchange(other.m_device, {}))
+    , m_queue(std::exchange(other.m_queue, {}))
+    , m_commandPool(std::exchange(other.m_commandPool, {}))
+    , m_commandBuffer(std::exchange(other.m_commandBuffer, {}))
+    , m_completed(std::exchange(other.m_completed, {}))
 {
 }
 
@@ -46,11 +46,11 @@ UploadContext& UploadContext::operator=(UploadContext&& other) noexcept
     if (this != &other)
     {
         destroy();
-        m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
-        m_queue = std::exchange(other.m_queue, VK_NULL_HANDLE);
-        m_commandPool = std::exchange(other.m_commandPool, VK_NULL_HANDLE);
-        m_commandBuffer = std::exchange(other.m_commandBuffer, VK_NULL_HANDLE);
-        m_completed = std::exchange(other.m_completed, VK_NULL_HANDLE);
+        m_device = std::exchange(other.m_device, {});
+        m_queue = std::exchange(other.m_queue, {});
+        m_commandPool = std::exchange(other.m_commandPool, {});
+        m_commandBuffer = std::exchange(other.m_commandBuffer, {});
+        m_completed = std::exchange(other.m_completed, {});
     }
     return *this;
 }

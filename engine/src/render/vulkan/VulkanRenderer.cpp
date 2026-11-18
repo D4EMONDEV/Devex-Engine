@@ -321,7 +321,7 @@ void VulkanRenderer::destroyWindowTarget(WindowTarget& target) noexcept
     const VkDevice device = m_device.handle();
     for (VkSemaphore& semaphore : target.acquired)
     {
-        vkDestroySemaphore(device, std::exchange(semaphore, VK_NULL_HANDLE), nullptr);
+        vkDestroySemaphore(device, std::exchange(semaphore, {}), nullptr);
     }
     for (const VkSemaphore semaphore : target.presented)
     {

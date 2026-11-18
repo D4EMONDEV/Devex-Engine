@@ -4,6 +4,7 @@
 #include <devex/core/File.hpp>
 #include <devex/core/JobSystem.hpp>
 #include <devex/core/Uuid.hpp>
+#include <devex/platform/InputSource.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -959,4 +960,19 @@ TEST_CASE("Watched folders import changes without an explicit refresh", "[asset]
         reimported = contains((*database)->update(), id, AssetChange::Imported);
     }
     CHECK(reimported);
+}
+
+TEST_CASE("Every binding of the sandbox names a control that exists", "[asset][project]")
+{
+    const auto project = devex::asset::loadProject(std::filesystem::path{DEVEX_SANDBOX_DIRECTORY} / "Sandbox.dvxproj");
+    REQUIRE(project.has_value());
+    REQUIRE_FALSE(project->input.actions.empty());
+    for (const devex::asset::InputAction& action : project->input.actions)
+    {
+        for (const devex::asset::InputBinding& binding : action.bindings)
+        {
+            INFO(action.name + ": " + binding.input);
+            CHECK(devex::platform::parseInputSource(binding.input).has_value());
+        }
+    }
 }

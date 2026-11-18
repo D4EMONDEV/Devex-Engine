@@ -345,6 +345,8 @@ private:
     wgpu::Device m_device;
     wgpu::Queue m_queue;
     wgpu::Surface m_surface;
+    // The native window the surface was made for, which Android changes.
+    void* m_surfaceWindow = nullptr;
     wgpu::TextureFormat m_surfaceFormat = wgpu::TextureFormat::Undefined;
     // The format the scene and the interface are drawn into the surface with: its sRGB view.
     wgpu::TextureFormat m_surfaceViewFormat = wgpu::TextureFormat::Undefined;

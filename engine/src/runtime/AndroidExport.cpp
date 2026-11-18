@@ -196,13 +196,16 @@ core::Result<void> prepareAndroidExport(ExportPlan& plan, const fs::path& binDir
     plan.managed = false;
     std::vector<AndroidBuild> builds = findAndroidBuilds(binDirectory);
     std::erase_if(builds, [&](const AndroidBuild& build) {
-        return !(build.abi == "arm64-v8a" ? android.arm64 : build.abi == "x86_64" ? android.x86_64 : false);
+        return !(build.abi == "arm64-v8a"     ? android.arm64
+                 : build.abi == "armeabi-v7a" ? android.arm32
+                 : build.abi == "x86_64"      ? android.x86_64
+                                              : false);
     });
     if (builds.empty())
     {
         return core::makeError(core::ErrorCode::NotFound,
                                "There is no Android build of the engine for the chosen architectures next to the editor: build the "
-                               "android-arm64 or android-x86_64 preset first");
+                               "android-arm64, android-arm32 or android-x86_64 preset first");
     }
     plan.androidBuilds = std::move(builds);
     plan.engine = plan.androidBuilds.front().engine;

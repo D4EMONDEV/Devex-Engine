@@ -6074,6 +6074,24 @@ avec lui, avant le code :
 Vérifié dans le navigateur intégré en téléphone émulé (les commandes, les pixels, les effets coupés) ; la cadence sur un
 vrai téléphone reste à mesurer par l'utilisateur.
 
+## Android sans Vulkan 1.3 — décidé le 2026-11-18
+
+L'APK de l'arène refusait de s'installer sur le téléphone de l'utilisateur, le Galaxy A13 5G déjà noté dans *Android* :
+son manifeste exigeait Vulkan 1.3, et ce téléphone n'a que Vulkan 1.1, sous un Android 32 bits. Chrome y fait pourtant
+tourner le jeu web, par Dawn sur ce même Vulkan 1.1. Choisi avec l'utilisateur, avant le code :
+
+- **WebGPU en secours** plutôt qu'un troisième renderer en OpenGL ES, ou un renderer Vulkan récrit pour la 1.1 : Android
+  essaie Vulkan 1.3, et sinon dessine avec le renderer WebGPU du web, par Dawn (`dawn[vulkan]` pour Android dans vcpkg),
+  sur la fenêtre native que SDL donne (`NativeWindow::Kind::Android`). La surface suit cette fenêtre, qu'Android retire
+  quand l'app passe en arrière-plan et rend, une autre, au retour. Le manifeste ne demande plus que Vulkan 1.1.
+  `adb shell setprop debug.devex.renderer webgpu` force WebGPU, pour l'essayer sur un téléphone en Vulkan 1.3.
+- **Une version 32 bits du moteur** (`android-arm32`, triplet `arm-neon-android`, `armeabi-v7a`), choisie dans
+  l'export comme les autres architectures (`arm32` dans `[export_android]`). Le WebAssembly avait déjà rendu le moteur
+  sûr en 32 bits.
+
+Ces téléphones ont l'image de Compatibility, et les shaders du projet n'y ont leur WGSL que si le projet est en
+Compatibility, puisqu'il se compile à l'import pour le web.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

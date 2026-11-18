@@ -244,8 +244,8 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
 }
 
 Swapchain::Swapchain(Swapchain&& other) noexcept
-    : m_device(std::exchange(other.m_device, VK_NULL_HANDLE))
-    , m_swapchain(std::exchange(other.m_swapchain, VK_NULL_HANDLE))
+    : m_device(std::exchange(other.m_device, {}))
+    , m_swapchain(std::exchange(other.m_swapchain, {}))
     , m_format(other.m_format)
     , m_extent(other.m_extent)
     , m_presentMode(other.m_presentMode)
@@ -264,8 +264,8 @@ Swapchain& Swapchain::operator=(Swapchain&& other) noexcept
     if (this != &other)
     {
         destroy();
-        m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
-        m_swapchain = std::exchange(other.m_swapchain, VK_NULL_HANDLE);
+        m_device = std::exchange(other.m_device, {});
+        m_swapchain = std::exchange(other.m_swapchain, {});
         m_format = other.m_format;
         m_extent = other.m_extent;
         m_presentMode = other.m_presentMode;

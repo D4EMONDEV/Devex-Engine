@@ -363,6 +363,7 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
             }
             text("orientation", android.orientation);
             flag("arm64", android.arm64);
+            flag("arm32", android.arm32);
             flag("x86_64", android.x86_64);
             text("format", android.format);
             flag("release", android.release);
@@ -1017,6 +1018,7 @@ std::string writeProjectText(const Project& project)
                             {"version_code", std::int64_t{android.versionCode}},
                             {"orientation", android.orientation},
                             {"arm64", android.arm64},
+                            {"arm32", android.arm32},
                             {"x86_64", android.x86_64},
                             {"format", android.format},
                             {"release", android.release},

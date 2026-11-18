@@ -172,6 +172,15 @@ void reportError(wgpu::ErrorType type, wgpu::StringView message)
         return instance.CreateSurface(&descriptor);
     }
     return nullptr;
+#elif defined(__ANDROID__)
+    if (native.kind != platform::NativeWindow::Kind::Android)
+    {
+        return nullptr;
+    }
+    wgpu::SurfaceSourceAndroidNativeWindow android;
+    android.window = native.window;
+    descriptor.nextInChain = &android;
+    return instance.CreateSurface(&descriptor);
 #else
     static_cast<void>(instance);
     static_cast<void>(native);
@@ -263,6 +272,7 @@ void wait(const wgpu::Instance& instance, wgpu::Future future)
 }
 #endif
 
+#if defined(__EMSCRIPTEN__)
 // The adapter and device a browser gave before the renderer existed, which asks for them without waiting.
 struct BrowserDevice
 {
@@ -275,6 +285,7 @@ BrowserDevice& browserDevice()
     static BrowserDevice device;
     return device;
 }
+#endif
 
 } // namespace
 
@@ -384,6 +395,7 @@ core::Result<void> WebGpuRenderer::initialize()
     {
         return core::makeError(core::ErrorCode::Platform, "WebGPU cannot draw into this window");
     }
+    m_surfaceWindow = m_window.native().window;
     wgpu::RequestAdapterOptions options;
     options.powerPreference = wgpu::PowerPreference::HighPerformance;
     options.compatibleSurface = m_surface;
@@ -1214,6 +1226,28 @@ core::Result<void> WebGpuRenderer::endFrame()
     {
         return {};
     }
+#if defined(__ANDROID__)
+    // Android takes the window of an app in the background away, and gives another when it comes back: the surface
+    // follows it, and nothing is drawn in between.
+    if (void* const window = m_window.native().window; window != m_surfaceWindow)
+    {
+        m_surface = window != nullptr ? createSurface(m_instance, m_window) : nullptr;
+        m_surfaceWindow = window;
+        m_surfaceOutdated = true;
+        if (window != nullptr)
+        {
+            DEVEX_LOG_INFO("The window has its surface again");
+        }
+        else
+        {
+            DEVEX_LOG_INFO("The window lost its surface: drawing waits for it to come back");
+        }
+    }
+    if (!m_surface)
+    {
+        return {};
+    }
+#endif
     if (m_surfaceOutdated || size != m_surfaceSize)
     {
         if (core::Result<void> configured = configureSurface(size); !configured)

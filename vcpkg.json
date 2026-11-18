@@ -71,7 +71,7 @@
             ]
         },
         "webgpu": {
-            "description": "Build the WebGPU renderer, with Dawn: the browser's, and on a computer the one the tests compare with Vulkan",
+            "description": "Build the WebGPU renderer, with Dawn: the browser's, Android's on phones without Vulkan 1.3, and on a computer the one the tests compare with Vulkan",
             "dependencies": [
                 {
                     "name": "dawn",
@@ -79,7 +79,7 @@
                     "features": [
                         {
                             "name": "vulkan",
-                            "platform": "windows | linux"
+                            "platform": "windows | linux | android"
                         }
                     ]
                 }

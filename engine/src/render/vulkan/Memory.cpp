@@ -30,7 +30,7 @@ core::Result<Allocator> Allocator::create(const Instance& instance, const Device
 }
 
 Allocator::Allocator(Allocator&& other) noexcept
-    : m_allocator(std::exchange(other.m_allocator, VK_NULL_HANDLE))
+    : m_allocator(std::exchange(other.m_allocator, {}))
 {
 }
 
@@ -39,7 +39,7 @@ Allocator& Allocator::operator=(Allocator&& other) noexcept
     if (this != &other)
     {
         destroy();
-        m_allocator = std::exchange(other.m_allocator, VK_NULL_HANDLE);
+        m_allocator = std::exchange(other.m_allocator, {});
     }
     return *this;
 }
@@ -102,9 +102,9 @@ core::Result<Buffer> Buffer::create(const Allocator& allocator, const BufferConf
 }
 
 Buffer::Buffer(Buffer&& other) noexcept
-    : m_allocator(std::exchange(other.m_allocator, VK_NULL_HANDLE))
-    , m_buffer(std::exchange(other.m_buffer, VK_NULL_HANDLE))
-    , m_allocation(std::exchange(other.m_allocation, VK_NULL_HANDLE))
+    : m_allocator(std::exchange(other.m_allocator, {}))
+    , m_buffer(std::exchange(other.m_buffer, {}))
+    , m_allocation(std::exchange(other.m_allocation, {}))
     , m_size(std::exchange(other.m_size, 0))
     , m_mapped(std::exchange(other.m_mapped, nullptr))
     , m_deviceAddress(std::exchange(other.m_deviceAddress, 0))
@@ -116,9 +116,9 @@ Buffer& Buffer::operator=(Buffer&& other) noexcept
     if (this != &other)
     {
         destroy();
-        m_allocator = std::exchange(other.m_allocator, VK_NULL_HANDLE);
-        m_buffer = std::exchange(other.m_buffer, VK_NULL_HANDLE);
-        m_allocation = std::exchange(other.m_allocation, VK_NULL_HANDLE);
+        m_allocator = std::exchange(other.m_allocator, {});
+        m_buffer = std::exchange(other.m_buffer, {});
+        m_allocation = std::exchange(other.m_allocation, {});
         m_size = std::exchange(other.m_size, 0);
         m_mapped = std::exchange(other.m_mapped, nullptr);
         m_deviceAddress = std::exchange(other.m_deviceAddress, 0);
@@ -220,12 +220,12 @@ core::Result<Image> Image::create(const Device& device, const Allocator& allocat
 }
 
 Image::Image(Image&& other) noexcept
-    : m_device(std::exchange(other.m_device, VK_NULL_HANDLE))
-    , m_allocator(std::exchange(other.m_allocator, VK_NULL_HANDLE))
-    , m_image(std::exchange(other.m_image, VK_NULL_HANDLE))
-    , m_allocation(std::exchange(other.m_allocation, VK_NULL_HANDLE))
-    , m_view(std::exchange(other.m_view, VK_NULL_HANDLE))
-    , m_alternateView(std::exchange(other.m_alternateView, VK_NULL_HANDLE))
+    : m_device(std::exchange(other.m_device, {}))
+    , m_allocator(std::exchange(other.m_allocator, {}))
+    , m_image(std::exchange(other.m_image, {}))
+    , m_allocation(std::exchange(other.m_allocation, {}))
+    , m_view(std::exchange(other.m_view, {}))
+    , m_alternateView(std::exchange(other.m_alternateView, {}))
     , m_config(other.m_config)
     , m_subviews(std::move(other.m_subviews))
 {
@@ -237,12 +237,12 @@ Image& Image::operator=(Image&& other) noexcept
     if (this != &other)
     {
         destroy();
-        m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
-        m_allocator = std::exchange(other.m_allocator, VK_NULL_HANDLE);
-        m_image = std::exchange(other.m_image, VK_NULL_HANDLE);
-        m_allocation = std::exchange(other.m_allocation, VK_NULL_HANDLE);
-        m_view = std::exchange(other.m_view, VK_NULL_HANDLE);
-        m_alternateView = std::exchange(other.m_alternateView, VK_NULL_HANDLE);
+        m_device = std::exchange(other.m_device, {});
+        m_allocator = std::exchange(other.m_allocator, {});
+        m_image = std::exchange(other.m_image, {});
+        m_allocation = std::exchange(other.m_allocation, {});
+        m_view = std::exchange(other.m_view, {});
+        m_alternateView = std::exchange(other.m_alternateView, {});
         m_config = other.m_config;
         m_subviews = std::move(other.m_subviews);
         other.m_subviews.clear();

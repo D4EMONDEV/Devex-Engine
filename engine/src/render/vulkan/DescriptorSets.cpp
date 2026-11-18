@@ -206,17 +206,17 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
 }
 
 DescriptorSets::DescriptorSets(DescriptorSets&& other) noexcept
-    : m_device(std::exchange(other.m_device, VK_NULL_HANDLE))
-    , m_materialSampler(std::exchange(other.m_materialSampler, VK_NULL_HANDLE))
-    , m_pixelSampler(std::exchange(other.m_pixelSampler, VK_NULL_HANDLE))
-    , m_clampSampler(std::exchange(other.m_clampSampler, VK_NULL_HANDLE))
-    , m_skySampler(std::exchange(other.m_skySampler, VK_NULL_HANDLE))
-    , m_shadowSampler(std::exchange(other.m_shadowSampler, VK_NULL_HANDLE))
-    , m_globalLayout(std::exchange(other.m_globalLayout, VK_NULL_HANDLE))
-    , m_frameLayout(std::exchange(other.m_frameLayout, VK_NULL_HANDLE))
-    , m_globalPool(std::exchange(other.m_globalPool, VK_NULL_HANDLE))
-    , m_framePool(std::exchange(other.m_framePool, VK_NULL_HANDLE))
-    , m_global(std::exchange(other.m_global, VK_NULL_HANDLE))
+    : m_device(std::exchange(other.m_device, {}))
+    , m_materialSampler(std::exchange(other.m_materialSampler, {}))
+    , m_pixelSampler(std::exchange(other.m_pixelSampler, {}))
+    , m_clampSampler(std::exchange(other.m_clampSampler, {}))
+    , m_skySampler(std::exchange(other.m_skySampler, {}))
+    , m_shadowSampler(std::exchange(other.m_shadowSampler, {}))
+    , m_globalLayout(std::exchange(other.m_globalLayout, {}))
+    , m_frameLayout(std::exchange(other.m_frameLayout, {}))
+    , m_globalPool(std::exchange(other.m_globalPool, {}))
+    , m_framePool(std::exchange(other.m_framePool, {}))
+    , m_global(std::exchange(other.m_global, {}))
     , m_frames(std::exchange(other.m_frames, {}))
     , m_textureCapacity(std::exchange(other.m_textureCapacity, 0))
 {
@@ -227,17 +227,17 @@ DescriptorSets& DescriptorSets::operator=(DescriptorSets&& other) noexcept
     if (this != &other)
     {
         destroy();
-        m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
-        m_materialSampler = std::exchange(other.m_materialSampler, VK_NULL_HANDLE);
-        m_pixelSampler = std::exchange(other.m_pixelSampler, VK_NULL_HANDLE);
-        m_clampSampler = std::exchange(other.m_clampSampler, VK_NULL_HANDLE);
-        m_skySampler = std::exchange(other.m_skySampler, VK_NULL_HANDLE);
-        m_shadowSampler = std::exchange(other.m_shadowSampler, VK_NULL_HANDLE);
-        m_globalLayout = std::exchange(other.m_globalLayout, VK_NULL_HANDLE);
-        m_frameLayout = std::exchange(other.m_frameLayout, VK_NULL_HANDLE);
-        m_globalPool = std::exchange(other.m_globalPool, VK_NULL_HANDLE);
-        m_framePool = std::exchange(other.m_framePool, VK_NULL_HANDLE);
-        m_global = std::exchange(other.m_global, VK_NULL_HANDLE);
+        m_device = std::exchange(other.m_device, {});
+        m_materialSampler = std::exchange(other.m_materialSampler, {});
+        m_pixelSampler = std::exchange(other.m_pixelSampler, {});
+        m_clampSampler = std::exchange(other.m_clampSampler, {});
+        m_skySampler = std::exchange(other.m_skySampler, {});
+        m_shadowSampler = std::exchange(other.m_shadowSampler, {});
+        m_globalLayout = std::exchange(other.m_globalLayout, {});
+        m_frameLayout = std::exchange(other.m_frameLayout, {});
+        m_globalPool = std::exchange(other.m_globalPool, {});
+        m_framePool = std::exchange(other.m_framePool, {});
+        m_global = std::exchange(other.m_global, {});
         m_frames = std::exchange(other.m_frames, {});
         m_textureCapacity = std::exchange(other.m_textureCapacity, 0);
     }

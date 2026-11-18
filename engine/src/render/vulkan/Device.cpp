@@ -314,9 +314,9 @@ core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
 }
 
 Device::Device(Device&& other) noexcept
-    : m_physicalDevice(std::exchange(other.m_physicalDevice, VK_NULL_HANDLE))
-    , m_device(std::exchange(other.m_device, VK_NULL_HANDLE))
-    , m_queue(std::exchange(other.m_queue, VK_NULL_HANDLE))
+    : m_physicalDevice(std::exchange(other.m_physicalDevice, {}))
+    , m_device(std::exchange(other.m_device, {}))
+    , m_queue(std::exchange(other.m_queue, {}))
     , m_queueFamily(other.m_queueFamily)
     , m_gpu(std::move(other.m_gpu))
     , m_maxSamplerAnisotropy(other.m_maxSamplerAnisotropy)
@@ -336,9 +336,9 @@ Device& Device::operator=(Device&& other) noexcept
     if (this != &other)
     {
         destroy();
-        m_physicalDevice = std::exchange(other.m_physicalDevice, VK_NULL_HANDLE);
-        m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
-        m_queue = std::exchange(other.m_queue, VK_NULL_HANDLE);
+        m_physicalDevice = std::exchange(other.m_physicalDevice, {});
+        m_device = std::exchange(other.m_device, {});
+        m_queue = std::exchange(other.m_queue, {});
         m_queueFamily = other.m_queueFamily;
         m_gpu = std::move(other.m_gpu);
         m_maxSamplerAnisotropy = other.m_maxSamplerAnisotropy;

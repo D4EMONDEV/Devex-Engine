@@ -80,7 +80,7 @@
         {
             "name": "android-arm64",
             "displayName": "Android arm64 (NDK)",
-            "description": "Cross-compiles the engine and the player for phones; needs ANDROID_NDK_HOME.",
+            "description": "Cross-compiles the engine and the player for phones, with WebGPU for those without Vulkan 1.3; needs ANDROID_NDK_HOME.",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/out/build/${presetName}",
             "installDir": "${sourceDir}/out/install/${presetName}",
@@ -92,7 +92,18 @@
                 "ANDROID_PLATFORM": "android-29",
                 "ANDROID_STL": "c++_shared",
                 "DEVEX_BUILD_EDITOR": "OFF",
-                "DEVEX_BUILD_TESTS": "OFF"
+                "DEVEX_BUILD_TESTS": "OFF",
+                "DEVEX_WEBGPU": "ON"
+            }
+        },
+        {
+            "name": "android-arm32",
+            "displayName": "Android arm32 (NDK)",
+            "description": "The same as android-arm64, for the phones whose Android is 32 bits, as many of the entry level are.",
+            "inherits": "android-arm64",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm-neon-android",
+                "ANDROID_ABI": "armeabi-v7a"
             }
         },
         {
@@ -173,6 +184,10 @@
         {
             "name": "build-android-arm64",
             "configurePreset": "android-arm64"
+        },
+        {
+            "name": "build-android-arm32",
+            "configurePreset": "android-arm32"
         },
         {
             "name": "build-android-x86_64",

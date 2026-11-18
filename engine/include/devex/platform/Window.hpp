@@ -28,11 +28,14 @@ struct DEVEX_API NativeWindow
         Wayland,
         // The canvas SDL draws into, "#canvas".
         Canvas,
+        // The ANativeWindow of the app, which Android takes away while the app is in the background and gives again,
+        // another, when it comes back.
+        Android,
     };
     Kind kind = Kind::None;
     // Win32: the HINSTANCE; X11: the Display; Wayland: the wl_display.
     void* display = nullptr;
-    // Win32: the HWND; Wayland: the wl_surface.
+    // Win32: the HWND; Wayland: the wl_surface; Android: the ANativeWindow.
     void* window = nullptr;
     // X11: the Window.
     std::uint64_t x11Window = 0;

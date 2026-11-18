@@ -164,6 +164,7 @@ struct ExportUi : FormUi
     Entity androidVersionCode;
     Entity androidOrientation;
     Entity androidArm64;
+    Entity androidArm32;
     Entity androidX86;
     Entity androidFormat;
     Entity androidRelease;
@@ -340,6 +341,9 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
         tooltip(codeRow.row, "A whole number that grows with each version sent to the Play Store");
         androidOrientation = choice(formRow(phone, "Orientation").editor, {"Landscape", "Portrait", "Sensor"});
         androidArm64 = toggle(formRow(phone, "Phones (arm64)").editor);
+        const FormRow arm32Row = formRow(phone, "Phones, 32 Bits (armeabi-v7a)");
+        androidArm32 = toggle(arm32Row.editor);
+        tooltip(arm32Row.row, "The phones whose Android is 32 bits, as many of the entry level are, even with a 64-bit processor");
         androidX86 = toggle(formRow(phone, "Emulator (x86_64)").editor);
         androidFormat = choice(formRow(phone, "Format").editor, {"APK, to install directly", "AAB, for the Play Store"});
         const FormRow installRow = formRow(phone, "Install on Device");
@@ -461,6 +465,7 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
         setText(androidVersionCode, std::to_string(phone.versionCode));
         setChoice(androidOrientation, {"Landscape", "Portrait", "Sensor"}, phone.orientation == "portrait" ? 1 : phone.orientation == "sensor" ? 2 : 0);
         setToggle(androidArm64, phone.arm64);
+        setToggle(androidArm32, phone.arm32);
         setToggle(androidX86, phone.x86_64);
         setChoice(androidFormat, {"APK, to install directly", "AAB, for the Play Store"}, phone.format == "aab" ? 1 : 0);
         setToggle(androidInstall, phone.install);
@@ -473,7 +478,8 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
             setText(androidKeyPassword, signing.keyPassword);
         }
         const auto hasBuild = [&](std::string_view abi) { return std::ranges::contains(state.androidAbis, abi); };
-        const bool available = (phone.arm64 && hasBuild("arm64-v8a")) || (phone.x86_64 && hasBuild("x86_64"));
+        const bool available = (phone.arm64 && hasBuild("arm64-v8a")) || (phone.arm32 && hasBuild("armeabi-v7a")) ||
+                               (phone.x86_64 && hasBuild("x86_64"));
         const std::string package = phone.package.empty() ? asset::androidPackageFromName(project.name) : phone.package;
         std::string problem = state.androidProblem ? state.androidProblem() : std::string{};
         if (!problem.empty())
@@ -482,7 +488,8 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
         }
         else if (!available)
         {
-            problem = "There is no Android build of the engine for these architectures: build the preset android-arm64 or android-x86_64 first.";
+            problem = "There is no Android build of the engine for these architectures: build the preset android-arm64, android-arm32 or "
+                      "android-x86_64 first.";
         }
         else if (!asset::validAndroidPackage(package))
         {
@@ -719,6 +726,7 @@ void ExportUi::answer(ToolsState& state)
             }
         };
         answerToggle(androidArm64, phone.arm64);
+        answerToggle(androidArm32, phone.arm32);
         answerToggle(androidX86, phone.x86_64);
         answerToggle(androidInstall, phone.install);
         answerToggle(androidRelease, phone.release);

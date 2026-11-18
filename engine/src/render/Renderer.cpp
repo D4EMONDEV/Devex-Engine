@@ -7,8 +7,14 @@
 #endif
 
 #include <devex/core/Assert.hpp>
+#include <devex/core/Log.hpp>
 #include <devex/render/Renderer.hpp>
 
+#if defined(__ANDROID__)
+#include <sys/system_properties.h>
+#endif
+
+#include <string_view>
 #include <utility>
 
 namespace devex::render {
@@ -22,6 +28,18 @@ constexpr bool hasVulkan = true;
 constexpr bool hasVulkan = false;
 #endif
 
+// What a developer asks of a phone, to try WebGPU on one that has Vulkan 1.3:
+// adb shell setprop debug.devex.renderer webgpu
+[[nodiscard]] bool webGpuAsked() noexcept
+{
+#if defined(__ANDROID__)
+    char value[PROP_VALUE_MAX]{};
+    return __system_property_get("debug.devex.renderer", value) > 0 && std::string_view(value) == "webgpu";
+#else
+    return false;
+#endif
+}
+
 } // namespace
 #endif
 
@@ -29,16 +47,18 @@ core::Result<Renderer> Renderer::create(const platform::Platform& platform,
                                         platform::Window& window, const RendererConfig& config)
 {
 #if DEVEX_RENDERER_WEBGPU
-    // WebGPU when asked, or when there is no Vulkan: in a browser.
-    if (config.api == RenderApi::WebGpu || (config.api == RenderApi::Automatic && !hasVulkan))
-    {
-        core::Result<std::unique_ptr<webgpu::WebGpuRenderer>> implementation =
-            webgpu::WebGpuRenderer::create(platform, window, config);
+    const auto webGpu = [&]() -> core::Result<Renderer> {
+        core::Result<std::unique_ptr<webgpu::WebGpuRenderer>> implementation = webgpu::WebGpuRenderer::create(platform, window, config);
         if (!implementation)
         {
             return std::unexpected(implementation.error());
         }
         return Renderer(std::unique_ptr<RenderBackend>(std::move(*implementation)));
+    };
+    // WebGPU when asked, or when there is no Vulkan: in a browser.
+    if (config.api == RenderApi::WebGpu || (config.api == RenderApi::Automatic && (!hasVulkan || webGpuAsked())))
+    {
+        return webGpu();
     }
 #endif
 #if DEVEX_RENDERER_VULKAN
@@ -48,6 +68,20 @@ core::Result<Renderer> Renderer::create(const platform::Platform& platform,
             vulkan::VulkanRenderer::create(platform, window, config);
         if (!implementation)
         {
+#if DEVEX_RENDERER_WEBGPU
+            // Without Vulkan 1.3, as a phone that has only 1.1, WebGPU draws what Compatibility shows, through Dawn; not
+            // when a renderer exists already, which WebGPU would not replace either.
+            if (config.api == RenderApi::Automatic && implementation.error().code != core::ErrorCode::InvalidState)
+            {
+                DEVEX_LOG_WARNING("Vulkan cannot draw here ({}): drawing with WebGPU", implementation.error());
+                core::Result<Renderer> fallback = webGpu();
+                if (fallback)
+                {
+                    return fallback;
+                }
+                return core::makeError(core::ErrorCode::Graphics, "{}; and WebGPU neither: {}", implementation.error(), fallback.error());
+            }
+#endif
             return std::unexpected(implementation.error());
         }
         return Renderer(std::unique_ptr<RenderBackend>(std::move(*implementation)));

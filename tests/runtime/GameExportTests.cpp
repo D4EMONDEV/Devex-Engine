@@ -501,16 +501,29 @@ TEST_CASE("The Android builds of the engine are found next to the editor, and te
         return root / build / "android" / "app" / "src" / "main" / "jniLibs" / abi / "libdevex-engine.so";
     };
     REQUIRE(devex::core::writeTextFile(library("android-arm64", "arm64-v8a"), "library"));
+    REQUIRE(devex::core::writeTextFile(library("android-arm32", "armeabi-v7a"), "library"));
     REQUIRE(devex::core::writeTextFile(library("android-x86_64", "x86_64"), "library"));
     REQUIRE(devex::core::writeTextFile(root / "x64-debug" / "bin" / "devex-editor", "editor"));
     auto project = devex::asset::createProject(root / "game", "Mon Jeu");
     REQUIRE(project);
 
     const std::vector<devex::runtime::AndroidBuild> builds = devex::runtime::findAndroidBuilds(root / "x64-debug" / "bin");
-    REQUIRE(builds.size() == 2);
-    CHECK(builds[0].abi == "arm64-v8a");
-    CHECK(builds[1].abi == "x86_64");
-    CHECK(builds[1].engine.cmakeDirectory() == root / "android-x86_64" / "cmake");
+    REQUIRE(builds.size() == 3);
+    CHECK(builds[0].abi == "armeabi-v7a");
+    CHECK(builds[1].abi == "arm64-v8a");
+    CHECK(builds[2].abi == "x86_64");
+    CHECK(builds[2].engine.cmakeDirectory() == root / "android-x86_64" / "cmake");
+
+    // The phones whose Android is 32 bits, beside the others.
+    {
+        devex::runtime::ExportPlan phones;
+        phones.project = *project;
+        phones.project.root = root / "game";
+        phones.project.exportSettings.android.arm32 = true;
+        REQUIRE(devex::runtime::prepareAndroidExport(phones, root / "x64-debug" / "bin"));
+        REQUIRE(phones.androidBuilds.size() == 2);
+        CHECK(devex::runtime::androidGradleProperties(phones, false).contains("abis=armeabi-v7a,arm64-v8a\n"));
+    }
 
     devex::runtime::ExportPlan plan;
     plan.project = *project;

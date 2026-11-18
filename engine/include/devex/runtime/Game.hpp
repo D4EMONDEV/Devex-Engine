@@ -80,7 +80,8 @@ class GameRegistry;
 // 48: the scene gained the Path3D and PathFollower components.
 // 49: the scene gained the CSG components.
 // 50: the scene gained the GridMap component.
-inline constexpr std::uint32_t gameApiVersion = 67;
+// 68: the export for Android, in Project, gained the phones whose Android is 32 bits.
+inline constexpr std::uint32_t gameApiVersion = 68;
 
 enum class SystemPhase : std::uint8_t
 {

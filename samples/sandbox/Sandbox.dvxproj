@@ -24,4 +24,4 @@ bindings = list("key:LeftShift", "pad:LeftStick")
 bindings = list("key:Space", "key:LeftControl negative", "pad:RightShoulder", "pad:LeftShoulder negative")
 
 [input_action name="Fire" kind="button" context="Gameplay"]
-bindings = list("pad:RightTrigger")
+bindings = list("axis:RightTrigger")
