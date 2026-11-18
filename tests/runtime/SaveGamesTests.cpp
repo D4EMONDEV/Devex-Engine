@@ -300,6 +300,15 @@ TEST_CASE("The saves of every version read", "[runtime][format]")
         CHECK(progress->level == 7);
         CHECK(progress->name == "Frozen");
         CHECK(progress->items == std::vector<std::string>{"key", "map"});
+        REQUIRE(saves.save("resaved", *progress));
+        const auto reopened = saves.load<test::Progress>("resaved", false);
+        REQUIRE(reopened);
+        CHECK(reopened->level == progress->level);
+        CHECK(reopened->health == progress->health);
+        CHECK(reopened->name == progress->name);
+        CHECK(reopened->tutorialDone == progress->tutorialDone);
+        CHECK(reopened->checkpoint == progress->checkpoint);
+        CHECK(reopened->items == progress->items);
     }
 }
 

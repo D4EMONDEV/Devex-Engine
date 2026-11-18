@@ -242,6 +242,29 @@ namespace {
     return section;
 }
 
+// Before the game code is available, the raw components begin with the prefab's layers.
+// Compare them in order: a later override may deliberately repeat an earlier value.
+[[nodiscard]] std::size_t inheritedPreservedSections(const Scene& scene, Entity entity,
+                                                     const Scene& base, Entity baseEntity)
+{
+    const auto* const current = scene.tryGet<PreservedComponents>(entity);
+    const auto* const inherited = base.tryGet<PreservedComponents>(baseEntity);
+    if (current == nullptr || inherited == nullptr ||
+        current->sections.size() < inherited->sections.size())
+    {
+        return 0;
+    }
+    const bool startsWithBase = std::equal(inherited->sections.begin(), inherited->sections.end(),
+                                           current->sections.begin(),
+                                           [](const TextSection& left, const TextSection& right)
+                                           {
+                                               return left.type == right.type &&
+                                                      left.attributes == right.attributes &&
+                                                      left.properties == right.properties;
+                                           });
+    return startsWithBase ? inherited->sections.size() : 0;
+}
+
 // The component sections of an entity, in the order they are saved. Complete ones keep the empty
 // hidden lists, which an instance compares with its prefab.
 [[nodiscard]] std::vector<TextSection> componentSections(const Scene& scene, Entity entity, bool complete = false)
@@ -344,6 +367,8 @@ void writeInstance(const Scene& scene, Entity root, bool writeParent, TextDocume
 
         const std::vector<TextSection> baseSections =
             baseEntity.isValid() ? componentSections(*base, baseEntity, true) : std::vector<TextSection>{};
+        std::size_t inherited =
+            baseEntity.isValid() ? inheritedPreservedSections(scene, entity, *base, baseEntity) : 0;
         for (TextSection& section : componentSections(scene, entity, true))
         {
             const std::string* const typeName = componentTypeName(section);
@@ -351,10 +376,24 @@ void writeInstance(const Scene& scene, Entity root, bool writeParent, TextDocume
             {
                 continue;
             }
-            const auto baseSection = std::ranges::find_if(baseSections, [&](const TextSection& candidate) {
-                const std::string* const candidateType = componentTypeName(candidate);
-                return candidateType != nullptr && *candidateType == *typeName;
-            });
+            const ComponentType* const registered = componentRegistry().find(*typeName);
+            const bool reflected =
+                registered != nullptr && registered->find(scene, entity) != nullptr;
+            if (!reflected && inherited != 0)
+            {
+                --inherited;
+                continue;
+            }
+            const auto baseSection =
+                reflected ? std::ranges::find_if(baseSections,
+                                                 [&](const TextSection& candidate)
+                                                 {
+                                                     const std::string* const candidateType =
+                                                         componentTypeName(candidate);
+                                                     return candidateType != nullptr &&
+                                                            *candidateType == *typeName;
+                                                 })
+                          : baseSections.end();
             if (baseSection != baseSections.end())
             {
                 std::erase_if(section.properties, [&](const TextProperty& property) {

@@ -24,6 +24,7 @@ Devex.Animation: Void SetLayerWeight(Devex.Entity, System.String, Single)
 Devex.Animation: Void SetTime(Devex.Entity, Single)
 Devex.Animation: Void SetTrigger(Devex.Entity, System.String)
 Devex.Animation: Void Stop(Devex.Entity)
+Devex.Animation: public static Devex.AnimationEvent[] get_Events()
 Devex.AnimationEvent: Boolean Equals(Devex.AnimationEvent)
 Devex.AnimationEvent: Boolean Equals(System.Object)
 Devex.AnimationEvent: Boolean op_Equality(Devex.AnimationEvent, Devex.AnimationEvent)
@@ -34,6 +35,10 @@ Devex.AnimationEvent: System.String Name
 Devex.AnimationEvent: System.String ToString()
 Devex.AnimationEvent: Void .ctor(Devex.Entity, System.String)
 Devex.AnimationEvent: Void Deconstruct(Devex.Entity ByRef, System.String ByRef)
+Devex.AnimationEvent: public Devex.Entity get_Entity()
+Devex.AnimationEvent: public System.String get_Name()
+Devex.AnimationEvent: public init Void set_Entity(Devex.Entity)
+Devex.AnimationEvent: public init Void set_Name(System.String)
 Devex.Animator: Boolean& ApplyRootMotion
 Devex.Animator: Boolean& Loop
 Devex.Animator: Boolean& PlayOnStart
@@ -48,6 +53,19 @@ Devex.Animator: Single& LodFrameRate
 Devex.Animator: Single& Speed
 Devex.Animator: System.String TypeName
 Devex.Animator: UInt64 LayoutHash
+Devex.Animator: public Boolean& get_ApplyRootMotion()
+Devex.Animator: public Boolean& get_Loop()
+Devex.Animator: public Boolean& get_PlayOnStart()
+Devex.Animator: public Devex.AssetId& get_Clip()
+Devex.Animator: public Devex.AssetId& get_Controller()
+Devex.Animator: public Single& get_BlendTime()
+Devex.Animator: public Single& get_LodDistance()
+Devex.Animator: public Single& get_LodFarDistance()
+Devex.Animator: public Single& get_LodFarFrameRate()
+Devex.Animator: public Single& get_LodFrameRate()
+Devex.Animator: public Single& get_Speed()
+Devex.Animator: public static System.String get_TypeName()
+Devex.Animator: public static UInt64 get_LayoutHash()
 Devex.AssetId: Boolean Equals(Devex.AssetId)
 Devex.AssetId: Boolean Equals(System.Object)
 Devex.AssetId: Boolean IsValid
@@ -57,8 +75,11 @@ Devex.AssetId: Devex.Uuid Uuid
 Devex.AssetId: Int32 GetHashCode()
 Devex.AssetId: System.String ToString()
 Devex.AssetId: Void .ctor(Devex.Uuid)
+Devex.AssetId: public Boolean get_IsValid()
+Devex.AssetId: public Devex.Uuid get_Uuid()
 Devex.AssetTypeAttribute: System.String Type
 Devex.AssetTypeAttribute: Void .ctor(System.String)
+Devex.AssetTypeAttribute: public System.String get_Type()
 Devex.Assets: Boolean IsReady(Devex.AssetId)
 Devex.Assets: System.Nullable`1[Devex.AssetId] Find(System.String)
 Devex.Assets: System.String NameOf(Devex.AssetId)
@@ -81,6 +102,22 @@ Devex.Atmosphere: Single& SunDiskIntensity
 Devex.Atmosphere: Single& SunDiskSize
 Devex.Atmosphere: System.String TypeName
 Devex.Atmosphere: UInt64 LayoutHash
+Devex.Atmosphere: public Devex.Vec3& get_GroundAlbedo()
+Devex.Atmosphere: public Devex.Vec3& get_OzoneAbsorption()
+Devex.Atmosphere: public Devex.Vec3& get_RayleighScattering()
+Devex.Atmosphere: public Single& get_AerialPerspective()
+Devex.Atmosphere: public Single& get_Height()
+Devex.Atmosphere: public Single& get_Intensity()
+Devex.Atmosphere: public Single& get_MieAbsorption()
+Devex.Atmosphere: public Single& get_MieAnisotropy()
+Devex.Atmosphere: public Single& get_MieHeight()
+Devex.Atmosphere: public Single& get_MieScattering()
+Devex.Atmosphere: public Single& get_PlanetRadius()
+Devex.Atmosphere: public Single& get_RayleighHeight()
+Devex.Atmosphere: public Single& get_SunDiskIntensity()
+Devex.Atmosphere: public Single& get_SunDiskSize()
+Devex.Atmosphere: public static System.String get_TypeName()
+Devex.Atmosphere: public static UInt64 get_LayoutHash()
 Devex.Audio: Boolean IsPlaying(Devex.Entity)
 Devex.Audio: Double ClipLength(Devex.AssetId)
 Devex.Audio: Single GetGroupVolume(System.String)
@@ -96,6 +133,8 @@ Devex.AudioGroupAttribute: Void .ctor()
 Devex.AudioListener: Devex.AudioListener At(Void*)
 Devex.AudioListener: System.String TypeName
 Devex.AudioListener: UInt64 LayoutHash
+Devex.AudioListener: public static System.String get_TypeName()
+Devex.AudioListener: public static UInt64 get_LayoutHash()
 Devex.AudioSource: Boolean& Loop
 Devex.AudioSource: Boolean& PlayOnStart
 Devex.AudioSource: Boolean& Spatial
@@ -111,6 +150,20 @@ Devex.AudioSource: Single& Volume
 Devex.AudioSource: System.String TypeName
 Devex.AudioSource: UInt32& Group
 Devex.AudioSource: UInt64 LayoutHash
+Devex.AudioSource: public Boolean& get_Loop()
+Devex.AudioSource: public Boolean& get_PlayOnStart()
+Devex.AudioSource: public Boolean& get_Spatial()
+Devex.AudioSource: public Devex.AssetId& get_Clip()
+Devex.AudioSource: public Devex.AudioSourceAttenuation& get_Attenuation()
+Devex.AudioSource: public Single& get_Doppler()
+Devex.AudioSource: public Single& get_MaxDistance()
+Devex.AudioSource: public Single& get_MinDistance()
+Devex.AudioSource: public Single& get_Pitch()
+Devex.AudioSource: public Single& get_Rolloff()
+Devex.AudioSource: public Single& get_Volume()
+Devex.AudioSource: public UInt32& get_Group()
+Devex.AudioSource: public static System.String get_TypeName()
+Devex.AudioSource: public static UInt64 get_LayoutHash()
 Devex.AudioSourceAttenuation: Devex.AudioSourceAttenuation Exponential
 Devex.AudioSourceAttenuation: Devex.AudioSourceAttenuation Inverse
 Devex.AudioSourceAttenuation: Devex.AudioSourceAttenuation Linear
@@ -123,12 +176,23 @@ Devex.BoxCollider2D: Devex.Vec2& Center
 Devex.BoxCollider2D: Devex.Vec2& Size
 Devex.BoxCollider2D: System.String TypeName
 Devex.BoxCollider2D: UInt64 LayoutHash
+Devex.BoxCollider2D: public Boolean& get_OneWay()
+Devex.BoxCollider2D: public Boolean& get_Trigger()
+Devex.BoxCollider2D: public Devex.Vec2& get_Center()
+Devex.BoxCollider2D: public Devex.Vec2& get_Size()
+Devex.BoxCollider2D: public static System.String get_TypeName()
+Devex.BoxCollider2D: public static UInt64 get_LayoutHash()
 Devex.BoxCollider: Boolean& Trigger
 Devex.BoxCollider: Devex.BoxCollider At(Void*)
 Devex.BoxCollider: Devex.Vec3& Center
 Devex.BoxCollider: Devex.Vec3& Size
 Devex.BoxCollider: System.String TypeName
 Devex.BoxCollider: UInt64 LayoutHash
+Devex.BoxCollider: public Boolean& get_Trigger()
+Devex.BoxCollider: public Devex.Vec3& get_Center()
+Devex.BoxCollider: public Devex.Vec3& get_Size()
+Devex.BoxCollider: public static System.String get_TypeName()
+Devex.BoxCollider: public static UInt64 get_LayoutHash()
 Devex.Camera: Boolean& AutoExposure
 Devex.Camera: Boolean& AutoFocus
 Devex.Camera: Boolean& DepthOfField
@@ -169,6 +233,45 @@ Devex.Camera: Single& VerticalFov
 Devex.Camera: Single& Vignette
 Devex.Camera: System.String TypeName
 Devex.Camera: UInt64 LayoutHash
+Devex.Camera: public Boolean& get_AutoExposure()
+Devex.Camera: public Boolean& get_AutoFocus()
+Devex.Camera: public Boolean& get_DepthOfField()
+Devex.Camera: public Boolean& get_Primary()
+Devex.Camera: public Devex.AssetId& get_ColorTable()
+Devex.Camera: public Devex.CameraAntialiasing& get_Antialiasing()
+Devex.Camera: public Devex.CameraProjection& get_Projection()
+Devex.Camera: public Devex.CameraTonemapper& get_Tonemapper()
+Devex.Camera: public Devex.Vec3& get_ColorFilter()
+Devex.Camera: public Int32& get_ScreenReflectionSteps()
+Devex.Camera: public Single& get_AdaptationSpeed()
+Devex.Camera: public Single& get_AmbientOcclusion()
+Devex.Camera: public Single& get_AmbientOcclusionRadius()
+Devex.Camera: public Single& get_Aperture()
+Devex.Camera: public Single& get_Bloom()
+Devex.Camera: public Single& get_BloomThreshold()
+Devex.Camera: public Single& get_ChromaticAberration()
+Devex.Camera: public Single& get_Contrast()
+Devex.Camera: public Single& get_Ev100()
+Devex.Camera: public Single& get_ExposureCompensation()
+Devex.Camera: public Single& get_FarPlane()
+Devex.Camera: public Single& get_FocusDistance()
+Devex.Camera: public Single& get_Grain()
+Devex.Camera: public Single& get_MaxEv100()
+Devex.Camera: public Single& get_MinEv100()
+Devex.Camera: public Single& get_MotionBlur()
+Devex.Camera: public Single& get_NearPlane()
+Devex.Camera: public Single& get_OrthographicSize()
+Devex.Camera: public Single& get_Saturation()
+Devex.Camera: public Single& get_ScreenReflectionDepthTolerance()
+Devex.Camera: public Single& get_ScreenReflectionFadeIn()
+Devex.Camera: public Single& get_ScreenReflectionFadeOut()
+Devex.Camera: public Single& get_ScreenReflections()
+Devex.Camera: public Single& get_Temperature()
+Devex.Camera: public Single& get_Tint()
+Devex.Camera: public Single& get_VerticalFov()
+Devex.Camera: public Single& get_Vignette()
+Devex.Camera: public static System.String get_TypeName()
+Devex.Camera: public static UInt64 get_LayoutHash()
 Devex.CameraAntialiasing: Devex.CameraAntialiasing None
 Devex.CameraAntialiasing: Devex.CameraAntialiasing Temporal
 Devex.CameraProjection: Devex.CameraProjection Orthographic
@@ -187,10 +290,22 @@ Devex.Canvas: Int32& SortOrder
 Devex.Canvas: Single& MatchWidthOrHeight
 Devex.Canvas: System.String TypeName
 Devex.Canvas: UInt64 LayoutHash
+Devex.Canvas: public Boolean& get_Interactive()
+Devex.Canvas: public Boolean& get_Visible()
+Devex.Canvas: public Devex.AssetId& get_Theme()
+Devex.Canvas: public Devex.CanvasScaleMode& get_ScaleMode()
+Devex.Canvas: public Devex.Vec2& get_ReferenceResolution()
+Devex.Canvas: public Int32& get_SortOrder()
+Devex.Canvas: public Single& get_MatchWidthOrHeight()
+Devex.Canvas: public static System.String get_TypeName()
+Devex.Canvas: public static UInt64 get_LayoutHash()
 Devex.CanvasModulate: Devex.CanvasModulate At(Void*)
 Devex.CanvasModulate: Devex.Vec3& Color
 Devex.CanvasModulate: System.String TypeName
 Devex.CanvasModulate: UInt64 LayoutHash
+Devex.CanvasModulate: public Devex.Vec3& get_Color()
+Devex.CanvasModulate: public static System.String get_TypeName()
+Devex.CanvasModulate: public static UInt64 get_LayoutHash()
 Devex.CanvasScaleMode: Devex.CanvasScaleMode ConstantPixels
 Devex.CanvasScaleMode: Devex.CanvasScaleMode ScaleWithScreen
 Devex.CapsuleCollider2D: Boolean& Trigger
@@ -200,6 +315,12 @@ Devex.CapsuleCollider2D: Single& Height
 Devex.CapsuleCollider2D: Single& Radius
 Devex.CapsuleCollider2D: System.String TypeName
 Devex.CapsuleCollider2D: UInt64 LayoutHash
+Devex.CapsuleCollider2D: public Boolean& get_Trigger()
+Devex.CapsuleCollider2D: public Devex.Vec2& get_Center()
+Devex.CapsuleCollider2D: public Single& get_Height()
+Devex.CapsuleCollider2D: public Single& get_Radius()
+Devex.CapsuleCollider2D: public static System.String get_TypeName()
+Devex.CapsuleCollider2D: public static UInt64 get_LayoutHash()
 Devex.CapsuleCollider: Boolean& Trigger
 Devex.CapsuleCollider: Devex.CapsuleCollider At(Void*)
 Devex.CapsuleCollider: Devex.Vec3& Center
@@ -207,6 +328,12 @@ Devex.CapsuleCollider: Single& Height
 Devex.CapsuleCollider: Single& Radius
 Devex.CapsuleCollider: System.String TypeName
 Devex.CapsuleCollider: UInt64 LayoutHash
+Devex.CapsuleCollider: public Boolean& get_Trigger()
+Devex.CapsuleCollider: public Devex.Vec3& get_Center()
+Devex.CapsuleCollider: public Single& get_Height()
+Devex.CapsuleCollider: public Single& get_Radius()
+Devex.CapsuleCollider: public static System.String get_TypeName()
+Devex.CapsuleCollider: public static UInt64 get_LayoutHash()
 Devex.CharacterController2D: Boolean& Grounded
 Devex.CharacterController2D: Devex.CharacterController2D At(Void*)
 Devex.CharacterController2D: Devex.Vec2& GroundNormal
@@ -220,6 +347,18 @@ Devex.CharacterController2D: Single& StepHeight
 Devex.CharacterController2D: System.String TypeName
 Devex.CharacterController2D: UInt32& Layer
 Devex.CharacterController2D: UInt64 LayoutHash
+Devex.CharacterController2D: public Boolean& get_Grounded()
+Devex.CharacterController2D: public Devex.Vec2& get_GroundNormal()
+Devex.CharacterController2D: public Devex.Vec2& get_Velocity()
+Devex.CharacterController2D: public Single& get_GravityScale()
+Devex.CharacterController2D: public Single& get_Height()
+Devex.CharacterController2D: public Single& get_MaxSlope()
+Devex.CharacterController2D: public Single& get_PushForce()
+Devex.CharacterController2D: public Single& get_Radius()
+Devex.CharacterController2D: public Single& get_StepHeight()
+Devex.CharacterController2D: public UInt32& get_Layer()
+Devex.CharacterController2D: public static System.String get_TypeName()
+Devex.CharacterController2D: public static UInt64 get_LayoutHash()
 Devex.CharacterController: Boolean& Grounded
 Devex.CharacterController: Devex.CharacterController At(Void*)
 Devex.CharacterController: Devex.Vec3& Velocity
@@ -233,12 +372,29 @@ Devex.CharacterController: Single& StepHeight
 Devex.CharacterController: System.String TypeName
 Devex.CharacterController: UInt32& Layer
 Devex.CharacterController: UInt64 LayoutHash
+Devex.CharacterController: public Boolean& get_Grounded()
+Devex.CharacterController: public Devex.Vec3& get_Velocity()
+Devex.CharacterController: public Single& get_GravityScale()
+Devex.CharacterController: public Single& get_Height()
+Devex.CharacterController: public Single& get_Mass()
+Devex.CharacterController: public Single& get_MaxSlope()
+Devex.CharacterController: public Single& get_PushForce()
+Devex.CharacterController: public Single& get_Radius()
+Devex.CharacterController: public Single& get_StepHeight()
+Devex.CharacterController: public UInt32& get_Layer()
+Devex.CharacterController: public static System.String get_TypeName()
+Devex.CharacterController: public static UInt64 get_LayoutHash()
 Devex.CircleCollider2D: Boolean& Trigger
 Devex.CircleCollider2D: Devex.CircleCollider2D At(Void*)
 Devex.CircleCollider2D: Devex.Vec2& Center
 Devex.CircleCollider2D: Single& Radius
 Devex.CircleCollider2D: System.String TypeName
 Devex.CircleCollider2D: UInt64 LayoutHash
+Devex.CircleCollider2D: public Boolean& get_Trigger()
+Devex.CircleCollider2D: public Devex.Vec2& get_Center()
+Devex.CircleCollider2D: public Single& get_Radius()
+Devex.CircleCollider2D: public static System.String get_TypeName()
+Devex.CircleCollider2D: public static UInt64 get_LayoutHash()
 Devex.ColorAttribute: Void .ctor()
 Devex.Component: Boolean IsAuthority
 Devex.Component: Devex.Entity Entity
@@ -258,6 +414,10 @@ Devex.Component: Void Rpc(System.String, System.Object[])
 Devex.Component: Void RpcId(UInt32, System.String, System.Object[])
 Devex.Component: Void Start()
 Devex.Component: Void Update(Single)
+Devex.Component: public Boolean get_IsAuthority()
+Devex.Component: public Devex.Entity get_Entity()
+Devex.Component: public Devex.Scene get_Scene()
+Devex.Component: public Devex.Transform& get_Transform()
 Devex.Contact: Boolean Involves(Devex.Entity)
 Devex.Contact: Boolean Trigger
 Devex.Contact: Devex.ContactPhase Phase
@@ -270,10 +430,13 @@ Devex.Coroutine: Boolean IsDone
 Devex.Coroutine: Boolean IsStopped
 Devex.Coroutine: Devex.CoroutineAwaiter GetAwaiter()
 Devex.Coroutine: Void Stop()
+Devex.Coroutine: public Boolean get_IsDone()
+Devex.Coroutine: public Boolean get_IsStopped()
 Devex.CoroutineAwaiter: Boolean IsCompleted
 Devex.CoroutineAwaiter: Void GetResult()
 Devex.CoroutineAwaiter: Void OnCompleted(System.Action)
 Devex.CoroutineAwaiter: Void UnsafeOnCompleted(System.Action)
+Devex.CoroutineAwaiter: public Boolean get_IsCompleted()
 Devex.CoroutineMethodBuilder: Devex.Coroutine Task
 Devex.CoroutineMethodBuilder: Devex.CoroutineMethodBuilder Create()
 Devex.CoroutineMethodBuilder: Void AwaitOnCompleted[TAwaiter,TStateMachine](TAwaiter ByRef, TStateMachine ByRef)
@@ -282,6 +445,7 @@ Devex.CoroutineMethodBuilder: Void SetException(System.Exception)
 Devex.CoroutineMethodBuilder: Void SetResult()
 Devex.CoroutineMethodBuilder: Void SetStateMachine(System.Runtime.CompilerServices.IAsyncStateMachine)
 Devex.CoroutineMethodBuilder: Void Start[TStateMachine](TStateMachine ByRef)
+Devex.CoroutineMethodBuilder: public Devex.Coroutine get_Task()
 Devex.CsgBox: Boolean& Collision
 Devex.CsgBox: Devex.AssetId& Material
 Devex.CsgBox: Devex.CsgBox At(Void*)
@@ -289,6 +453,12 @@ Devex.CsgBox: Devex.CsgBoxOperation& Operation
 Devex.CsgBox: Devex.Vec3& Size
 Devex.CsgBox: System.String TypeName
 Devex.CsgBox: UInt64 LayoutHash
+Devex.CsgBox: public Boolean& get_Collision()
+Devex.CsgBox: public Devex.AssetId& get_Material()
+Devex.CsgBox: public Devex.CsgBoxOperation& get_Operation()
+Devex.CsgBox: public Devex.Vec3& get_Size()
+Devex.CsgBox: public static System.String get_TypeName()
+Devex.CsgBox: public static UInt64 get_LayoutHash()
 Devex.CsgBoxOperation: Devex.CsgBoxOperation Intersect
 Devex.CsgBoxOperation: Devex.CsgBoxOperation Subtract
 Devex.CsgBoxOperation: Devex.CsgBoxOperation Union
@@ -297,6 +467,10 @@ Devex.CsgCombiner: Devex.CsgCombiner At(Void*)
 Devex.CsgCombiner: Devex.CsgCombinerOperation& Operation
 Devex.CsgCombiner: System.String TypeName
 Devex.CsgCombiner: UInt64 LayoutHash
+Devex.CsgCombiner: public Boolean& get_Collision()
+Devex.CsgCombiner: public Devex.CsgCombinerOperation& get_Operation()
+Devex.CsgCombiner: public static System.String get_TypeName()
+Devex.CsgCombiner: public static UInt64 get_LayoutHash()
 Devex.CsgCombinerOperation: Devex.CsgCombinerOperation Intersect
 Devex.CsgCombinerOperation: Devex.CsgCombinerOperation Subtract
 Devex.CsgCombinerOperation: Devex.CsgCombinerOperation Union
@@ -309,6 +483,14 @@ Devex.CsgCylinder: Single& Radius
 Devex.CsgCylinder: System.String TypeName
 Devex.CsgCylinder: UInt32& Sides
 Devex.CsgCylinder: UInt64 LayoutHash
+Devex.CsgCylinder: public Boolean& get_Collision()
+Devex.CsgCylinder: public Devex.AssetId& get_Material()
+Devex.CsgCylinder: public Devex.CsgCylinderOperation& get_Operation()
+Devex.CsgCylinder: public Single& get_Height()
+Devex.CsgCylinder: public Single& get_Radius()
+Devex.CsgCylinder: public UInt32& get_Sides()
+Devex.CsgCylinder: public static System.String get_TypeName()
+Devex.CsgCylinder: public static UInt64 get_LayoutHash()
 Devex.CsgCylinderOperation: Devex.CsgCylinderOperation Intersect
 Devex.CsgCylinderOperation: Devex.CsgCylinderOperation Subtract
 Devex.CsgCylinderOperation: Devex.CsgCylinderOperation Union
@@ -321,6 +503,15 @@ Devex.CsgPath: Single& Depth
 Devex.CsgPath: Single& Width
 Devex.CsgPath: System.String TypeName
 Devex.CsgPath: UInt64 LayoutHash
+Devex.CsgPath: public Boolean& get_Collision()
+Devex.CsgPath: public Devex.AssetId& get_Material()
+Devex.CsgPath: public Devex.CsgPathOperation& get_Operation()
+Devex.CsgPath: public Devex.Entity get_Path()
+Devex.CsgPath: public Single& get_Depth()
+Devex.CsgPath: public Single& get_Width()
+Devex.CsgPath: public Void set_Path(Devex.Entity)
+Devex.CsgPath: public static System.String get_TypeName()
+Devex.CsgPath: public static UInt64 get_LayoutHash()
 Devex.CsgPathOperation: Devex.CsgPathOperation Intersect
 Devex.CsgPathOperation: Devex.CsgPathOperation Subtract
 Devex.CsgPathOperation: Devex.CsgPathOperation Union
@@ -332,6 +523,13 @@ Devex.CsgSphere: Single& Radius
 Devex.CsgSphere: System.String TypeName
 Devex.CsgSphere: UInt32& Sides
 Devex.CsgSphere: UInt64 LayoutHash
+Devex.CsgSphere: public Boolean& get_Collision()
+Devex.CsgSphere: public Devex.AssetId& get_Material()
+Devex.CsgSphere: public Devex.CsgSphereOperation& get_Operation()
+Devex.CsgSphere: public Single& get_Radius()
+Devex.CsgSphere: public UInt32& get_Sides()
+Devex.CsgSphere: public static System.String get_TypeName()
+Devex.CsgSphere: public static UInt64 get_LayoutHash()
 Devex.CsgSphereOperation: Devex.CsgSphereOperation Intersect
 Devex.CsgSphereOperation: Devex.CsgSphereOperation Subtract
 Devex.CsgSphereOperation: Devex.CsgSphereOperation Union
@@ -343,6 +541,12 @@ Devex.CylinderCollider: Single& Height
 Devex.CylinderCollider: Single& Radius
 Devex.CylinderCollider: System.String TypeName
 Devex.CylinderCollider: UInt64 LayoutHash
+Devex.CylinderCollider: public Boolean& get_Trigger()
+Devex.CylinderCollider: public Devex.Vec3& get_Center()
+Devex.CylinderCollider: public Single& get_Height()
+Devex.CylinderCollider: public Single& get_Radius()
+Devex.CylinderCollider: public static System.String get_TypeName()
+Devex.CylinderCollider: public static UInt64 get_LayoutHash()
 Devex.Decal: Boolean& DistanceFade
 Devex.Decal: Devex.AssetId& Albedo
 Devex.Decal: Devex.AssetId& Emission
@@ -360,6 +564,22 @@ Devex.Decal: Single& NormalFade
 Devex.Decal: Single& UpperFade
 Devex.Decal: System.String TypeName
 Devex.Decal: UInt64 LayoutHash
+Devex.Decal: public Boolean& get_DistanceFade()
+Devex.Decal: public Devex.AssetId& get_Albedo()
+Devex.Decal: public Devex.AssetId& get_Emission()
+Devex.Decal: public Devex.AssetId& get_Normal()
+Devex.Decal: public Devex.AssetId& get_Orm()
+Devex.Decal: public Devex.Vec3& get_Size()
+Devex.Decal: public Devex.Vec4& get_Modulate()
+Devex.Decal: public Single& get_AlbedoMix()
+Devex.Decal: public Single& get_DistanceFadeBegin()
+Devex.Decal: public Single& get_DistanceFadeLength()
+Devex.Decal: public Single& get_EmissionEnergy()
+Devex.Decal: public Single& get_LowerFade()
+Devex.Decal: public Single& get_NormalFade()
+Devex.Decal: public Single& get_UpperFade()
+Devex.Decal: public static System.String get_TypeName()
+Devex.Decal: public static UInt64 get_LayoutHash()
 Devex.DirectionalLight2D: Boolean& Shadows
 Devex.DirectionalLight2D: Devex.DirectionalLight2D At(Void*)
 Devex.DirectionalLight2D: Devex.Vec3& Color
@@ -371,6 +591,16 @@ Devex.DirectionalLight2D: System.String TypeName
 Devex.DirectionalLight2D: UInt32& ItemMask
 Devex.DirectionalLight2D: UInt32& ShadowMask
 Devex.DirectionalLight2D: UInt64 LayoutHash
+Devex.DirectionalLight2D: public Boolean& get_Shadows()
+Devex.DirectionalLight2D: public Devex.Vec3& get_Color()
+Devex.DirectionalLight2D: public Single& get_Energy()
+Devex.DirectionalLight2D: public Single& get_Height()
+Devex.DirectionalLight2D: public Single& get_ShadowDistance()
+Devex.DirectionalLight2D: public Single& get_ShadowSoftness()
+Devex.DirectionalLight2D: public UInt32& get_ItemMask()
+Devex.DirectionalLight2D: public UInt32& get_ShadowMask()
+Devex.DirectionalLight2D: public static System.String get_TypeName()
+Devex.DirectionalLight2D: public static UInt64 get_LayoutHash()
 Devex.DirectionalLight: Boolean& CastShadows
 Devex.DirectionalLight: Boolean& FollowAtmosphere
 Devex.DirectionalLight: Devex.DirectionalLight At(Void*)
@@ -380,6 +610,14 @@ Devex.DirectionalLight: Single& ShadowDistance
 Devex.DirectionalLight: Single& Temperature
 Devex.DirectionalLight: System.String TypeName
 Devex.DirectionalLight: UInt64 LayoutHash
+Devex.DirectionalLight: public Boolean& get_CastShadows()
+Devex.DirectionalLight: public Boolean& get_FollowAtmosphere()
+Devex.DirectionalLight: public Devex.Vec3& get_Color()
+Devex.DirectionalLight: public Single& get_Illuminance()
+Devex.DirectionalLight: public Single& get_ShadowDistance()
+Devex.DirectionalLight: public Single& get_Temperature()
+Devex.DirectionalLight: public static System.String get_TypeName()
+Devex.DirectionalLight: public static UInt64 get_LayoutHash()
 Devex.DistanceJoint2D: Boolean& Broken
 Devex.DistanceJoint2D: Boolean& CollideConnected
 Devex.DistanceJoint2D: Boolean& Rope
@@ -393,6 +631,20 @@ Devex.DistanceJoint2D: Single& Length
 Devex.DistanceJoint2D: Single& Spring
 Devex.DistanceJoint2D: System.String TypeName
 Devex.DistanceJoint2D: UInt64 LayoutHash
+Devex.DistanceJoint2D: public Boolean& get_Broken()
+Devex.DistanceJoint2D: public Boolean& get_CollideConnected()
+Devex.DistanceJoint2D: public Boolean& get_Rope()
+Devex.DistanceJoint2D: public Devex.Entity get_BodyA()
+Devex.DistanceJoint2D: public Devex.Entity get_BodyB()
+Devex.DistanceJoint2D: public Devex.Vec2& get_Anchor()
+Devex.DistanceJoint2D: public Single& get_BreakForce()
+Devex.DistanceJoint2D: public Single& get_Damping()
+Devex.DistanceJoint2D: public Single& get_Length()
+Devex.DistanceJoint2D: public Single& get_Spring()
+Devex.DistanceJoint2D: public Void set_BodyA(Devex.Entity)
+Devex.DistanceJoint2D: public Void set_BodyB(Devex.Entity)
+Devex.DistanceJoint2D: public static System.String get_TypeName()
+Devex.DistanceJoint2D: public static UInt64 get_LayoutHash()
 Devex.DistanceJoint: Boolean& Broken
 Devex.DistanceJoint: Boolean& CollideConnected
 Devex.DistanceJoint: Boolean& Rope
@@ -406,6 +658,20 @@ Devex.DistanceJoint: Single& Length
 Devex.DistanceJoint: Single& Spring
 Devex.DistanceJoint: System.String TypeName
 Devex.DistanceJoint: UInt64 LayoutHash
+Devex.DistanceJoint: public Boolean& get_Broken()
+Devex.DistanceJoint: public Boolean& get_CollideConnected()
+Devex.DistanceJoint: public Boolean& get_Rope()
+Devex.DistanceJoint: public Devex.Entity get_BodyA()
+Devex.DistanceJoint: public Devex.Entity get_BodyB()
+Devex.DistanceJoint: public Devex.Vec3& get_Anchor()
+Devex.DistanceJoint: public Single& get_BreakForce()
+Devex.DistanceJoint: public Single& get_Damping()
+Devex.DistanceJoint: public Single& get_Length()
+Devex.DistanceJoint: public Single& get_Spring()
+Devex.DistanceJoint: public Void set_BodyA(Devex.Entity)
+Devex.DistanceJoint: public Void set_BodyB(Devex.Entity)
+Devex.DistanceJoint: public static System.String get_TypeName()
+Devex.DistanceJoint: public static UInt64 get_LayoutHash()
 Devex.Ease: Devex.Ease InBack
 Devex.Ease: Devex.Ease InBounce
 Devex.Ease: Devex.Ease InCubic
@@ -431,9 +697,13 @@ Devex.Ease: Devex.Ease OutSine
 Devex.EditorCommandAttribute: System.String AddonId
 Devex.EditorCommandAttribute: System.String Name
 Devex.EditorCommandAttribute: Void .ctor(System.String, System.String)
+Devex.EditorCommandAttribute: public System.String get_AddonId()
+Devex.EditorCommandAttribute: public System.String get_Name()
 Devex.EditorContext: Devex.Entity CreateEntity(System.String)
 Devex.EditorContext: Devex.Scene Scene
 Devex.EditorContext: System.Collections.Generic.IReadOnlyList`1[Devex.Entity] Selection
+Devex.EditorContext: public Devex.Scene get_Scene()
+Devex.EditorContext: public System.Collections.Generic.IReadOnlyList`1[Devex.Entity] get_Selection()
 Devex.Entity: Boolean Equals(Devex.Entity)
 Devex.Entity: Boolean Equals(System.Object)
 Devex.Entity: Boolean HasTransform
@@ -458,6 +728,18 @@ Devex.Entity: UInt32 Index
 Devex.Entity: Void .ctor(UInt32, UInt32)
 Devex.Entity: Void Destroy()
 Devex.Entity: Void SetParent(Devex.Entity)
+Devex.Entity: public Boolean get_HasTransform()
+Devex.Entity: public Boolean get_IsAlive()
+Devex.Entity: public Boolean get_IsValid()
+Devex.Entity: public Devex.Entity get_Parent()
+Devex.Entity: public Devex.Transform& get_Transform()
+Devex.Entity: public Devex.Uuid get_Uuid()
+Devex.Entity: public Devex.Vec3 get_WorldPosition()
+Devex.Entity: public System.Collections.Generic.IEnumerable`1[Devex.Entity] get_Children()
+Devex.Entity: public System.Numerics.Matrix4x4 get_WorldMatrix()
+Devex.Entity: public System.String get_Name()
+Devex.Entity: public Void set_Name(System.String)
+Devex.Entity: public static Devex.Entity get_None()
 Devex.Environment: Devex.AssetId& Sky
 Devex.Environment: Devex.AssetId& SkyMaterial
 Devex.Environment: Devex.Environment At(Void*)
@@ -466,6 +748,13 @@ Devex.Environment: Single& Intensity
 Devex.Environment: Single& Rotation
 Devex.Environment: System.String TypeName
 Devex.Environment: UInt64 LayoutHash
+Devex.Environment: public Devex.AssetId& get_Sky()
+Devex.Environment: public Devex.AssetId& get_SkyMaterial()
+Devex.Environment: public Devex.Vec3& get_Color()
+Devex.Environment: public Single& get_Intensity()
+Devex.Environment: public Single& get_Rotation()
+Devex.Environment: public static System.String get_TypeName()
+Devex.Environment: public static UInt64 get_LayoutHash()
 Devex.FixedJoint2D: Boolean& Broken
 Devex.FixedJoint2D: Boolean& CollideConnected
 Devex.FixedJoint2D: Devex.Entity BodyA
@@ -475,6 +764,16 @@ Devex.FixedJoint2D: Single& BreakForce
 Devex.FixedJoint2D: Single& BreakTorque
 Devex.FixedJoint2D: System.String TypeName
 Devex.FixedJoint2D: UInt64 LayoutHash
+Devex.FixedJoint2D: public Boolean& get_Broken()
+Devex.FixedJoint2D: public Boolean& get_CollideConnected()
+Devex.FixedJoint2D: public Devex.Entity get_BodyA()
+Devex.FixedJoint2D: public Devex.Entity get_BodyB()
+Devex.FixedJoint2D: public Single& get_BreakForce()
+Devex.FixedJoint2D: public Single& get_BreakTorque()
+Devex.FixedJoint2D: public Void set_BodyA(Devex.Entity)
+Devex.FixedJoint2D: public Void set_BodyB(Devex.Entity)
+Devex.FixedJoint2D: public static System.String get_TypeName()
+Devex.FixedJoint2D: public static UInt64 get_LayoutHash()
 Devex.FixedJoint: Boolean& Broken
 Devex.FixedJoint: Boolean& CollideConnected
 Devex.FixedJoint: Devex.Entity BodyA
@@ -484,6 +783,16 @@ Devex.FixedJoint: Single& BreakForce
 Devex.FixedJoint: Single& BreakTorque
 Devex.FixedJoint: System.String TypeName
 Devex.FixedJoint: UInt64 LayoutHash
+Devex.FixedJoint: public Boolean& get_Broken()
+Devex.FixedJoint: public Boolean& get_CollideConnected()
+Devex.FixedJoint: public Devex.Entity get_BodyA()
+Devex.FixedJoint: public Devex.Entity get_BodyB()
+Devex.FixedJoint: public Single& get_BreakForce()
+Devex.FixedJoint: public Single& get_BreakTorque()
+Devex.FixedJoint: public Void set_BodyA(Devex.Entity)
+Devex.FixedJoint: public Void set_BodyB(Devex.Entity)
+Devex.FixedJoint: public static System.String get_TypeName()
+Devex.FixedJoint: public static UInt64 get_LayoutHash()
 Devex.Fog: Devex.Fog At(Void*)
 Devex.Fog: Devex.Vec3& Color
 Devex.Fog: Single& Density
@@ -496,6 +805,17 @@ Devex.Fog: Single& SunAnisotropy
 Devex.Fog: Single& SunScattering
 Devex.Fog: System.String TypeName
 Devex.Fog: UInt64 LayoutHash
+Devex.Fog: public Devex.Vec3& get_Color()
+Devex.Fog: public Single& get_Density()
+Devex.Fog: public Single& get_Falloff()
+Devex.Fog: public Single& get_Height()
+Devex.Fog: public Single& get_MaxOpacity()
+Devex.Fog: public Single& get_SkyBlend()
+Devex.Fog: public Single& get_StartDistance()
+Devex.Fog: public Single& get_SunAnisotropy()
+Devex.Fog: public Single& get_SunScattering()
+Devex.Fog: public static System.String get_TypeName()
+Devex.Fog: public static UInt64 get_LayoutHash()
 Devex.FogVolume: Devex.FogVolume At(Void*)
 Devex.FogVolume: Devex.FogVolumeShape& Shape
 Devex.FogVolume: Devex.Vec3& Albedo
@@ -506,6 +826,15 @@ Devex.FogVolume: Single& EdgeFade
 Devex.FogVolume: Single& HeightFalloff
 Devex.FogVolume: System.String TypeName
 Devex.FogVolume: UInt64 LayoutHash
+Devex.FogVolume: public Devex.FogVolumeShape& get_Shape()
+Devex.FogVolume: public Devex.Vec3& get_Albedo()
+Devex.FogVolume: public Devex.Vec3& get_Emission()
+Devex.FogVolume: public Devex.Vec3& get_Size()
+Devex.FogVolume: public Single& get_Density()
+Devex.FogVolume: public Single& get_EdgeFade()
+Devex.FogVolume: public Single& get_HeightFalloff()
+Devex.FogVolume: public static System.String get_TypeName()
+Devex.FogVolume: public static UInt64 get_LayoutHash()
 Devex.FogVolumeShape: Devex.FogVolumeShape Box
 Devex.FogVolumeShape: Devex.FogVolumeShape Ellipsoid
 Devex.FogVolumeShape: Devex.FogVolumeShape World
@@ -516,9 +845,14 @@ Devex.Game: Void LoadScene(System.String)
 Devex.Game: Void LoadSceneInBackground(Devex.AssetId)
 Devex.Game: Void LoadSceneInBackground(System.String)
 Devex.Game: Void Quit()
+Devex.Game: public static Boolean get_IsLoadingScene()
+Devex.Game: public static Single get_LoadingProgress()
 Devex.GameSystemAttribute: Devex.SystemPhase Phase
 Devex.GameSystemAttribute: Int32 Order
 Devex.GameSystemAttribute: Void .ctor(Devex.SystemPhase)
+Devex.GameSystemAttribute: public Devex.SystemPhase get_Phase()
+Devex.GameSystemAttribute: public Int32 get_Order()
+Devex.GameSystemAttribute: public init Void set_Order(Int32)
 Devex.Globals: Devex.Entity Find(System.String)
 Devex.GridCoordinates: Int32 X
 Devex.GridCoordinates: Int32 Y
@@ -532,6 +866,12 @@ Devex.GridMap: Devex.NativeList`1[System.Int32] Cells
 Devex.GridMap: Devex.Vec3& CellSize
 Devex.GridMap: System.String TypeName
 Devex.GridMap: UInt64 LayoutHash
+Devex.GridMap: public Boolean& get_Collision()
+Devex.GridMap: public Devex.AssetId& get_Palette()
+Devex.GridMap: public Devex.NativeList`1[System.Int32] get_Cells()
+Devex.GridMap: public Devex.Vec3& get_CellSize()
+Devex.GridMap: public static System.String get_TypeName()
+Devex.GridMap: public static UInt64 get_LayoutHash()
 Devex.Grids: Boolean Remove(Devex.Entity, Devex.GridCoordinates)
 Devex.Grids: Devex.GridCoordinates CellAt(Devex.Entity, Devex.Vec3)
 Devex.Grids: Devex.Vec3 PositionOf(Devex.Entity, Devex.GridCoordinates)
@@ -539,6 +879,7 @@ Devex.Grids: Int32 PieceAt(Devex.Entity, Devex.GridCoordinates)
 Devex.Grids: Void Set(Devex.Entity, Devex.GridCoordinates, Int32, Int32)
 Devex.GroupAttribute: System.String Name
 Devex.GroupAttribute: Void .ctor(System.String)
+Devex.GroupAttribute: public System.String get_Name()
 Devex.HiddenAttribute: Void .ctor()
 Devex.HingeJoint2D: Boolean& Broken
 Devex.HingeJoint2D: Boolean& CollideConnected
@@ -555,6 +896,22 @@ Devex.HingeJoint2D: Single& MotorSpeed
 Devex.HingeJoint2D: Single& UpperAngle
 Devex.HingeJoint2D: System.String TypeName
 Devex.HingeJoint2D: UInt64 LayoutHash
+Devex.HingeJoint2D: public Boolean& get_Broken()
+Devex.HingeJoint2D: public Boolean& get_CollideConnected()
+Devex.HingeJoint2D: public Boolean& get_UseLimits()
+Devex.HingeJoint2D: public Boolean& get_UseMotor()
+Devex.HingeJoint2D: public Devex.Entity get_BodyA()
+Devex.HingeJoint2D: public Devex.Entity get_BodyB()
+Devex.HingeJoint2D: public Single& get_BreakForce()
+Devex.HingeJoint2D: public Single& get_BreakTorque()
+Devex.HingeJoint2D: public Single& get_LowerAngle()
+Devex.HingeJoint2D: public Single& get_MaxMotorTorque()
+Devex.HingeJoint2D: public Single& get_MotorSpeed()
+Devex.HingeJoint2D: public Single& get_UpperAngle()
+Devex.HingeJoint2D: public Void set_BodyA(Devex.Entity)
+Devex.HingeJoint2D: public Void set_BodyB(Devex.Entity)
+Devex.HingeJoint2D: public static System.String get_TypeName()
+Devex.HingeJoint2D: public static UInt64 get_LayoutHash()
 Devex.HingeJoint: Boolean& Broken
 Devex.HingeJoint: Boolean& CollideConnected
 Devex.HingeJoint: Boolean& UseLimits
@@ -570,9 +927,27 @@ Devex.HingeJoint: Single& MotorSpeed
 Devex.HingeJoint: Single& UpperAngle
 Devex.HingeJoint: System.String TypeName
 Devex.HingeJoint: UInt64 LayoutHash
+Devex.HingeJoint: public Boolean& get_Broken()
+Devex.HingeJoint: public Boolean& get_CollideConnected()
+Devex.HingeJoint: public Boolean& get_UseLimits()
+Devex.HingeJoint: public Boolean& get_UseMotor()
+Devex.HingeJoint: public Devex.Entity get_BodyA()
+Devex.HingeJoint: public Devex.Entity get_BodyB()
+Devex.HingeJoint: public Single& get_BreakForce()
+Devex.HingeJoint: public Single& get_BreakTorque()
+Devex.HingeJoint: public Single& get_LowerAngle()
+Devex.HingeJoint: public Single& get_MaxMotorTorque()
+Devex.HingeJoint: public Single& get_MotorSpeed()
+Devex.HingeJoint: public Single& get_UpperAngle()
+Devex.HingeJoint: public Void set_BodyA(Devex.Entity)
+Devex.HingeJoint: public Void set_BodyB(Devex.Entity)
+Devex.HingeJoint: public static System.String get_TypeName()
+Devex.HingeJoint: public static UInt64 get_LayoutHash()
 Devex.IComponentView`1: System.String TypeName
 Devex.IComponentView`1: TSelf At(Void*)
 Devex.IComponentView`1: UInt64 LayoutHash
+Devex.IComponentView`1: public static System.String get_TypeName()
+Devex.IComponentView`1: public static UInt64 get_LayoutHash()
 Devex.Input: Boolean IsActionDown(System.String)
 Devex.Input: Boolean IsContextActive(System.String)
 Devex.Input: Boolean IsKeyDown(Devex.Key)
@@ -595,6 +970,14 @@ Devex.Input: Void ListenForBinding(System.String, Int32)
 Devex.Input: Void ResetBindings()
 Devex.Input: Void SetContextActive(System.String, Boolean)
 Devex.Input: Void StopListeningForBinding()
+Devex.Input: public static Boolean get_IsListeningForBinding()
+Devex.Input: public static Boolean get_MouseCaptured()
+Devex.Input: public static Devex.MouseMode get_MouseMode()
+Devex.Input: public static Devex.Touch[] get_Touches()
+Devex.Input: public static Devex.Vec2 get_MouseDelta()
+Devex.Input: public static Devex.Vec2 get_MousePosition()
+Devex.Input: public static Void set_MouseCaptured(Boolean)
+Devex.Input: public static Void set_MouseMode(Devex.MouseMode)
 Devex.InstanceShaderParameters: Devex.Vec4 GetInstanceShaderParameter(Devex.Entity, System.String)
 Devex.InstanceShaderParameters: Void ResetInstanceShaderParameter(Devex.Entity, System.String)
 Devex.InstanceShaderParameters: Void SetInstanceShaderParameter(Devex.Entity, System.String, Boolean)
@@ -725,6 +1108,11 @@ Devex.LightOccluder2D: Devex.NativeList`1[Devex.Vec2] Points
 Devex.LightOccluder2D: System.String TypeName
 Devex.LightOccluder2D: UInt32& Mask
 Devex.LightOccluder2D: UInt64 LayoutHash
+Devex.LightOccluder2D: public Boolean& get_Closed()
+Devex.LightOccluder2D: public Devex.NativeList`1[Devex.Vec2] get_Points()
+Devex.LightOccluder2D: public UInt32& get_Mask()
+Devex.LightOccluder2D: public static System.String get_TypeName()
+Devex.LightOccluder2D: public static UInt64 get_LayoutHash()
 Devex.LightProbeVolume: Devex.AssetId& Irradiance
 Devex.LightProbeVolume: Devex.LightProbeVolume At(Void*)
 Devex.LightProbeVolume: Devex.Vec3& Size
@@ -734,12 +1122,24 @@ Devex.LightProbeVolume: Single& Intensity
 Devex.LightProbeVolume: Single& Spacing
 Devex.LightProbeVolume: System.String TypeName
 Devex.LightProbeVolume: UInt64 LayoutHash
+Devex.LightProbeVolume: public Devex.AssetId& get_Irradiance()
+Devex.LightProbeVolume: public Devex.Vec3& get_Size()
+Devex.LightProbeVolume: public Int32& get_Bounces()
+Devex.LightProbeVolume: public Single& get_BlendDistance()
+Devex.LightProbeVolume: public Single& get_Intensity()
+Devex.LightProbeVolume: public Single& get_Spacing()
+Devex.LightProbeVolume: public static System.String get_TypeName()
+Devex.LightProbeVolume: public static UInt64 get_LayoutHash()
 Devex.Localization: System.String FallbackLanguage
 Devex.Localization: System.String Language
 Devex.Localization: System.String LanguageName(System.String)
 Devex.Localization: System.String Tr(System.String)
 Devex.Localization: System.String Tr(System.String, System.ValueTuple`2[System.String,System.Object][])
 Devex.Localization: System.String[] Languages
+Devex.Localization: public static System.String get_FallbackLanguage()
+Devex.Localization: public static System.String get_Language()
+Devex.Localization: public static System.String[] get_Languages()
+Devex.Localization: public static Void set_Language(System.String)
 Devex.Log: Void Debug(System.String)
 Devex.Log: Void Error(System.String)
 Devex.Log: Void Info(System.String)
@@ -763,6 +1163,11 @@ Devex.MeshCollider: Devex.AssetId& Mesh
 Devex.MeshCollider: Devex.MeshCollider At(Void*)
 Devex.MeshCollider: System.String TypeName
 Devex.MeshCollider: UInt64 LayoutHash
+Devex.MeshCollider: public Boolean& get_Convex()
+Devex.MeshCollider: public Boolean& get_Trigger()
+Devex.MeshCollider: public Devex.AssetId& get_Mesh()
+Devex.MeshCollider: public static System.String get_TypeName()
+Devex.MeshCollider: public static UInt64 get_LayoutHash()
 Devex.MeshRenderer: Devex.AssetId& Material
 Devex.MeshRenderer: Devex.AssetId& Mesh
 Devex.MeshRenderer: Devex.MeshRenderer At(Void*)
@@ -771,6 +1176,13 @@ Devex.MeshRenderer: Devex.NativeStringList InstanceShaderParameters
 Devex.MeshRenderer: Single& LodBias
 Devex.MeshRenderer: System.String TypeName
 Devex.MeshRenderer: UInt64 LayoutHash
+Devex.MeshRenderer: public Devex.AssetId& get_Material()
+Devex.MeshRenderer: public Devex.AssetId& get_Mesh()
+Devex.MeshRenderer: public Devex.NativeList`1[Devex.Vec4] get_InstanceShaderValues()
+Devex.MeshRenderer: public Devex.NativeStringList get_InstanceShaderParameters()
+Devex.MeshRenderer: public Single& get_LodBias()
+Devex.MeshRenderer: public static System.String get_TypeName()
+Devex.MeshRenderer: public static UInt64 get_LayoutHash()
 Devex.MeshVertex: Devex.Vec2 Uv
 Devex.MeshVertex: Devex.Vec3 Normal
 Devex.MeshVertex: Devex.Vec3 Position
@@ -807,6 +1219,22 @@ Devex.Multiplayer: UInt32 TestInstance
 Devex.Multiplayer: UInt32[] Peers
 Devex.Multiplayer: Void Leave()
 Devex.Multiplayer: Void SetAuthority(Devex.Entity, UInt32)
+Devex.Multiplayer: public static Boolean get_IsHost()
+Devex.Multiplayer: public static Devex.MultiplayerState get_State()
+Devex.Multiplayer: public static UInt32 get_LocalPeer()
+Devex.Multiplayer: public static UInt32 get_RemoteSender()
+Devex.Multiplayer: public static UInt32 get_TestInstance()
+Devex.Multiplayer: public static UInt32[] get_Peers()
+Devex.Multiplayer: public static Void add_Connected(System.Action)
+Devex.Multiplayer: public static Void add_ConnectionFailed(System.Action)
+Devex.Multiplayer: public static Void add_Disconnected(System.Action)
+Devex.Multiplayer: public static Void add_PeerJoined(System.Action`1[System.UInt32])
+Devex.Multiplayer: public static Void add_PeerLeft(System.Action`1[System.UInt32])
+Devex.Multiplayer: public static Void remove_Connected(System.Action)
+Devex.Multiplayer: public static Void remove_ConnectionFailed(System.Action)
+Devex.Multiplayer: public static Void remove_Disconnected(System.Action)
+Devex.Multiplayer: public static Void remove_PeerJoined(System.Action`1[System.UInt32])
+Devex.Multiplayer: public static Void remove_PeerLeft(System.Action`1[System.UInt32])
 Devex.MultiplayerState: Devex.MultiplayerState Connecting
 Devex.MultiplayerState: Devex.MultiplayerState Offline
 Devex.MultiplayerState: Devex.MultiplayerState Online
@@ -823,6 +1251,9 @@ Devex.NativeEntityList: Void Add(Devex.Entity)
 Devex.NativeEntityList: Void Clear()
 Devex.NativeEntityList: Void Insert(Int32, Devex.Entity)
 Devex.NativeEntityList: Void RemoveAt(Int32)
+Devex.NativeEntityList: public Devex.Entity get_Item(Int32)
+Devex.NativeEntityList: public Int32 get_Count()
+Devex.NativeEntityList: public Void set_Item(Int32, Devex.Entity)
 Devex.NativeList`1: Enumerator GetEnumerator()
 Devex.NativeList`1: Int32 Count
 Devex.NativeList`1: System.Span`1[T] AsSpan()
@@ -833,6 +1264,8 @@ Devex.NativeList`1: Void Add(T)
 Devex.NativeList`1: Void Clear()
 Devex.NativeList`1: Void Insert(Int32, T)
 Devex.NativeList`1: Void RemoveAt(Int32)
+Devex.NativeList`1: public Int32 get_Count()
+Devex.NativeList`1: public T& get_Item(Int32)
 Devex.NativeStringList: Int32 Count
 Devex.NativeStringList: System.String Item [Int32]
 Devex.NativeStringList: System.String[] ToArray()
@@ -841,6 +1274,9 @@ Devex.NativeStringList: Void Add(System.String)
 Devex.NativeStringList: Void Clear()
 Devex.NativeStringList: Void Insert(Int32, System.String)
 Devex.NativeStringList: Void RemoveAt(Int32)
+Devex.NativeStringList: public Int32 get_Count()
+Devex.NativeStringList: public System.String get_Item(Int32)
+Devex.NativeStringList: public Void set_Item(Int32, System.String)
 Devex.NavMeshAgent: Devex.NavMeshAgent At(Void*)
 Devex.NavMeshAgent: Devex.NavMeshAgentAvoidance& Avoidance
 Devex.NavMeshAgent: Devex.Vec3& Velocity
@@ -852,6 +1288,16 @@ Devex.NavMeshAgent: Single& Speed
 Devex.NavMeshAgent: Single& StoppingDistance
 Devex.NavMeshAgent: System.String TypeName
 Devex.NavMeshAgent: UInt64 LayoutHash
+Devex.NavMeshAgent: public Devex.NavMeshAgentAvoidance& get_Avoidance()
+Devex.NavMeshAgent: public Devex.Vec3& get_Velocity()
+Devex.NavMeshAgent: public Single& get_Acceleration()
+Devex.NavMeshAgent: public Single& get_AngularSpeed()
+Devex.NavMeshAgent: public Single& get_Height()
+Devex.NavMeshAgent: public Single& get_Radius()
+Devex.NavMeshAgent: public Single& get_Speed()
+Devex.NavMeshAgent: public Single& get_StoppingDistance()
+Devex.NavMeshAgent: public static System.String get_TypeName()
+Devex.NavMeshAgent: public static UInt64 get_LayoutHash()
 Devex.NavMeshAgentAvoidance: Devex.NavMeshAgentAvoidance Good
 Devex.NavMeshAgentAvoidance: Devex.NavMeshAgentAvoidance High
 Devex.NavMeshAgentAvoidance: Devex.NavMeshAgentAvoidance Low
@@ -863,6 +1309,11 @@ Devex.NavMeshObstacle: Devex.Vec3& Center
 Devex.NavMeshObstacle: Devex.Vec3& Size
 Devex.NavMeshObstacle: System.String TypeName
 Devex.NavMeshObstacle: UInt64 LayoutHash
+Devex.NavMeshObstacle: public Devex.NavMeshObstacleShape& get_Shape()
+Devex.NavMeshObstacle: public Devex.Vec3& get_Center()
+Devex.NavMeshObstacle: public Devex.Vec3& get_Size()
+Devex.NavMeshObstacle: public static System.String get_TypeName()
+Devex.NavMeshObstacle: public static UInt64 get_LayoutHash()
 Devex.NavMeshObstacleShape: Devex.NavMeshObstacleShape Box
 Devex.NavMeshObstacleShape: Devex.NavMeshObstacleShape Cylinder
 Devex.NavMeshSurface: Devex.AssetId& NavMesh
@@ -876,6 +1327,16 @@ Devex.NavMeshSurface: Single& CellHeight
 Devex.NavMeshSurface: Single& CellSize
 Devex.NavMeshSurface: System.String TypeName
 Devex.NavMeshSurface: UInt64 LayoutHash
+Devex.NavMeshSurface: public Devex.AssetId& get_NavMesh()
+Devex.NavMeshSurface: public Int32& get_TileSize()
+Devex.NavMeshSurface: public Single& get_AgentHeight()
+Devex.NavMeshSurface: public Single& get_AgentMaxClimb()
+Devex.NavMeshSurface: public Single& get_AgentMaxSlope()
+Devex.NavMeshSurface: public Single& get_AgentRadius()
+Devex.NavMeshSurface: public Single& get_CellHeight()
+Devex.NavMeshSurface: public Single& get_CellSize()
+Devex.NavMeshSurface: public static System.String get_TypeName()
+Devex.NavMeshSurface: public static UInt64 get_LayoutHash()
 Devex.Navigation: Boolean HasDestination(Devex.Entity)
 Devex.Navigation: Boolean Raycast(Devex.Vec3, Devex.Vec3, Devex.Vec3 ByRef, Devex.Vec3 ByRef)
 Devex.Navigation: Boolean SamplePosition(Devex.Vec3, Single, Devex.Vec3 ByRef)
@@ -886,12 +1347,19 @@ Devex.Navigation: Void Stop(Devex.Entity)
 Devex.NetworkSpawner: Devex.NetworkSpawner At(Void*)
 Devex.NetworkSpawner: System.String TypeName
 Devex.NetworkSpawner: UInt64 LayoutHash
+Devex.NetworkSpawner: public static System.String get_TypeName()
+Devex.NetworkSpawner: public static UInt64 get_LayoutHash()
 Devex.NetworkSync: Devex.NativeStringList Fields
 Devex.NetworkSync: Devex.NetworkSync At(Void*)
 Devex.NetworkSync: Single& Rate
 Devex.NetworkSync: Single& Smoothing
 Devex.NetworkSync: System.String TypeName
 Devex.NetworkSync: UInt64 LayoutHash
+Devex.NetworkSync: public Devex.NativeStringList get_Fields()
+Devex.NetworkSync: public Single& get_Rate()
+Devex.NetworkSync: public Single& get_Smoothing()
+Devex.NetworkSync: public static System.String get_TypeName()
+Devex.NetworkSync: public static UInt64 get_LayoutHash()
 Devex.ParticleEmitter: Boolean& Collide
 Devex.ParticleEmitter: Boolean& FromShell
 Devex.ParticleEmitter: Boolean& Lit
@@ -950,6 +1418,64 @@ Devex.ParticleEmitter: Single& TrailWidth
 Devex.ParticleEmitter: System.String TypeName
 Devex.ParticleEmitter: UInt32& Seed
 Devex.ParticleEmitter: UInt64 LayoutHash
+Devex.ParticleEmitter: public Boolean& get_Collide()
+Devex.ParticleEmitter: public Boolean& get_FromShell()
+Devex.ParticleEmitter: public Boolean& get_Lit()
+Devex.ParticleEmitter: public Boolean& get_Looping()
+Devex.ParticleEmitter: public Boolean& get_PlayOnStart()
+Devex.ParticleEmitter: public Boolean& get_Prewarm()
+Devex.ParticleEmitter: public Boolean& get_RandomFrame()
+Devex.ParticleEmitter: public Boolean& get_Trails()
+Devex.ParticleEmitter: public Devex.AssetId& get_AlphaCurve()
+Devex.ParticleEmitter: public Devex.AssetId& get_Material()
+Devex.ParticleEmitter: public Devex.AssetId& get_SizeCurve()
+Devex.ParticleEmitter: public Devex.AssetId& get_SpeedCurve()
+Devex.ParticleEmitter: public Devex.AssetId& get_Texture()
+Devex.ParticleEmitter: public Devex.Entity get_SubEmitter()
+Devex.ParticleEmitter: public Devex.ParticleEmitterBlend& get_Blend()
+Devex.ParticleEmitter: public Devex.ParticleEmitterRenderMode& get_RenderMode()
+Devex.ParticleEmitter: public Devex.ParticleEmitterShape& get_Shape()
+Devex.ParticleEmitter: public Devex.ParticleEmitterSpace& get_Space()
+Devex.ParticleEmitter: public Devex.ParticleEmitterSubEmitOn& get_SubEmitOn()
+Devex.ParticleEmitter: public Devex.Vec2& get_Lifetime()
+Devex.ParticleEmitter: public Devex.Vec2& get_Rotation()
+Devex.ParticleEmitter: public Devex.Vec2& get_Size()
+Devex.ParticleEmitter: public Devex.Vec2& get_Speed()
+Devex.ParticleEmitter: public Devex.Vec2& get_Spin()
+Devex.ParticleEmitter: public Devex.Vec3& get_Acceleration()
+Devex.ParticleEmitter: public Devex.Vec3& get_BoxSize()
+Devex.ParticleEmitter: public Devex.Vec4& get_Color()
+Devex.ParticleEmitter: public Devex.Vec4& get_EndColor()
+Devex.ParticleEmitter: public Int32& get_Burst()
+Devex.ParticleEmitter: public Int32& get_MaxParticles()
+Devex.ParticleEmitter: public Int32& get_SheetColumns()
+Devex.ParticleEmitter: public Int32& get_SheetRows()
+Devex.ParticleEmitter: public Int32& get_SubEmitCount()
+Devex.ParticleEmitter: public Single& get_Angle()
+Devex.ParticleEmitter: public Single& get_Bounce()
+Devex.ParticleEmitter: public Single& get_Drag()
+Devex.ParticleEmitter: public Single& get_Duration()
+Devex.ParticleEmitter: public Single& get_Friction()
+Devex.ParticleEmitter: public Single& get_Gravity()
+Devex.ParticleEmitter: public Single& get_InheritVelocity()
+Devex.ParticleEmitter: public Single& get_Intensity()
+Devex.ParticleEmitter: public Single& get_LifetimeLoss()
+Devex.ParticleEmitter: public Single& get_Noise()
+Devex.ParticleEmitter: public Single& get_NoiseFrequency()
+Devex.ParticleEmitter: public Single& get_NoiseSpeed()
+Devex.ParticleEmitter: public Single& get_Radius()
+Devex.ParticleEmitter: public Single& get_RandomDirection()
+Devex.ParticleEmitter: public Single& get_Rate()
+Devex.ParticleEmitter: public Single& get_RateOverDistance()
+Devex.ParticleEmitter: public Single& get_SheetCycles()
+Devex.ParticleEmitter: public Single& get_Softness()
+Devex.ParticleEmitter: public Single& get_Stretch()
+Devex.ParticleEmitter: public Single& get_TrailTime()
+Devex.ParticleEmitter: public Single& get_TrailWidth()
+Devex.ParticleEmitter: public UInt32& get_Seed()
+Devex.ParticleEmitter: public Void set_SubEmitter(Devex.Entity)
+Devex.ParticleEmitter: public static System.String get_TypeName()
+Devex.ParticleEmitter: public static UInt64 get_LayoutHash()
 Devex.ParticleEmitterBlend: Devex.ParticleEmitterBlend Additive
 Devex.ParticleEmitterBlend: Devex.ParticleEmitterBlend Alpha
 Devex.ParticleEmitterRenderMode: Devex.ParticleEmitterRenderMode Billboard
@@ -974,6 +1500,8 @@ Devex.Particles: Void Pause(Devex.Entity)
 Devex.Particles: Void Play(Devex.Entity)
 Devex.Particles: Void Resume(Devex.Entity)
 Devex.Particles: Void Stop(Devex.Entity, Boolean)
+Devex.Particles: public static Devex.Vec3 get_Gravity()
+Devex.Particles: public static Void set_Gravity(Devex.Vec3)
 Devex.Path3D: Boolean& Closed
 Devex.Path3D: Devex.NativeList`1[Devex.Vec3] HandlesIn
 Devex.Path3D: Devex.NativeList`1[Devex.Vec3] HandlesOut
@@ -981,6 +1509,12 @@ Devex.Path3D: Devex.NativeList`1[Devex.Vec3] Points
 Devex.Path3D: Devex.Path3D At(Void*)
 Devex.Path3D: System.String TypeName
 Devex.Path3D: UInt64 LayoutHash
+Devex.Path3D: public Boolean& get_Closed()
+Devex.Path3D: public Devex.NativeList`1[Devex.Vec3] get_HandlesIn()
+Devex.Path3D: public Devex.NativeList`1[Devex.Vec3] get_HandlesOut()
+Devex.Path3D: public Devex.NativeList`1[Devex.Vec3] get_Points()
+Devex.Path3D: public static System.String get_TypeName()
+Devex.Path3D: public static UInt64 get_LayoutHash()
 Devex.PathFollower: Boolean& Orient
 Devex.PathFollower: Boolean& Playing
 Devex.PathFollower: Boolean& Reversed
@@ -991,6 +1525,16 @@ Devex.PathFollower: Single& Distance
 Devex.PathFollower: Single& Speed
 Devex.PathFollower: System.String TypeName
 Devex.PathFollower: UInt64 LayoutHash
+Devex.PathFollower: public Boolean& get_Orient()
+Devex.PathFollower: public Boolean& get_Playing()
+Devex.PathFollower: public Boolean& get_Reversed()
+Devex.PathFollower: public Devex.Entity get_Path()
+Devex.PathFollower: public Devex.PathFollowerEnd& get_End()
+Devex.PathFollower: public Single& get_Distance()
+Devex.PathFollower: public Single& get_Speed()
+Devex.PathFollower: public Void set_Path(Devex.Entity)
+Devex.PathFollower: public static System.String get_TypeName()
+Devex.PathFollower: public static UInt64 get_LayoutHash()
 Devex.PathFollowerEnd: Devex.PathFollowerEnd Loop
 Devex.PathFollowerEnd: Devex.PathFollowerEnd PingPong
 Devex.PathFollowerEnd: Devex.PathFollowerEnd Stop
@@ -1014,6 +1558,8 @@ Devex.Physics: Void AddForce(Devex.Entity, Devex.Vec3)
 Devex.Physics: Void AddImpulse(Devex.Entity, Devex.Vec3)
 Devex.Physics: Void AddImpulseAt(Devex.Entity, Devex.Vec3, Devex.Vec3)
 Devex.Physics: Void AddTorque(Devex.Entity, Devex.Vec3)
+Devex.Physics: public static System.ReadOnlySpan`1[Devex.Contact] get_Contacts()
+Devex.Physics: public static System.ReadOnlySpan`1[Devex.JointBreak] get_BrokenJoints()
 Devex.PhysicsLayerAttribute: Void .ctor()
 Devex.PlayerSettings: Boolean Fullscreen
 Devex.PlayerSettings: Boolean GetBool(System.String, Boolean)
@@ -1033,6 +1579,15 @@ Devex.PlayerSettings: Void SetInt(System.String, Int32)
 Devex.PlayerSettings: Void SetString(System.String, System.String)
 Devex.PlayerSettings: Void SetVolume(System.String, Single)
 Devex.PlayerSettings: Void SetWindowSize(Int32, Int32)
+Devex.PlayerSettings: public static Boolean get_Fullscreen()
+Devex.PlayerSettings: public static Boolean get_VSync()
+Devex.PlayerSettings: public static Devex.Vec2 get_WindowSize()
+Devex.PlayerSettings: public static Devex.WindowMode get_WindowMode()
+Devex.PlayerSettings: public static Int32 get_MaxFrameRate()
+Devex.PlayerSettings: public static Void set_Fullscreen(Boolean)
+Devex.PlayerSettings: public static Void set_MaxFrameRate(Int32)
+Devex.PlayerSettings: public static Void set_VSync(Boolean)
+Devex.PlayerSettings: public static Void set_WindowMode(Devex.WindowMode)
 Devex.PointLight2D: Boolean& Shadows
 Devex.PointLight2D: Devex.PointLight2D At(Void*)
 Devex.PointLight2D: Devex.Vec3& Color
@@ -1045,6 +1600,17 @@ Devex.PointLight2D: System.String TypeName
 Devex.PointLight2D: UInt32& ItemMask
 Devex.PointLight2D: UInt32& ShadowMask
 Devex.PointLight2D: UInt64 LayoutHash
+Devex.PointLight2D: public Boolean& get_Shadows()
+Devex.PointLight2D: public Devex.Vec3& get_Color()
+Devex.PointLight2D: public Single& get_Energy()
+Devex.PointLight2D: public Single& get_Falloff()
+Devex.PointLight2D: public Single& get_Height()
+Devex.PointLight2D: public Single& get_Radius()
+Devex.PointLight2D: public Single& get_ShadowSoftness()
+Devex.PointLight2D: public UInt32& get_ItemMask()
+Devex.PointLight2D: public UInt32& get_ShadowMask()
+Devex.PointLight2D: public static System.String get_TypeName()
+Devex.PointLight2D: public static UInt64 get_LayoutHash()
 Devex.PointLight: Boolean& CastShadows
 Devex.PointLight: Devex.PointLight At(Void*)
 Devex.PointLight: Devex.Vec3& Color
@@ -1053,12 +1619,24 @@ Devex.PointLight: Single& Range
 Devex.PointLight: Single& Temperature
 Devex.PointLight: System.String TypeName
 Devex.PointLight: UInt64 LayoutHash
+Devex.PointLight: public Boolean& get_CastShadows()
+Devex.PointLight: public Devex.Vec3& get_Color()
+Devex.PointLight: public Single& get_Intensity()
+Devex.PointLight: public Single& get_Range()
+Devex.PointLight: public Single& get_Temperature()
+Devex.PointLight: public static System.String get_TypeName()
+Devex.PointLight: public static UInt64 get_LayoutHash()
 Devex.PolygonCollider2D: Boolean& OneWay
 Devex.PolygonCollider2D: Boolean& Trigger
 Devex.PolygonCollider2D: Devex.NativeList`1[Devex.Vec2] Points
 Devex.PolygonCollider2D: Devex.PolygonCollider2D At(Void*)
 Devex.PolygonCollider2D: System.String TypeName
 Devex.PolygonCollider2D: UInt64 LayoutHash
+Devex.PolygonCollider2D: public Boolean& get_OneWay()
+Devex.PolygonCollider2D: public Boolean& get_Trigger()
+Devex.PolygonCollider2D: public Devex.NativeList`1[Devex.Vec2] get_Points()
+Devex.PolygonCollider2D: public static System.String get_TypeName()
+Devex.PolygonCollider2D: public static UInt64 get_LayoutHash()
 Devex.PostProcessVolume: Boolean& AutoFocus
 Devex.PostProcessVolume: Boolean& DepthOfField
 Devex.PostProcessVolume: Boolean& Global
@@ -1098,11 +1676,50 @@ Devex.PostProcessVolume: Single& Vignette
 Devex.PostProcessVolume: Single& Weight
 Devex.PostProcessVolume: System.String TypeName
 Devex.PostProcessVolume: UInt64 LayoutHash
+Devex.PostProcessVolume: public Boolean& get_AutoFocus()
+Devex.PostProcessVolume: public Boolean& get_DepthOfField()
+Devex.PostProcessVolume: public Boolean& get_Global()
+Devex.PostProcessVolume: public Boolean& get_OverrideAmbientOcclusion()
+Devex.PostProcessVolume: public Boolean& get_OverrideBloom()
+Devex.PostProcessVolume: public Boolean& get_OverrideChromaticAberration()
+Devex.PostProcessVolume: public Boolean& get_OverrideColorFilter()
+Devex.PostProcessVolume: public Boolean& get_OverrideContrast()
+Devex.PostProcessVolume: public Boolean& get_OverrideDepthOfField()
+Devex.PostProcessVolume: public Boolean& get_OverrideExposure()
+Devex.PostProcessVolume: public Boolean& get_OverrideGrain()
+Devex.PostProcessVolume: public Boolean& get_OverrideMotionBlur()
+Devex.PostProcessVolume: public Boolean& get_OverrideSaturation()
+Devex.PostProcessVolume: public Boolean& get_OverrideScreenReflections()
+Devex.PostProcessVolume: public Boolean& get_OverrideVignette()
+Devex.PostProcessVolume: public Boolean& get_OverrideWhiteBalance()
+Devex.PostProcessVolume: public Devex.Vec3& get_ColorFilter()
+Devex.PostProcessVolume: public Devex.Vec3& get_Size()
+Devex.PostProcessVolume: public Int32& get_Priority()
+Devex.PostProcessVolume: public Single& get_AmbientOcclusion()
+Devex.PostProcessVolume: public Single& get_Aperture()
+Devex.PostProcessVolume: public Single& get_BlendDistance()
+Devex.PostProcessVolume: public Single& get_Bloom()
+Devex.PostProcessVolume: public Single& get_BloomThreshold()
+Devex.PostProcessVolume: public Single& get_ChromaticAberration()
+Devex.PostProcessVolume: public Single& get_Contrast()
+Devex.PostProcessVolume: public Single& get_ExposureCompensation()
+Devex.PostProcessVolume: public Single& get_FocusDistance()
+Devex.PostProcessVolume: public Single& get_Grain()
+Devex.PostProcessVolume: public Single& get_MotionBlur()
+Devex.PostProcessVolume: public Single& get_Saturation()
+Devex.PostProcessVolume: public Single& get_ScreenReflections()
+Devex.PostProcessVolume: public Single& get_Temperature()
+Devex.PostProcessVolume: public Single& get_Tint()
+Devex.PostProcessVolume: public Single& get_Vignette()
+Devex.PostProcessVolume: public Single& get_Weight()
+Devex.PostProcessVolume: public static System.String get_TypeName()
+Devex.PostProcessVolume: public static UInt64 get_LayoutHash()
 Devex.Prefabs: Devex.Entity Instantiate(Devex.AssetId, Devex.Entity)
 Devex.Prefabs: Devex.Entity Instantiate(Devex.AssetId, Devex.Vec3, Devex.Entity)
 Devex.ProfileScope: Void Dispose()
 Devex.Profiler: Boolean IsEnabled
 Devex.Profiler: Devex.ProfileScope Scope(System.String)
+Devex.Profiler: public static Boolean get_IsEnabled()
 Devex.Quat: Devex.Quat AngleAxis(Single, Devex.Vec3)
 Devex.Quat: Devex.Quat Identity
 Devex.Quat: Devex.Quat op_Multiply(Devex.Quat, Devex.Quat)
@@ -1131,6 +1748,15 @@ Devex.ReflectionProbe: Single& BlendDistance
 Devex.ReflectionProbe: Single& Intensity
 Devex.ReflectionProbe: System.String TypeName
 Devex.ReflectionProbe: UInt64 LayoutHash
+Devex.ReflectionProbe: public Boolean& get_BoxProjection()
+Devex.ReflectionProbe: public Devex.AssetId& get_Capture()
+Devex.ReflectionProbe: public Devex.ReflectionProbeResolution& get_Resolution()
+Devex.ReflectionProbe: public Devex.Vec3& get_CaptureOffset()
+Devex.ReflectionProbe: public Devex.Vec3& get_Size()
+Devex.ReflectionProbe: public Single& get_BlendDistance()
+Devex.ReflectionProbe: public Single& get_Intensity()
+Devex.ReflectionProbe: public static System.String get_TypeName()
+Devex.ReflectionProbe: public static UInt64 get_LayoutHash()
 Devex.ReflectionProbeResolution: Devex.ReflectionProbeResolution _128
 Devex.ReflectionProbeResolution: Devex.ReflectionProbeResolution _256
 Devex.ReflectionProbeResolution: Devex.ReflectionProbeResolution _512
@@ -1149,6 +1775,20 @@ Devex.RigidBody2D: Single& Restitution
 Devex.RigidBody2D: System.String TypeName
 Devex.RigidBody2D: UInt32& Layer
 Devex.RigidBody2D: UInt64 LayoutHash
+Devex.RigidBody2D: public Boolean& get_ContinuousCollision()
+Devex.RigidBody2D: public Boolean& get_FixedRotation()
+Devex.RigidBody2D: public Devex.RigidBody2DType& get_Type()
+Devex.RigidBody2D: public Devex.Vec2& get_LinearVelocity()
+Devex.RigidBody2D: public Single& get_AngularDamping()
+Devex.RigidBody2D: public Single& get_AngularVelocity()
+Devex.RigidBody2D: public Single& get_Friction()
+Devex.RigidBody2D: public Single& get_GravityScale()
+Devex.RigidBody2D: public Single& get_LinearDamping()
+Devex.RigidBody2D: public Single& get_Mass()
+Devex.RigidBody2D: public Single& get_Restitution()
+Devex.RigidBody2D: public UInt32& get_Layer()
+Devex.RigidBody2D: public static System.String get_TypeName()
+Devex.RigidBody2D: public static UInt64 get_LayoutHash()
 Devex.RigidBody2DType: Devex.RigidBody2DType Dynamic
 Devex.RigidBody2DType: Devex.RigidBody2DType Kinematic
 Devex.RigidBody2DType: Devex.RigidBody2DType Static
@@ -1169,6 +1809,22 @@ Devex.RigidBody: Single& Restitution
 Devex.RigidBody: System.String TypeName
 Devex.RigidBody: UInt32& Layer
 Devex.RigidBody: UInt64 LayoutHash
+Devex.RigidBody: public Boolean& get_ContinuousCollision()
+Devex.RigidBody: public Boolean& get_LockRotationX()
+Devex.RigidBody: public Boolean& get_LockRotationY()
+Devex.RigidBody: public Boolean& get_LockRotationZ()
+Devex.RigidBody: public Devex.RigidBodyType& get_Type()
+Devex.RigidBody: public Devex.Vec3& get_AngularVelocity()
+Devex.RigidBody: public Devex.Vec3& get_LinearVelocity()
+Devex.RigidBody: public Single& get_AngularDamping()
+Devex.RigidBody: public Single& get_Friction()
+Devex.RigidBody: public Single& get_GravityScale()
+Devex.RigidBody: public Single& get_LinearDamping()
+Devex.RigidBody: public Single& get_Mass()
+Devex.RigidBody: public Single& get_Restitution()
+Devex.RigidBody: public UInt32& get_Layer()
+Devex.RigidBody: public static System.String get_TypeName()
+Devex.RigidBody: public static UInt64 get_LayoutHash()
 Devex.RigidBodyType: Devex.RigidBodyType Dynamic
 Devex.RigidBodyType: Devex.RigidBodyType Kinematic
 Devex.RigidBodyType: Devex.RigidBodyType Static
@@ -1176,6 +1832,12 @@ Devex.RpcAttribute: Boolean AnyPeer
 Devex.RpcAttribute: Boolean CallLocal
 Devex.RpcAttribute: Boolean Reliable
 Devex.RpcAttribute: Void .ctor()
+Devex.RpcAttribute: public Boolean get_AnyPeer()
+Devex.RpcAttribute: public Boolean get_CallLocal()
+Devex.RpcAttribute: public Boolean get_Reliable()
+Devex.RpcAttribute: public Void set_AnyPeer(Boolean)
+Devex.RpcAttribute: public Void set_CallLocal(Boolean)
+Devex.RpcAttribute: public Void set_Reliable(Boolean)
 Devex.SaveSlot: Boolean HasScene
 Devex.SaveSlot: Boolean HasThumbnail
 Devex.SaveSlot: Devex.AssetId Scene
@@ -1187,6 +1849,25 @@ Devex.SaveSlot: System.String Label
 Devex.SaveSlot: System.String Name
 Devex.SaveSlot: System.String SceneName
 Devex.SaveSlot: Void .ctor()
+Devex.SaveSlot: public Boolean get_HasScene()
+Devex.SaveSlot: public Boolean get_HasThumbnail()
+Devex.SaveSlot: public Devex.AssetId get_Scene()
+Devex.SaveSlot: public Devex.AssetId get_Thumbnail()
+Devex.SaveSlot: public Double get_PlayTime()
+Devex.SaveSlot: public Int32 get_Version()
+Devex.SaveSlot: public System.DateTime get_Time()
+Devex.SaveSlot: public System.String get_Label()
+Devex.SaveSlot: public System.String get_Name()
+Devex.SaveSlot: public System.String get_SceneName()
+Devex.SaveSlot: public init Void set_HasScene(Boolean)
+Devex.SaveSlot: public init Void set_HasThumbnail(Boolean)
+Devex.SaveSlot: public init Void set_Label(System.String)
+Devex.SaveSlot: public init Void set_Name(System.String)
+Devex.SaveSlot: public init Void set_PlayTime(Double)
+Devex.SaveSlot: public init Void set_Scene(Devex.AssetId)
+Devex.SaveSlot: public init Void set_SceneName(System.String)
+Devex.SaveSlot: public init Void set_Time(System.DateTime)
+Devex.SaveSlot: public init Void set_Version(Int32)
 Devex.Saves: Boolean Exists(System.String)
 Devex.Saves: Devex.AssetId Thumbnail(System.String)
 Devex.Saves: Devex.SaveSlot Find(System.String)
@@ -1196,6 +1877,8 @@ Devex.Saves: System.String RestoredSlot
 Devex.Saves: T Load[T](System.String, Boolean)
 Devex.Saves: Void Delete(System.String)
 Devex.Saves: Void Save[T](System.String, T, System.String, Boolean, Boolean, Int32)
+Devex.Saves: public static Double get_PlayTime()
+Devex.Saves: public static System.String get_RestoredSlot()
 Devex.Scene: Boolean HasTransform(Devex.Entity)
 Devex.Scene: Boolean IsAlive(Devex.Entity)
 Devex.Scene: Devex.Entity CreateEntity(System.String)
@@ -1222,6 +1905,9 @@ Devex.Scene: Void Destroy(Devex.Entity)
 Devex.Scene: Void RemoveComponent[T](Devex.Entity)
 Devex.Scene: Void SetName(Devex.Entity, System.String)
 Devex.Scene: Void SetParent(Devex.Entity, Devex.Entity)
+Devex.Scene: public Devex.Entity get_FirstRoot()
+Devex.Scene: public System.Collections.Generic.IEnumerable`1[Devex.Entity] get_Roots()
+Devex.Scene: public static Devex.Scene get_Current()
 Devex.Screen: Boolean Fullscreen
 Devex.Screen: Boolean IsMaximized
 Devex.Screen: Boolean IsMinimized
@@ -1234,6 +1920,14 @@ Devex.Screen: Void Maximize()
 Devex.Screen: Void Restore()
 Devex.Screen: Void SetSize(Int32, Int32)
 Devex.Screen: Void SetTitle(System.String)
+Devex.Screen: public static Boolean get_Fullscreen()
+Devex.Screen: public static Boolean get_IsMaximized()
+Devex.Screen: public static Boolean get_IsMinimized()
+Devex.Screen: public static Devex.Vec2 get_Size()
+Devex.Screen: public static Devex.Vec2 get_UsableSize()
+Devex.Screen: public static Single get_DisplayScale()
+Devex.Screen: public static Single get_FrameRate()
+Devex.Screen: public static Void set_Fullscreen(Boolean)
 Devex.SkinnedMeshRenderer: Devex.AssetId& Material
 Devex.SkinnedMeshRenderer: Devex.AssetId& Mesh
 Devex.SkinnedMeshRenderer: Devex.NativeEntityList Bones
@@ -1243,6 +1937,14 @@ Devex.SkinnedMeshRenderer: Devex.SkinnedMeshRenderer At(Void*)
 Devex.SkinnedMeshRenderer: Single& LodBias
 Devex.SkinnedMeshRenderer: System.String TypeName
 Devex.SkinnedMeshRenderer: UInt64 LayoutHash
+Devex.SkinnedMeshRenderer: public Devex.AssetId& get_Material()
+Devex.SkinnedMeshRenderer: public Devex.AssetId& get_Mesh()
+Devex.SkinnedMeshRenderer: public Devex.NativeEntityList get_Bones()
+Devex.SkinnedMeshRenderer: public Devex.NativeList`1[Devex.Vec4] get_InstanceShaderValues()
+Devex.SkinnedMeshRenderer: public Devex.NativeStringList get_InstanceShaderParameters()
+Devex.SkinnedMeshRenderer: public Single& get_LodBias()
+Devex.SkinnedMeshRenderer: public static System.String get_TypeName()
+Devex.SkinnedMeshRenderer: public static UInt64 get_LayoutHash()
 Devex.SliderJoint2D: Boolean& Broken
 Devex.SliderJoint2D: Boolean& CollideConnected
 Devex.SliderJoint2D: Boolean& UseLimits
@@ -1258,6 +1960,22 @@ Devex.SliderJoint2D: Single& MotorSpeed
 Devex.SliderJoint2D: Single& UpperLimit
 Devex.SliderJoint2D: System.String TypeName
 Devex.SliderJoint2D: UInt64 LayoutHash
+Devex.SliderJoint2D: public Boolean& get_Broken()
+Devex.SliderJoint2D: public Boolean& get_CollideConnected()
+Devex.SliderJoint2D: public Boolean& get_UseLimits()
+Devex.SliderJoint2D: public Boolean& get_UseMotor()
+Devex.SliderJoint2D: public Devex.Entity get_BodyA()
+Devex.SliderJoint2D: public Devex.Entity get_BodyB()
+Devex.SliderJoint2D: public Single& get_BreakForce()
+Devex.SliderJoint2D: public Single& get_BreakTorque()
+Devex.SliderJoint2D: public Single& get_LowerLimit()
+Devex.SliderJoint2D: public Single& get_MaxMotorForce()
+Devex.SliderJoint2D: public Single& get_MotorSpeed()
+Devex.SliderJoint2D: public Single& get_UpperLimit()
+Devex.SliderJoint2D: public Void set_BodyA(Devex.Entity)
+Devex.SliderJoint2D: public Void set_BodyB(Devex.Entity)
+Devex.SliderJoint2D: public static System.String get_TypeName()
+Devex.SliderJoint2D: public static UInt64 get_LayoutHash()
 Devex.SliderJoint: Boolean& Broken
 Devex.SliderJoint: Boolean& CollideConnected
 Devex.SliderJoint: Boolean& UseLimits
@@ -1273,12 +1991,33 @@ Devex.SliderJoint: Single& MotorSpeed
 Devex.SliderJoint: Single& UpperLimit
 Devex.SliderJoint: System.String TypeName
 Devex.SliderJoint: UInt64 LayoutHash
+Devex.SliderJoint: public Boolean& get_Broken()
+Devex.SliderJoint: public Boolean& get_CollideConnected()
+Devex.SliderJoint: public Boolean& get_UseLimits()
+Devex.SliderJoint: public Boolean& get_UseMotor()
+Devex.SliderJoint: public Devex.Entity get_BodyA()
+Devex.SliderJoint: public Devex.Entity get_BodyB()
+Devex.SliderJoint: public Single& get_BreakForce()
+Devex.SliderJoint: public Single& get_BreakTorque()
+Devex.SliderJoint: public Single& get_LowerLimit()
+Devex.SliderJoint: public Single& get_MaxMotorForce()
+Devex.SliderJoint: public Single& get_MotorSpeed()
+Devex.SliderJoint: public Single& get_UpperLimit()
+Devex.SliderJoint: public Void set_BodyA(Devex.Entity)
+Devex.SliderJoint: public Void set_BodyB(Devex.Entity)
+Devex.SliderJoint: public static System.String get_TypeName()
+Devex.SliderJoint: public static UInt64 get_LayoutHash()
 Devex.SphereCollider: Boolean& Trigger
 Devex.SphereCollider: Devex.SphereCollider At(Void*)
 Devex.SphereCollider: Devex.Vec3& Center
 Devex.SphereCollider: Single& Radius
 Devex.SphereCollider: System.String TypeName
 Devex.SphereCollider: UInt64 LayoutHash
+Devex.SphereCollider: public Boolean& get_Trigger()
+Devex.SphereCollider: public Devex.Vec3& get_Center()
+Devex.SphereCollider: public Single& get_Radius()
+Devex.SphereCollider: public static System.String get_TypeName()
+Devex.SphereCollider: public static UInt64 get_LayoutHash()
 Devex.SpotLight: Boolean& CastShadows
 Devex.SpotLight: Devex.SpotLight At(Void*)
 Devex.SpotLight: Devex.Vec3& Color
@@ -1289,6 +2028,15 @@ Devex.SpotLight: Single& Range
 Devex.SpotLight: Single& Temperature
 Devex.SpotLight: System.String TypeName
 Devex.SpotLight: UInt64 LayoutHash
+Devex.SpotLight: public Boolean& get_CastShadows()
+Devex.SpotLight: public Devex.Vec3& get_Color()
+Devex.SpotLight: public Single& get_InnerAngle()
+Devex.SpotLight: public Single& get_Intensity()
+Devex.SpotLight: public Single& get_OuterAngle()
+Devex.SpotLight: public Single& get_Range()
+Devex.SpotLight: public Single& get_Temperature()
+Devex.SpotLight: public static System.String get_TypeName()
+Devex.SpotLight: public static UInt64 get_LayoutHash()
 Devex.SpriteAnimations: Void Play(Devex.SpriteAnimator, System.String)
 Devex.SpriteAnimator: Boolean& Playing
 Devex.SpriteAnimator: Devex.AssetId& Frames
@@ -1298,6 +2046,14 @@ Devex.SpriteAnimator: Single& Speed
 Devex.SpriteAnimator: System.String Animation
 Devex.SpriteAnimator: System.String TypeName
 Devex.SpriteAnimator: UInt64 LayoutHash
+Devex.SpriteAnimator: public Boolean& get_Playing()
+Devex.SpriteAnimator: public Devex.AssetId& get_Frames()
+Devex.SpriteAnimator: public Int32& get_Frame()
+Devex.SpriteAnimator: public Single& get_Speed()
+Devex.SpriteAnimator: public System.String get_Animation()
+Devex.SpriteAnimator: public Void set_Animation(System.String)
+Devex.SpriteAnimator: public static System.String get_TypeName()
+Devex.SpriteAnimator: public static UInt64 get_LayoutHash()
 Devex.SpriteRenderer: Boolean& FlipX
 Devex.SpriteRenderer: Boolean& FlipY
 Devex.SpriteRenderer: Boolean& Lit
@@ -1317,6 +2073,25 @@ Devex.SpriteRenderer: System.String SortingLayer
 Devex.SpriteRenderer: System.String TypeName
 Devex.SpriteRenderer: UInt32& LightMask
 Devex.SpriteRenderer: UInt64 LayoutHash
+Devex.SpriteRenderer: public Boolean& get_FlipX()
+Devex.SpriteRenderer: public Boolean& get_FlipY()
+Devex.SpriteRenderer: public Boolean& get_Lit()
+Devex.SpriteRenderer: public Boolean& get_Unshaded()
+Devex.SpriteRenderer: public Devex.AssetId& get_Material()
+Devex.SpriteRenderer: public Devex.AssetId& get_Sprite()
+Devex.SpriteRenderer: public Devex.NativeList`1[Devex.Vec4] get_InstanceShaderValues()
+Devex.SpriteRenderer: public Devex.NativeStringList get_InstanceShaderParameters()
+Devex.SpriteRenderer: public Devex.SpriteRendererBlend& get_Blend()
+Devex.SpriteRenderer: public Devex.SpriteRendererDrawMode& get_DrawMode()
+Devex.SpriteRenderer: public Devex.Vec2& get_Size()
+Devex.SpriteRenderer: public Devex.Vec4& get_Color()
+Devex.SpriteRenderer: public Int32& get_Order()
+Devex.SpriteRenderer: public Single& get_Intensity()
+Devex.SpriteRenderer: public System.String get_SortingLayer()
+Devex.SpriteRenderer: public UInt32& get_LightMask()
+Devex.SpriteRenderer: public Void set_SortingLayer(System.String)
+Devex.SpriteRenderer: public static System.String get_TypeName()
+Devex.SpriteRenderer: public static UInt64 get_LayoutHash()
 Devex.SpriteRendererBlend: Devex.SpriteRendererBlend Additive
 Devex.SpriteRendererBlend: Devex.SpriteRendererBlend Alpha
 Devex.SpriteRendererDrawMode: Devex.SpriteRendererDrawMode Simple
@@ -1353,6 +2128,30 @@ Devex.Terrain: Single& WindSpeed
 Devex.Terrain: Single& WindStrength
 Devex.Terrain: System.String TypeName
 Devex.Terrain: UInt64 LayoutHash
+Devex.Terrain: public Boolean& get_CastShadows()
+Devex.Terrain: public Boolean& get_Collision()
+Devex.Terrain: public Boolean& get_Triplanar()
+Devex.Terrain: public Devex.AssetId& get_Data()
+Devex.Terrain: public Devex.NativeList`1[Devex.AssetId] get_Layers()
+Devex.Terrain: public Devex.Vec3& get_GrassColor()
+Devex.Terrain: public Devex.Vec3& get_GrassTipColor()
+Devex.Terrain: public Int32& get_AutoBaseLayer()
+Devex.Terrain: public Int32& get_AutoHeightLayer()
+Devex.Terrain: public Int32& get_AutoSlopeLayer()
+Devex.Terrain: public Single& get_AutoBlend()
+Devex.Terrain: public Single& get_AutoHeight()
+Devex.Terrain: public Single& get_AutoSlope()
+Devex.Terrain: public Single& get_BlendSharpness()
+Devex.Terrain: public Single& get_GrassDensity()
+Devex.Terrain: public Single& get_GrassDistance()
+Devex.Terrain: public Single& get_GrassHeight()
+Devex.Terrain: public Single& get_GrassWidth()
+Devex.Terrain: public Single& get_Size()
+Devex.Terrain: public Single& get_TextureSize()
+Devex.Terrain: public Single& get_WindSpeed()
+Devex.Terrain: public Single& get_WindStrength()
+Devex.Terrain: public static System.String get_TypeName()
+Devex.Terrain: public static UInt64 get_LayoutHash()
 Devex.TerrainHit: Devex.Vec3 Normal
 Devex.TerrainHit: Devex.Vec3 Point
 Devex.TerrainHit: Single Distance
@@ -1381,10 +2180,29 @@ Devex.Tilemap: System.String TypeName
 Devex.Tilemap: UInt32& LightMask
 Devex.Tilemap: UInt32& OccluderMask
 Devex.Tilemap: UInt64 LayoutHash
+Devex.Tilemap: public Boolean& get_Lit()
+Devex.Tilemap: public Boolean& get_Unshaded()
+Devex.Tilemap: public Devex.AssetId& get_Material()
+Devex.Tilemap: public Devex.AssetId& get_Tileset()
+Devex.Tilemap: public Devex.NativeList`1[Devex.Vec4] get_InstanceShaderValues()
+Devex.Tilemap: public Devex.NativeStringList get_Blocks()
+Devex.Tilemap: public Devex.NativeStringList get_InstanceShaderParameters()
+Devex.Tilemap: public Devex.Vec2& get_CellSize()
+Devex.Tilemap: public Devex.Vec4& get_Color()
+Devex.Tilemap: public Int32& get_Order()
+Devex.Tilemap: public System.String get_SortingLayer()
+Devex.Tilemap: public UInt32& get_LightMask()
+Devex.Tilemap: public UInt32& get_OccluderMask()
+Devex.Tilemap: public Void set_SortingLayer(System.String)
+Devex.Tilemap: public static System.String get_TypeName()
+Devex.Tilemap: public static UInt64 get_LayoutHash()
 Devex.TilemapCollider2D: Boolean& Trigger
 Devex.TilemapCollider2D: Devex.TilemapCollider2D At(Void*)
 Devex.TilemapCollider2D: System.String TypeName
 Devex.TilemapCollider2D: UInt64 LayoutHash
+Devex.TilemapCollider2D: public Boolean& get_Trigger()
+Devex.TilemapCollider2D: public static System.String get_TypeName()
+Devex.TilemapCollider2D: public static UInt64 get_LayoutHash()
 Devex.Tilemaps: Devex.TileCollision GetCollision(Devex.Entity, Int32, Int32)
 Devex.Tilemaps: Devex.Vec3 CellCenter(Devex.Entity, Int32, Int32)
 Devex.Tilemaps: Int32 FlipX
@@ -1402,6 +2220,11 @@ Devex.Time: Double Elapsed
 Devex.Time: Int64 Frame
 Devex.Time: Single Delta
 Devex.Time: Single Scale
+Devex.Time: public static Double get_Elapsed()
+Devex.Time: public static Int64 get_Frame()
+Devex.Time: public static Single get_Delta()
+Devex.Time: public static Single get_Scale()
+Devex.Time: public static Void set_Scale(Single)
 Devex.Touch: Boolean Pressed
 Devex.Touch: Boolean Released
 Devex.Touch: Devex.Vec2 Delta
@@ -1423,6 +2246,20 @@ Devex.TrailRenderer: Single& Time
 Devex.TrailRenderer: Single& Width
 Devex.TrailRenderer: System.String TypeName
 Devex.TrailRenderer: UInt64 LayoutHash
+Devex.TrailRenderer: public Boolean& get_Emitting()
+Devex.TrailRenderer: public Boolean& get_Lit()
+Devex.TrailRenderer: public Devex.AssetId& get_Texture()
+Devex.TrailRenderer: public Devex.TrailRendererBlend& get_Blend()
+Devex.TrailRenderer: public Devex.Vec4& get_Color()
+Devex.TrailRenderer: public Devex.Vec4& get_EndColor()
+Devex.TrailRenderer: public Single& get_EndWidth()
+Devex.TrailRenderer: public Single& get_Intensity()
+Devex.TrailRenderer: public Single& get_MinDistance()
+Devex.TrailRenderer: public Single& get_Softness()
+Devex.TrailRenderer: public Single& get_Time()
+Devex.TrailRenderer: public Single& get_Width()
+Devex.TrailRenderer: public static System.String get_TypeName()
+Devex.TrailRenderer: public static UInt64 get_LayoutHash()
 Devex.TrailRendererBlend: Devex.TrailRendererBlend Additive
 Devex.TrailRendererBlend: Devex.TrailRendererBlend Alpha
 Devex.Transform: Devex.Quat Rotation
@@ -1447,6 +2284,7 @@ Devex.TweenHandle: Int32 GetHashCode()
 Devex.TweenHandle: Void Kill(Boolean)
 Devex.TweenHandle: Void Pause()
 Devex.TweenHandle: Void Resume()
+Devex.TweenHandle: public Boolean get_IsPlaying()
 Devex.TweenLoop: Devex.TweenLoop None
 Devex.TweenLoop: Devex.TweenLoop PingPong
 Devex.TweenLoop: Devex.TweenLoop Restart
@@ -1486,6 +2324,21 @@ Devex.Tweener: Single& Duration
 Devex.Tweener: System.String Field
 Devex.Tweener: System.String TypeName
 Devex.Tweener: UInt64 LayoutHash
+Devex.Tweener: public Boolean& get_FromCurrent()
+Devex.Tweener: public Boolean& get_PlayOnStart()
+Devex.Tweener: public Boolean& get_Relative()
+Devex.Tweener: public Devex.AssetId& get_Curve()
+Devex.Tweener: public Devex.TweenerEase& get_Ease()
+Devex.Tweener: public Devex.TweenerLoop& get_Loop()
+Devex.Tweener: public Devex.Vec4& get_From()
+Devex.Tweener: public Devex.Vec4& get_To()
+Devex.Tweener: public Int32& get_Repeats()
+Devex.Tweener: public Single& get_Delay()
+Devex.Tweener: public Single& get_Duration()
+Devex.Tweener: public System.String get_Field()
+Devex.Tweener: public Void set_Field(System.String)
+Devex.Tweener: public static System.String get_TypeName()
+Devex.Tweener: public static UInt64 get_LayoutHash()
 Devex.TweenerEase: Devex.TweenerEase InBack
 Devex.TweenerEase: Devex.TweenerEase InBounce
 Devex.TweenerEase: Devex.TweenerEase InCubic
@@ -1536,6 +2389,14 @@ Devex.Ui: Void OpenPopup(Devex.Entity, Devex.Vec2)
 Devex.Ui: Void SetTextColors(Devex.Entity, System.ReadOnlySpan`1[Devex.UiTextSpan])
 Devex.Ui: Void SetTextHighlights(Devex.Entity, System.ReadOnlySpan`1[Devex.UiTextSpan])
 Devex.Ui: Void SetTextMarks(Devex.Entity, System.ReadOnlySpan`1[Devex.UiTextLineMark])
+Devex.Ui: public static Boolean get_PointerOverInterface()
+Devex.Ui: public static Devex.Entity get_Carried()
+Devex.Ui: public static Devex.Entity get_ContextTarget()
+Devex.Ui: public static Devex.Entity get_EditedField()
+Devex.Ui: public static Devex.Entity get_Focused()
+Devex.Ui: public static Devex.Entity get_Hovered()
+Devex.Ui: public static System.Nullable`1[Devex.UiDrop] get_Dropped()
+Devex.Ui: public static Void set_Focused(Devex.Entity)
 Devex.UiBinding: Devex.Entity Source
 Devex.UiBinding: Devex.UiBinding At(Void*)
 Devex.UiBinding: Int32& Decimals
@@ -1544,6 +2405,17 @@ Devex.UiBinding: System.String Field
 Devex.UiBinding: System.String Format
 Devex.UiBinding: System.String TypeName
 Devex.UiBinding: UInt64 LayoutHash
+Devex.UiBinding: public Devex.Entity get_Source()
+Devex.UiBinding: public Int32& get_Decimals()
+Devex.UiBinding: public System.String get_Component()
+Devex.UiBinding: public System.String get_Field()
+Devex.UiBinding: public System.String get_Format()
+Devex.UiBinding: public Void set_Component(System.String)
+Devex.UiBinding: public Void set_Field(System.String)
+Devex.UiBinding: public Void set_Format(System.String)
+Devex.UiBinding: public Void set_Source(Devex.Entity)
+Devex.UiBinding: public static System.String get_TypeName()
+Devex.UiBinding: public static UInt64 get_LayoutHash()
 Devex.UiButton: Boolean& Interactable
 Devex.UiButton: Devex.UiButton At(Void*)
 Devex.UiButton: Devex.Vec4& DisabledColor
@@ -1553,6 +2425,15 @@ Devex.UiButton: Single& FadeTime
 Devex.UiButton: System.String Action
 Devex.UiButton: System.String TypeName
 Devex.UiButton: UInt64 LayoutHash
+Devex.UiButton: public Boolean& get_Interactable()
+Devex.UiButton: public Devex.Vec4& get_DisabledColor()
+Devex.UiButton: public Devex.Vec4& get_HoverColor()
+Devex.UiButton: public Devex.Vec4& get_PressedColor()
+Devex.UiButton: public Single& get_FadeTime()
+Devex.UiButton: public System.String get_Action()
+Devex.UiButton: public Void set_Action(System.String)
+Devex.UiButton: public static System.String get_TypeName()
+Devex.UiButton: public static UInt64 get_LayoutHash()
 Devex.UiColorPicker: Boolean& Alpha
 Devex.UiColorPicker: Boolean& Interactable
 Devex.UiColorPicker: Devex.UiColorPicker At(Void*)
@@ -1562,10 +2443,23 @@ Devex.UiColorPicker: Single& Spacing
 Devex.UiColorPicker: System.String Action
 Devex.UiColorPicker: System.String TypeName
 Devex.UiColorPicker: UInt64 LayoutHash
+Devex.UiColorPicker: public Boolean& get_Alpha()
+Devex.UiColorPicker: public Boolean& get_Interactable()
+Devex.UiColorPicker: public Devex.Vec4& get_Color()
+Devex.UiColorPicker: public Single& get_BarSize()
+Devex.UiColorPicker: public Single& get_Spacing()
+Devex.UiColorPicker: public System.String get_Action()
+Devex.UiColorPicker: public Void set_Action(System.String)
+Devex.UiColorPicker: public static System.String get_TypeName()
+Devex.UiColorPicker: public static UInt64 get_LayoutHash()
 Devex.UiContextMenu: Devex.Entity Popup
 Devex.UiContextMenu: Devex.UiContextMenu At(Void*)
 Devex.UiContextMenu: System.String TypeName
 Devex.UiContextMenu: UInt64 LayoutHash
+Devex.UiContextMenu: public Devex.Entity get_Popup()
+Devex.UiContextMenu: public Void set_Popup(Devex.Entity)
+Devex.UiContextMenu: public static System.String get_TypeName()
+Devex.UiContextMenu: public static UInt64 get_LayoutHash()
 Devex.UiDragSource: Boolean& Interactable
 Devex.UiDragSource: Devex.UiDragSource At(Void*)
 Devex.UiDragSource: System.String Data
@@ -1573,6 +2467,15 @@ Devex.UiDragSource: System.String Label
 Devex.UiDragSource: System.String Type
 Devex.UiDragSource: System.String TypeName
 Devex.UiDragSource: UInt64 LayoutHash
+Devex.UiDragSource: public Boolean& get_Interactable()
+Devex.UiDragSource: public System.String get_Data()
+Devex.UiDragSource: public System.String get_Label()
+Devex.UiDragSource: public System.String get_Type()
+Devex.UiDragSource: public Void set_Data(System.String)
+Devex.UiDragSource: public Void set_Label(System.String)
+Devex.UiDragSource: public Void set_Type(System.String)
+Devex.UiDragSource: public static System.String get_TypeName()
+Devex.UiDragSource: public static UInt64 get_LayoutHash()
 Devex.UiDrop: Boolean Equals(Devex.UiDrop)
 Devex.UiDrop: Boolean Equals(System.Object)
 Devex.UiDrop: Boolean op_Equality(Devex.UiDrop, Devex.UiDrop)
@@ -1586,12 +2489,28 @@ Devex.UiDrop: System.String ToString()
 Devex.UiDrop: System.String Type
 Devex.UiDrop: Void .ctor(Devex.Entity, Devex.Entity, System.String, System.String, Devex.Vec2)
 Devex.UiDrop: Void Deconstruct(Devex.Entity ByRef, Devex.Entity ByRef, System.String ByRef, System.String ByRef, Devex.Vec2 ByRef)
+Devex.UiDrop: public Devex.Entity get_Source()
+Devex.UiDrop: public Devex.Entity get_Target()
+Devex.UiDrop: public Devex.Vec2 get_At()
+Devex.UiDrop: public System.String get_Data()
+Devex.UiDrop: public System.String get_Type()
+Devex.UiDrop: public init Void set_At(Devex.Vec2)
+Devex.UiDrop: public init Void set_Data(System.String)
+Devex.UiDrop: public init Void set_Source(Devex.Entity)
+Devex.UiDrop: public init Void set_Target(Devex.Entity)
+Devex.UiDrop: public init Void set_Type(System.String)
 Devex.UiDropTarget: Devex.NativeStringList Accepts
 Devex.UiDropTarget: Devex.UiDropTarget At(Void*)
 Devex.UiDropTarget: Devex.Vec4& HighlightColor
 Devex.UiDropTarget: System.String Action
 Devex.UiDropTarget: System.String TypeName
 Devex.UiDropTarget: UInt64 LayoutHash
+Devex.UiDropTarget: public Devex.NativeStringList get_Accepts()
+Devex.UiDropTarget: public Devex.Vec4& get_HighlightColor()
+Devex.UiDropTarget: public System.String get_Action()
+Devex.UiDropTarget: public Void set_Action(System.String)
+Devex.UiDropTarget: public static System.String get_TypeName()
+Devex.UiDropTarget: public static UInt64 get_LayoutHash()
 Devex.UiDropdown: Boolean& Interactable
 Devex.UiDropdown: Devex.NativeStringList Options
 Devex.UiDropdown: Devex.UiDropdown At(Void*)
@@ -1605,6 +2524,20 @@ Devex.UiDropdown: System.String Action
 Devex.UiDropdown: System.String Placeholder
 Devex.UiDropdown: System.String TypeName
 Devex.UiDropdown: UInt64 LayoutHash
+Devex.UiDropdown: public Boolean& get_Interactable()
+Devex.UiDropdown: public Devex.NativeStringList get_Options()
+Devex.UiDropdown: public Devex.Vec4& get_ArrowColor()
+Devex.UiDropdown: public Devex.Vec4& get_HighlightColor()
+Devex.UiDropdown: public Devex.Vec4& get_ListColor()
+Devex.UiDropdown: public Devex.Vec4& get_ListShadowColor()
+Devex.UiDropdown: public Int32& get_Selected()
+Devex.UiDropdown: public Single& get_ListShadowSize()
+Devex.UiDropdown: public System.String get_Action()
+Devex.UiDropdown: public System.String get_Placeholder()
+Devex.UiDropdown: public Void set_Action(System.String)
+Devex.UiDropdown: public Void set_Placeholder(System.String)
+Devex.UiDropdown: public static System.String get_TypeName()
+Devex.UiDropdown: public static UInt64 get_LayoutHash()
 Devex.UiFoldout: Boolean& Expanded
 Devex.UiFoldout: Boolean& Interactable
 Devex.UiFoldout: Devex.Entity Content
@@ -1613,6 +2546,15 @@ Devex.UiFoldout: Devex.Vec4& ArrowColor
 Devex.UiFoldout: System.String Action
 Devex.UiFoldout: System.String TypeName
 Devex.UiFoldout: UInt64 LayoutHash
+Devex.UiFoldout: public Boolean& get_Expanded()
+Devex.UiFoldout: public Boolean& get_Interactable()
+Devex.UiFoldout: public Devex.Entity get_Content()
+Devex.UiFoldout: public Devex.Vec4& get_ArrowColor()
+Devex.UiFoldout: public System.String get_Action()
+Devex.UiFoldout: public Void set_Action(System.String)
+Devex.UiFoldout: public Void set_Content(Devex.Entity)
+Devex.UiFoldout: public static System.String get_TypeName()
+Devex.UiFoldout: public static UInt64 get_LayoutHash()
 Devex.UiImage: Boolean& PreserveAspect
 Devex.UiImage: Boolean& RaycastTarget
 Devex.UiImage: Devex.AssetId& Texture
@@ -1627,6 +2569,19 @@ Devex.UiImage: Single& OutlineWidth
 Devex.UiImage: Single& ShadowSize
 Devex.UiImage: System.String TypeName
 Devex.UiImage: UInt64 LayoutHash
+Devex.UiImage: public Boolean& get_PreserveAspect()
+Devex.UiImage: public Boolean& get_RaycastTarget()
+Devex.UiImage: public Devex.AssetId& get_Texture()
+Devex.UiImage: public Devex.Vec2& get_ShadowOffset()
+Devex.UiImage: public Devex.Vec4& get_Border()
+Devex.UiImage: public Devex.Vec4& get_Color()
+Devex.UiImage: public Devex.Vec4& get_OutlineColor()
+Devex.UiImage: public Devex.Vec4& get_ShadowColor()
+Devex.UiImage: public Single& get_CornerRadius()
+Devex.UiImage: public Single& get_OutlineWidth()
+Devex.UiImage: public Single& get_ShadowSize()
+Devex.UiImage: public static System.String get_TypeName()
+Devex.UiImage: public static UInt64 get_LayoutHash()
 Devex.UiInput: Boolean& Interactable
 Devex.UiInput: Boolean& Multiline
 Devex.UiInput: Boolean& Password
@@ -1642,6 +2597,22 @@ Devex.UiInput: System.String Placeholder
 Devex.UiInput: System.String TypeName
 Devex.UiInput: UInt32& MaxLength
 Devex.UiInput: UInt64 LayoutHash
+Devex.UiInput: public Boolean& get_Interactable()
+Devex.UiInput: public Boolean& get_Multiline()
+Devex.UiInput: public Boolean& get_Password()
+Devex.UiInput: public Devex.Vec2& get_Padding()
+Devex.UiInput: public Devex.Vec4& get_CaretColor()
+Devex.UiInput: public Devex.Vec4& get_FocusColor()
+Devex.UiInput: public Devex.Vec4& get_PlaceholderColor()
+Devex.UiInput: public Devex.Vec4& get_SelectionColor()
+Devex.UiInput: public Single& get_FocusWidth()
+Devex.UiInput: public System.String get_Action()
+Devex.UiInput: public System.String get_Placeholder()
+Devex.UiInput: public UInt32& get_MaxLength()
+Devex.UiInput: public Void set_Action(System.String)
+Devex.UiInput: public Void set_Placeholder(System.String)
+Devex.UiInput: public static System.String get_TypeName()
+Devex.UiInput: public static UInt64 get_LayoutHash()
 Devex.UiLayout: Boolean& EqualSize
 Devex.UiLayout: Devex.UiLayout At(Void*)
 Devex.UiLayout: Devex.UiLayoutAlign& Align
@@ -1651,6 +2622,14 @@ Devex.UiLayout: Single& Spacing
 Devex.UiLayout: System.String TypeName
 Devex.UiLayout: UInt32& Columns
 Devex.UiLayout: UInt64 LayoutHash
+Devex.UiLayout: public Boolean& get_EqualSize()
+Devex.UiLayout: public Devex.UiLayoutAlign& get_Align()
+Devex.UiLayout: public Devex.UiLayoutKind& get_Kind()
+Devex.UiLayout: public Devex.Vec4& get_Padding()
+Devex.UiLayout: public Single& get_Spacing()
+Devex.UiLayout: public UInt32& get_Columns()
+Devex.UiLayout: public static System.String get_TypeName()
+Devex.UiLayout: public static UInt64 get_LayoutHash()
 Devex.UiLayoutAlign: Devex.UiLayoutAlign Center
 Devex.UiLayoutAlign: Devex.UiLayoutAlign Left
 Devex.UiLayoutAlign: Devex.UiLayoutAlign Right
@@ -1666,6 +2645,14 @@ Devex.UiLine: Single& ArrowSize
 Devex.UiLine: Single& Width
 Devex.UiLine: System.String TypeName
 Devex.UiLine: UInt64 LayoutHash
+Devex.UiLine: public Boolean& get_Closed()
+Devex.UiLine: public Devex.NativeList`1[Devex.Vec2] get_Points()
+Devex.UiLine: public Devex.UiLineArrow& get_Arrow()
+Devex.UiLine: public Devex.Vec4& get_Color()
+Devex.UiLine: public Single& get_ArrowSize()
+Devex.UiLine: public Single& get_Width()
+Devex.UiLine: public static System.String get_TypeName()
+Devex.UiLine: public static UInt64 get_LayoutHash()
 Devex.UiLineArrow: Devex.UiLineArrow End
 Devex.UiLineArrow: Devex.UiLineArrow Middle
 Devex.UiLineArrow: Devex.UiLineArrow None
@@ -1681,6 +2668,19 @@ Devex.UiNumberField: System.String Action
 Devex.UiNumberField: System.String Format
 Devex.UiNumberField: System.String TypeName
 Devex.UiNumberField: UInt64 LayoutHash
+Devex.UiNumberField: public Boolean& get_Interactable()
+Devex.UiNumberField: public Int32& get_Decimals()
+Devex.UiNumberField: public Single& get_DragSpeed()
+Devex.UiNumberField: public Single& get_MaxValue()
+Devex.UiNumberField: public Single& get_MinValue()
+Devex.UiNumberField: public Single& get_Step()
+Devex.UiNumberField: public Single& get_Value()
+Devex.UiNumberField: public System.String get_Action()
+Devex.UiNumberField: public System.String get_Format()
+Devex.UiNumberField: public Void set_Action(System.String)
+Devex.UiNumberField: public Void set_Format(System.String)
+Devex.UiNumberField: public static System.String get_TypeName()
+Devex.UiNumberField: public static UInt64 get_LayoutHash()
 Devex.UiPlot: Devex.NativeList`1[Devex.Vec4] Colors
 Devex.UiPlot: Devex.NativeList`1[System.Single] BackValues
 Devex.UiPlot: Devex.NativeList`1[System.Single] Guides
@@ -1699,6 +2699,23 @@ Devex.UiPlot: Single& MaxValue
 Devex.UiPlot: Single& MinValue
 Devex.UiPlot: System.String TypeName
 Devex.UiPlot: UInt64 LayoutHash
+Devex.UiPlot: public Devex.NativeList`1[Devex.Vec4] get_Colors()
+Devex.UiPlot: public Devex.NativeList`1[System.Single] get_BackValues()
+Devex.UiPlot: public Devex.NativeList`1[System.Single] get_Guides()
+Devex.UiPlot: public Devex.NativeList`1[System.Single] get_Values()
+Devex.UiPlot: public Devex.UiPlotKind& get_Kind()
+Devex.UiPlot: public Devex.Vec4& get_BackColor()
+Devex.UiPlot: public Devex.Vec4& get_Color()
+Devex.UiPlot: public Devex.Vec4& get_GuideColor()
+Devex.UiPlot: public Devex.Vec4& get_HighlightColor()
+Devex.UiPlot: public Devex.Vec4& get_MarkerColor()
+Devex.UiPlot: public Int32& get_Highlighted()
+Devex.UiPlot: public Single& get_LineWidth()
+Devex.UiPlot: public Single& get_Marker()
+Devex.UiPlot: public Single& get_MaxValue()
+Devex.UiPlot: public Single& get_MinValue()
+Devex.UiPlot: public static System.String get_TypeName()
+Devex.UiPlot: public static UInt64 get_LayoutHash()
 Devex.UiPlotKind: Devex.UiPlotKind Bars
 Devex.UiPlotKind: Devex.UiPlotKind Line
 Devex.UiPlotKind: Devex.UiPlotKind Marks
@@ -1708,6 +2725,10 @@ Devex.UiPopup: Devex.UiPopupKind& Kind
 Devex.UiPopup: Devex.Vec4& VeilColor
 Devex.UiPopup: System.String TypeName
 Devex.UiPopup: UInt64 LayoutHash
+Devex.UiPopup: public Devex.UiPopupKind& get_Kind()
+Devex.UiPopup: public Devex.Vec4& get_VeilColor()
+Devex.UiPopup: public static System.String get_TypeName()
+Devex.UiPopup: public static UInt64 get_LayoutHash()
 Devex.UiPopupKind: Devex.UiPopupKind Menu
 Devex.UiPopupKind: Devex.UiPopupKind Modal
 Devex.UiRect: Boolean& ClipChildren
@@ -1724,6 +2745,20 @@ Devex.UiRect: Single& Rotation
 Devex.UiRect: System.String Style
 Devex.UiRect: System.String TypeName
 Devex.UiRect: UInt64 LayoutHash
+Devex.UiRect: public Boolean& get_ClipChildren()
+Devex.UiRect: public Boolean& get_Visible()
+Devex.UiRect: public Devex.Vec2& get_AnchorMax()
+Devex.UiRect: public Devex.Vec2& get_AnchorMin()
+Devex.UiRect: public Devex.Vec2& get_OffsetMax()
+Devex.UiRect: public Devex.Vec2& get_OffsetMin()
+Devex.UiRect: public Devex.Vec2& get_Pivot()
+Devex.UiRect: public Devex.Vec2& get_Scale()
+Devex.UiRect: public Single& get_Opacity()
+Devex.UiRect: public Single& get_Rotation()
+Devex.UiRect: public System.String get_Style()
+Devex.UiRect: public Void set_Style(System.String)
+Devex.UiRect: public static System.String get_TypeName()
+Devex.UiRect: public static UInt64 get_LayoutHash()
 Devex.UiScroll: Boolean& Horizontal
 Devex.UiScroll: Boolean& Scrollbar
 Devex.UiScroll: Boolean& Vertical
@@ -1734,6 +2769,15 @@ Devex.UiScroll: Single& ScrollbarSize
 Devex.UiScroll: Single& Speed
 Devex.UiScroll: System.String TypeName
 Devex.UiScroll: UInt64 LayoutHash
+Devex.UiScroll: public Boolean& get_Horizontal()
+Devex.UiScroll: public Boolean& get_Scrollbar()
+Devex.UiScroll: public Boolean& get_Vertical()
+Devex.UiScroll: public Devex.Vec2& get_Offset()
+Devex.UiScroll: public Devex.Vec4& get_ScrollbarColor()
+Devex.UiScroll: public Single& get_ScrollbarSize()
+Devex.UiScroll: public Single& get_Speed()
+Devex.UiScroll: public static System.String get_TypeName()
+Devex.UiScroll: public static UInt64 get_LayoutHash()
 Devex.UiSlider: Boolean& Interactable
 Devex.UiSlider: Devex.UiSlider At(Void*)
 Devex.UiSlider: Devex.Vec4& FillColor
@@ -1747,6 +2791,19 @@ Devex.UiSlider: Single& Value
 Devex.UiSlider: System.String Action
 Devex.UiSlider: System.String TypeName
 Devex.UiSlider: UInt64 LayoutHash
+Devex.UiSlider: public Boolean& get_Interactable()
+Devex.UiSlider: public Devex.Vec4& get_FillColor()
+Devex.UiSlider: public Devex.Vec4& get_HandleColor()
+Devex.UiSlider: public Single& get_HandleSize()
+Devex.UiSlider: public Single& get_KeyStep()
+Devex.UiSlider: public Single& get_MaxValue()
+Devex.UiSlider: public Single& get_MinValue()
+Devex.UiSlider: public Single& get_Step()
+Devex.UiSlider: public Single& get_Value()
+Devex.UiSlider: public System.String get_Action()
+Devex.UiSlider: public Void set_Action(System.String)
+Devex.UiSlider: public static System.String get_TypeName()
+Devex.UiSlider: public static UInt64 get_LayoutHash()
 Devex.UiSplitter: Boolean& Vertical
 Devex.UiSplitter: Devex.UiSplitter At(Void*)
 Devex.UiSplitter: Devex.Vec4& BarColor
@@ -1756,6 +2813,14 @@ Devex.UiSplitter: Single& MinSize
 Devex.UiSplitter: Single& Position
 Devex.UiSplitter: System.String TypeName
 Devex.UiSplitter: UInt64 LayoutHash
+Devex.UiSplitter: public Boolean& get_Vertical()
+Devex.UiSplitter: public Devex.Vec4& get_BarColor()
+Devex.UiSplitter: public Devex.Vec4& get_HoverColor()
+Devex.UiSplitter: public Single& get_BarSize()
+Devex.UiSplitter: public Single& get_MinSize()
+Devex.UiSplitter: public Single& get_Position()
+Devex.UiSplitter: public static System.String get_TypeName()
+Devex.UiSplitter: public static UInt64 get_LayoutHash()
 Devex.UiTable: Boolean& Resizable
 Devex.UiTable: Boolean& SortAscending
 Devex.UiTable: Devex.NativeList`1[System.Single] Columns
@@ -1765,10 +2830,22 @@ Devex.UiTable: Int32& SortColumn
 Devex.UiTable: System.String Action
 Devex.UiTable: System.String TypeName
 Devex.UiTable: UInt64 LayoutHash
+Devex.UiTable: public Boolean& get_Resizable()
+Devex.UiTable: public Boolean& get_SortAscending()
+Devex.UiTable: public Devex.NativeList`1[System.Single] get_Columns()
+Devex.UiTable: public Devex.Vec4& get_ArrowColor()
+Devex.UiTable: public Int32& get_SortColumn()
+Devex.UiTable: public System.String get_Action()
+Devex.UiTable: public Void set_Action(System.String)
+Devex.UiTable: public static System.String get_TypeName()
+Devex.UiTable: public static UInt64 get_LayoutHash()
 Devex.UiTableRow: Boolean& Header
 Devex.UiTableRow: Devex.UiTableRow At(Void*)
 Devex.UiTableRow: System.String TypeName
 Devex.UiTableRow: UInt64 LayoutHash
+Devex.UiTableRow: public Boolean& get_Header()
+Devex.UiTableRow: public static System.String get_TypeName()
+Devex.UiTableRow: public static UInt64 get_LayoutHash()
 Devex.UiText: Boolean& RaycastTarget
 Devex.UiText: Boolean& Rich
 Devex.UiText: Boolean& Translate
@@ -1786,6 +2863,23 @@ Devex.UiText: Single& Size
 Devex.UiText: System.String Text
 Devex.UiText: System.String TypeName
 Devex.UiText: UInt64 LayoutHash
+Devex.UiText: public Boolean& get_RaycastTarget()
+Devex.UiText: public Boolean& get_Rich()
+Devex.UiText: public Boolean& get_Translate()
+Devex.UiText: public Boolean& get_Wrap()
+Devex.UiText: public Devex.AssetId& get_Font()
+Devex.UiText: public Devex.NativeList`1[Devex.AssetId] get_Icons()
+Devex.UiText: public Devex.UiTextAlign& get_Align()
+Devex.UiText: public Devex.UiTextVerticalAlign& get_VerticalAlign()
+Devex.UiText: public Devex.Vec4& get_Color()
+Devex.UiText: public Devex.Vec4& get_OutlineColor()
+Devex.UiText: public Single& get_LineSpacing()
+Devex.UiText: public Single& get_OutlineWidth()
+Devex.UiText: public Single& get_Size()
+Devex.UiText: public System.String get_Text()
+Devex.UiText: public Void set_Text(System.String)
+Devex.UiText: public static System.String get_TypeName()
+Devex.UiText: public static UInt64 get_LayoutHash()
 Devex.UiTextAlign: Devex.UiTextAlign Center
 Devex.UiTextAlign: Devex.UiTextAlign Left
 Devex.UiTextAlign: Devex.UiTextAlign Right
@@ -1809,6 +2903,27 @@ Devex.UiTextArea: System.String Action
 Devex.UiTextArea: System.String IndentAfter
 Devex.UiTextArea: System.String TypeName
 Devex.UiTextArea: UInt64 LayoutHash
+Devex.UiTextArea: public Boolean& get_AutoIndent()
+Devex.UiTextArea: public Boolean& get_Folding()
+Devex.UiTextArea: public Boolean& get_Interactable()
+Devex.UiTextArea: public Boolean& get_LineNumbers()
+Devex.UiTextArea: public Boolean& get_ReadOnly()
+Devex.UiTextArea: public Boolean& get_Wrap()
+Devex.UiTextArea: public Devex.Vec2& get_Padding()
+Devex.UiTextArea: public Devex.Vec2& get_Scroll()
+Devex.UiTextArea: public Devex.Vec4& get_CaretColor()
+Devex.UiTextArea: public Devex.Vec4& get_CurrentLineColor()
+Devex.UiTextArea: public Devex.Vec4& get_LineNumberColor()
+Devex.UiTextArea: public Devex.Vec4& get_ScrollbarColor()
+Devex.UiTextArea: public Devex.Vec4& get_SelectionColor()
+Devex.UiTextArea: public Int32& get_TabSize()
+Devex.UiTextArea: public Single& get_ScrollbarSize()
+Devex.UiTextArea: public System.String get_Action()
+Devex.UiTextArea: public System.String get_IndentAfter()
+Devex.UiTextArea: public Void set_Action(System.String)
+Devex.UiTextArea: public Void set_IndentAfter(System.String)
+Devex.UiTextArea: public static System.String get_TypeName()
+Devex.UiTextArea: public static UInt64 get_LayoutHash()
 Devex.UiTextLineMark: Boolean Equals(Devex.UiTextLineMark)
 Devex.UiTextLineMark: Boolean Equals(System.Object)
 Devex.UiTextLineMark: Boolean op_Equality(Devex.UiTextLineMark, Devex.UiTextLineMark)
@@ -1819,6 +2934,10 @@ Devex.UiTextLineMark: Int32 Line
 Devex.UiTextLineMark: System.String ToString()
 Devex.UiTextLineMark: Void .ctor(Int32, Devex.Vec4)
 Devex.UiTextLineMark: Void Deconstruct(Int32 ByRef, Devex.Vec4 ByRef)
+Devex.UiTextLineMark: public Devex.Vec4 get_Color()
+Devex.UiTextLineMark: public Int32 get_Line()
+Devex.UiTextLineMark: public init Void set_Color(Devex.Vec4)
+Devex.UiTextLineMark: public init Void set_Line(Int32)
 Devex.UiTextSpan: Boolean Equals(Devex.UiTextSpan)
 Devex.UiTextSpan: Boolean Equals(System.Object)
 Devex.UiTextSpan: Boolean op_Equality(Devex.UiTextSpan, Devex.UiTextSpan)
@@ -1830,6 +2949,12 @@ Devex.UiTextSpan: Int32 Start
 Devex.UiTextSpan: System.String ToString()
 Devex.UiTextSpan: Void .ctor(Int32, Int32, Devex.Vec4)
 Devex.UiTextSpan: Void Deconstruct(Int32 ByRef, Int32 ByRef, Devex.Vec4 ByRef)
+Devex.UiTextSpan: public Devex.Vec4 get_Color()
+Devex.UiTextSpan: public Int32 get_End()
+Devex.UiTextSpan: public Int32 get_Start()
+Devex.UiTextSpan: public init Void set_Color(Devex.Vec4)
+Devex.UiTextSpan: public init Void set_End(Int32)
+Devex.UiTextSpan: public init Void set_Start(Int32)
 Devex.UiTextVerticalAlign: Devex.UiTextVerticalAlign Bottom
 Devex.UiTextVerticalAlign: Devex.UiTextVerticalAlign Middle
 Devex.UiTextVerticalAlign: Devex.UiTextVerticalAlign Top
@@ -1842,11 +2967,25 @@ Devex.UiToggle: Single& CheckSize
 Devex.UiToggle: System.String Action
 Devex.UiToggle: System.String TypeName
 Devex.UiToggle: UInt64 LayoutHash
+Devex.UiToggle: public Boolean& get_Interactable()
+Devex.UiToggle: public Boolean& get_Value()
+Devex.UiToggle: public Devex.Vec4& get_CheckColor()
+Devex.UiToggle: public Devex.Vec4& get_MarkColor()
+Devex.UiToggle: public Single& get_CheckSize()
+Devex.UiToggle: public System.String get_Action()
+Devex.UiToggle: public Void set_Action(System.String)
+Devex.UiToggle: public static System.String get_TypeName()
+Devex.UiToggle: public static UInt64 get_LayoutHash()
 Devex.UiTooltip: Devex.UiTooltip At(Void*)
 Devex.UiTooltip: Single& Delay
 Devex.UiTooltip: System.String Text
 Devex.UiTooltip: System.String TypeName
 Devex.UiTooltip: UInt64 LayoutHash
+Devex.UiTooltip: public Single& get_Delay()
+Devex.UiTooltip: public System.String get_Text()
+Devex.UiTooltip: public Void set_Text(System.String)
+Devex.UiTooltip: public static System.String get_TypeName()
+Devex.UiTooltip: public static UInt64 get_LayoutHash()
 Devex.UiTouchButton: Boolean& Held
 Devex.UiTouchButton: Boolean& TouchScreenOnly
 Devex.UiTouchButton: Devex.UiTouchButton At(Void*)
@@ -1854,6 +2993,13 @@ Devex.UiTouchButton: Devex.Vec4& PressedTint
 Devex.UiTouchButton: System.String Action
 Devex.UiTouchButton: System.String TypeName
 Devex.UiTouchButton: UInt64 LayoutHash
+Devex.UiTouchButton: public Boolean& get_Held()
+Devex.UiTouchButton: public Boolean& get_TouchScreenOnly()
+Devex.UiTouchButton: public Devex.Vec4& get_PressedTint()
+Devex.UiTouchButton: public System.String get_Action()
+Devex.UiTouchButton: public Void set_Action(System.String)
+Devex.UiTouchButton: public static System.String get_TypeName()
+Devex.UiTouchButton: public static UInt64 get_LayoutHash()
 Devex.UiTouchStick: Boolean& TouchScreenOnly
 Devex.UiTouchStick: Devex.UiTouchStick At(Void*)
 Devex.UiTouchStick: Devex.Vec2& Knob
@@ -1864,12 +3010,27 @@ Devex.UiTouchStick: Single& KnobSize
 Devex.UiTouchStick: System.String Action
 Devex.UiTouchStick: System.String TypeName
 Devex.UiTouchStick: UInt64 LayoutHash
+Devex.UiTouchStick: public Boolean& get_TouchScreenOnly()
+Devex.UiTouchStick: public Devex.Vec2& get_Knob()
+Devex.UiTouchStick: public Devex.Vec4& get_BaseColor()
+Devex.UiTouchStick: public Devex.Vec4& get_KnobColor()
+Devex.UiTouchStick: public Single& get_DeadZone()
+Devex.UiTouchStick: public Single& get_KnobSize()
+Devex.UiTouchStick: public System.String get_Action()
+Devex.UiTouchStick: public Void set_Action(System.String)
+Devex.UiTouchStick: public static System.String get_TypeName()
+Devex.UiTouchStick: public static UInt64 get_LayoutHash()
 Devex.UiVirtualList: Devex.UiVirtualList At(Void*)
 Devex.UiVirtualList: Single& ItemSize
 Devex.UiVirtualList: System.String TypeName
 Devex.UiVirtualList: UInt32& First
 Devex.UiVirtualList: UInt32& ItemCount
 Devex.UiVirtualList: UInt64 LayoutHash
+Devex.UiVirtualList: public Single& get_ItemSize()
+Devex.UiVirtualList: public UInt32& get_First()
+Devex.UiVirtualList: public UInt32& get_ItemCount()
+Devex.UiVirtualList: public static System.String get_TypeName()
+Devex.UiVirtualList: public static UInt64 get_LayoutHash()
 Devex.Uuid: Boolean Equals(Devex.Uuid)
 Devex.Uuid: Boolean Equals(System.Object)
 Devex.Uuid: Boolean IsNil
@@ -1880,6 +3041,8 @@ Devex.Uuid: Int32 GetHashCode()
 Devex.Uuid: System.Nullable`1[Devex.Uuid] Parse(System.String)
 Devex.Uuid: System.String ToString()
 Devex.Uuid: Void .ctor(UInt64, UInt64)
+Devex.Uuid: public Boolean get_IsNil()
+Devex.Uuid: public static Devex.Uuid get_Nil()
 Devex.Vec2: Devex.Vec2 op_Addition(Devex.Vec2, Devex.Vec2)
 Devex.Vec2: Devex.Vec2 op_Multiply(Devex.Vec2, Single)
 Devex.Vec2: Devex.Vec2 op_Subtraction(Devex.Vec2, Devex.Vec2)
@@ -1906,6 +3069,8 @@ Devex.Vec3: Single Y
 Devex.Vec3: Single Z
 Devex.Vec3: System.String ToString()
 Devex.Vec3: Void .ctor(Single, Single, Single)
+Devex.Vec3: public Devex.Vec3 get_Normalized()
+Devex.Vec3: public Single get_Length()
 Devex.Vec4: Single W
 Devex.Vec4: Single X
 Devex.Vec4: Single Y
@@ -1926,6 +3091,19 @@ Devex.VolumetricFog: Single& SkyAffect
 Devex.VolumetricFog: Single& TemporalAmount
 Devex.VolumetricFog: System.String TypeName
 Devex.VolumetricFog: UInt64 LayoutHash
+Devex.VolumetricFog: public Boolean& get_TemporalReprojection()
+Devex.VolumetricFog: public Devex.Vec3& get_Albedo()
+Devex.VolumetricFog: public Devex.Vec3& get_Emission()
+Devex.VolumetricFog: public Single& get_AmbientInject()
+Devex.VolumetricFog: public Single& get_Anisotropy()
+Devex.VolumetricFog: public Single& get_Density()
+Devex.VolumetricFog: public Single& get_DetailSpread()
+Devex.VolumetricFog: public Single& get_EmissionEnergy()
+Devex.VolumetricFog: public Single& get_Length()
+Devex.VolumetricFog: public Single& get_SkyAffect()
+Devex.VolumetricFog: public Single& get_TemporalAmount()
+Devex.VolumetricFog: public static System.String get_TypeName()
+Devex.VolumetricFog: public static UInt64 get_LayoutHash()
 Devex.Wait: Devex.WaitAwaiter NextFrame()
 Devex.Wait: Devex.WaitAwaiter Seconds(Single)
 Devex.Wait: Devex.WaitAwaiter Until(System.Func`1[System.Boolean])
@@ -1935,8 +3113,10 @@ Devex.WaitAwaiter: Devex.WaitAwaiter GetAwaiter()
 Devex.WaitAwaiter: Void GetResult()
 Devex.WaitAwaiter: Void OnCompleted(System.Action)
 Devex.WaitAwaiter: Void UnsafeOnCompleted(System.Action)
+Devex.WaitAwaiter: public Boolean get_IsCompleted()
 Devex.WasNamedAttribute: System.String[] Names
 Devex.WasNamedAttribute: Void .ctor(System.String[])
+Devex.WasNamedAttribute: public System.String[] get_Names()
 Devex.WindowMode: Devex.WindowMode Borderless
 Devex.WindowMode: Devex.WindowMode Fullscreen
 Devex.WindowMode: Devex.WindowMode Windowed

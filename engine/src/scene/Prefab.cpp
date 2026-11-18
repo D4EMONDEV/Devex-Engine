@@ -25,6 +25,7 @@ struct CachedPrefab
 {
     std::string text;
     std::shared_ptr<const detail::FlatScene> flat;
+    std::uint64_t registryGeneration = 0;
 };
 
 struct CachedBase
@@ -77,7 +78,8 @@ constexpr std::size_t maxCachedBases = 64;
         PrefabCache& cache = prefabCache();
         const std::scoped_lock lock(cache.mutex);
         const auto found = cache.prefabs.find(prefab);
-        if (found == cache.prefabs.end() || found->second.text != text)
+        if (found == cache.prefabs.end() || found->second.text != text ||
+            found->second.registryGeneration != componentRegistry().generation())
         {
             return nullptr;
         }
@@ -170,7 +172,10 @@ constexpr std::size_t maxCachedBases = 64;
     auto shared = std::make_shared<const detail::FlatScene>(std::move(*flat));
     PrefabCache& cache = prefabCache();
     const std::scoped_lock lock(cache.mutex);
-    cache.prefabs.insert_or_assign(prefab, CachedPrefab{.text = std::move(*text), .flat = shared});
+    cache.prefabs.insert_or_assign(
+        prefab, CachedPrefab{.text = std::move(*text),
+                             .flat = shared,
+                             .registryGeneration = componentRegistry().generation()});
     return shared;
 }
 
@@ -337,11 +342,23 @@ void remapEntityReferences(TextValue& value, const std::unordered_set<core::Uuid
             }
             continue;
         }
-        const auto component = std::ranges::find_if(target->components, [&](const TextSection& candidate) {
-            const std::string* const candidateType = detail::componentTypeName(candidate);
-            return candidateType != nullptr && *candidateType == *typeName;
-        });
-        if (component == target->components.end())
+        const ComponentRegistry& registry = componentRegistry();
+        const ComponentType* const type = registry.find(*typeName);
+        auto component = target->components.rend();
+        if (type != nullptr)
+        {
+            component = std::find_if(target->components.rbegin(), target->components.rend(),
+                                     [&](const TextSection& candidate)
+                                     {
+                                         const std::string* const name =
+                                             detail::componentTypeName(candidate);
+                                         return name != nullptr && (*name == type->name() ||
+                                                                    registry.find(*name) == type);
+                                     });
+        }
+        // Unregistered components may use aliases from game code that is still compiling.
+        // Keep each of their overrides in order until that code can resolve them.
+        if (component == target->components.rend())
         {
             TextSection added{.type = "component", .line = section.line};
             added.attributes.push_back({"type", TextValue(*typeName)});
@@ -351,10 +368,15 @@ void remapEntityReferences(TextValue& value, const std::unordered_set<core::Uuid
         }
         for (const TextProperty& property : section.properties)
         {
-            const auto existing = std::ranges::find_if(component->properties, [&](const TextProperty& candidate) {
-                return candidate.key == property.key;
-            });
-            if (existing != component->properties.end())
+            const reflection::FieldInfo* const field = type->type->findField(property.key);
+            const auto existing = std::find_if(
+                component->properties.rbegin(), component->properties.rend(),
+                [&](const TextProperty& candidate)
+                {
+                    return candidate.key == property.key ||
+                           (field != nullptr && type->type->findField(candidate.key) == field);
+                });
+            if (existing != component->properties.rend())
             {
                 *existing = property;
             }

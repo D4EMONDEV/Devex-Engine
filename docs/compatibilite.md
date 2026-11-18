@@ -54,9 +54,13 @@ Ils vivent dans [tests/data/formats](../tests/data/formats) :
 
 - **`schema.txt`** liste les champs des composants du moteur et leur type. Un champ disparu sans ancien nom, ou dont le type
   change, fait échouer un test qui dit quoi faire.
-- **`csharp-api.txt`** liste l'API C# publique. Un membre disparu fait échouer `devex.formats.csharp_api`.
+- **`csharp-api.txt`** liste l'API C# accessible aux jeux, avec les accesseurs des propriétés et des événements.
+  Une disparition fait échouer `devex.formats.csharp_api`, y compris quand on demande de mettre la liste à jour.
 - **Un dossier par version publiée**, jamais modifié : une scène avec tous les composants aux valeurs changées, qui doit se
   relire sans perdre une valeur, un fichier de chaque autre sorte, un terrain, une sauvegarde et un projet.
+
+La suite `format` réenregistre et rouvre les formats de référence, vérifie la copie de secours des projets anciens et
+contrôle l'ordre des surcharges dans les préfabs imbriqués quand un champ C# a été renommé.
 
 Un ajout fait aussi échouer ces tests, pour que la liste reste complète. Après un changement voulu, on enregistre ce que la
 version écrit, et le diff montre ce qui a bougé :

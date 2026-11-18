@@ -28,12 +28,13 @@
 #include <devex/scene/JointComponents.hpp>
 #include <devex/scene/NavigationComponents.hpp>
 #include <devex/scene/ParticleComponents.hpp>
+#include <devex/scene/Physics2DComponents.hpp>
+#include <devex/scene/PhysicsComponents.hpp>
+#include <devex/scene/Prefab.hpp>
+#include <devex/scene/SceneSerializer.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
 #include <devex/scene/UiComponents.hpp>
-#include <devex/scene/Physics2DComponents.hpp>
-#include <devex/scene/PhysicsComponents.hpp>
-#include <devex/scene/SceneSerializer.hpp>
 #include <devex/ui/UiWorld.hpp>
 
 #include <catch2/catch_approx.hpp>
@@ -1650,6 +1651,83 @@ TEST_CASE("C# components and fields answer to the names they had", "[runtime][ma
         CHECK(count->name == "count");
     }
     game->unloadAssembly();
+}
+
+TEST_CASE("Renamed C# fields keep the outer override of a nested prefab",
+          "[runtime][managed][format]")
+{
+    using devex::asset::AssetId;
+    using devex::core::Uuid;
+    const std::string_view formerType = GENERATE("Tally", "Counter");
+    CAPTURE(formerType);
+    const AssetId original = AssetId::generate();
+    const AssetId nested = AssetId::generate();
+    const Uuid instance = Uuid::generate();
+    const std::string originalText = std::format(R"([scene format=1]
+[entity uuid="{}" name="Counter"]
+[component type="Counter"]
+count = 12
+)",
+                                                 Uuid::generate());
+    const std::string nestedText = std::format(R"([scene format=1]
+[entity uuid="{}" name="Nested"]
+prefab = asset("{}")
+[override type="{}"]
+total = 34
+)",
+                                               Uuid::generate(), original.uuid, formerType);
+    const std::string sceneText = std::format(R"([scene format=1]
+[entity uuid="{}" name="Instance"]
+prefab = asset("{}")
+[override type="Counter"]
+count = 12
+)",
+                                              instance, nested.uuid);
+    struct ResetLoader
+    {
+        ~ResetLoader() { devex::scene::setPrefabSourceLoader({}); }
+    } reset;
+    devex::scene::setPrefabSourceLoader(
+        [&](AssetId id) -> devex::core::Result<std::string>
+        {
+            if (id == original)
+                return originalText;
+            if (id == nested)
+                return nestedText;
+            return devex::core::makeError(devex::core::ErrorCode::NotFound, "Unexpected prefab");
+        });
+
+    // The editor can open and save the scene while its C# assembly is still building.
+    auto beforeCode = devex::scene::loadScene(sceneText);
+    REQUIRE(beforeCode);
+    const std::string savedBeforeCode = devex::scene::saveScene(*beforeCode);
+
+    const auto game = startRuntime();
+    const auto* type = devex::scene::componentRegistry().find("Counter");
+    REQUIRE(type != nullptr);
+    const auto count = [&](Scene& scene)
+    {
+        const Entity root = scene.findEntity(instance);
+        REQUIRE(root.isValid());
+        const auto* component = type->find(scene, root);
+        REQUIRE(component != nullptr);
+        return field<int>(*type, const_cast<void*>(component), "count");
+    };
+    devex::scene::restorePreservedComponents(*beforeCode);
+    CHECK(count(*beforeCode) == 12);
+
+    auto withCode = devex::scene::loadScene(sceneText);
+    REQUIRE(withCode);
+    CHECK(count(*withCode) == 12);
+    auto reopened = devex::scene::loadScene(savedBeforeCode);
+    REQUIRE(reopened);
+    CHECK(count(*reopened) == 12);
+
+    const std::string savedWithCode = devex::scene::saveScene(*withCode);
+    CHECK(savedWithCode.find("count = 12") != std::string::npos);
+    auto saved = devex::scene::loadScene(savedWithCode);
+    REQUIRE(saved);
+    CHECK(count(*saved) == 12);
 }
 #endif
 

@@ -360,8 +360,13 @@ TEST_CASE("The scene of every version reads without losing a value", "[format]")
             REQUIRE(text);
             core::Result<scene::Scene> scene = scene::loadScene(*text, scene::PrefabLoading::KeepUnresolved);
             REQUIRE(scene);
+            const std::string savedText = scene::saveScene(*scene);
+            const auto reopened = scene::loadScene(savedText, scene::PrefabLoading::KeepUnresolved);
+            REQUIRE(reopened);
+            CHECK(scene::saveScene(*reopened) == savedText);
             const core::Result<serialization::TextDocument> before = serialization::parseText(*text);
-            const core::Result<serialization::TextDocument> after = serialization::parseText(scene::saveScene(*scene));
+            const core::Result<serialization::TextDocument> after =
+                serialization::parseText(savedText);
             REQUIRE(before);
             REQUIRE(after);
 
@@ -433,7 +438,7 @@ TEST_CASE("A scene of a newer format is refused, one of an older format reads", 
     }
 }
 
-TEST_CASE("The files of every version read", "[format]")
+TEST_CASE("The asset files of every version can be saved and reopened", "[format]")
 {
     if (updating())
     {
@@ -446,45 +451,58 @@ TEST_CASE("The files of every version read", "[format]")
         {
             return std::unexpected(text.error());
         }
-        const auto outcome = [](const auto& parsed) -> core::Result<void> {
+        const auto roundTrip = [&](auto parse, auto write) -> core::Result<void>
+        {
+            const auto parsed = parse(*text);
             if (!parsed)
             {
                 return std::unexpected(parsed.error());
+            }
+            const std::string saved = write(*parsed);
+            const auto reopened = parse(saved);
+            if (!reopened)
+            {
+                return std::unexpected(reopened.error());
+            }
+            if (write(*reopened) != saved)
+            {
+                return core::makeError(core::ErrorCode::InvalidState,
+                                       "the asset changes after saving and reopening it");
             }
             return {};
         };
         const std::string extension = core::toUtf8(file.extension());
         if (extension == ".dvxmat")
         {
-            return outcome(asset::parseMaterialFile(*text));
+            return roundTrip(asset::parseMaterialFile, asset::writeMaterialFile);
         }
         if (extension == ".dvxanimator")
         {
-            return outcome(asset::parseAnimatorFile(*text));
+            return roundTrip(asset::parseAnimatorFile, asset::writeAnimatorFile);
         }
         if (extension == ".dvxcurve")
         {
-            return outcome(asset::parseCurveFile(*text));
+            return roundTrip(asset::parseCurveFile, asset::writeCurveFile);
         }
         if (extension == ".dvxframes")
         {
-            return outcome(asset::parseSpriteFramesFile(*text));
+            return roundTrip(asset::parseSpriteFramesFile, asset::writeSpriteFramesFile);
         }
         if (extension == ".dvxtileset")
         {
-            return outcome(asset::parseTilesetFile(*text));
+            return roundTrip(asset::parseTilesetFile, asset::writeTilesetFile);
         }
         if (extension == ".dvxtheme")
         {
-            return outcome(asset::parseThemeFile(*text));
+            return roundTrip(asset::parseThemeFile, asset::writeThemeFile);
         }
         if (extension == ".dvxshadergraph")
         {
-            return outcome(asset::parseShaderGraphFile(*text));
+            return roundTrip(asset::parseShaderGraphFile, asset::writeShaderGraphFile);
         }
         if (extension == ".dvxmeta")
         {
-            return outcome(asset::parseMetaFile(*text));
+            return roundTrip(asset::parseMetaFile, asset::writeMetaFile);
         }
         return core::makeError(core::ErrorCode::Unsupported, "this test does not know this kind of file: add its reader");
     };
@@ -536,10 +554,17 @@ TEST_CASE("The terrain of every version reads: it is sculpted by hand and comes 
         CHECK(terrain->heights[100] == 25.0f);
         CHECK(terrain->paint.front() == 7);
         CHECK(terrain->grass.back() == 9);
+        const auto reopened = asset::decodeTerrain(asset::encodeTerrain(*terrain));
+        REQUIRE(reopened);
+        CHECK(reopened->resolution == terrain->resolution);
+        CHECK(reopened->heights == terrain->heights);
+        CHECK(reopened->paint == terrain->paint);
+        CHECK(reopened->holes == terrain->holes);
+        CHECK(reopened->grass == terrain->grass);
     }
 }
 
-TEST_CASE("The project of every version opens", "[format]")
+TEST_CASE("The project of every version can be saved and reopened", "[format]")
 {
     if (updating())
     {
@@ -549,10 +574,42 @@ TEST_CASE("The project of every version opens", "[format]")
     for (const fs::path& folder : versionFolders())
     {
         INFO(core::toUtf8(folder));
-        const core::Result<asset::Project> project = asset::loadProject(folder / "project.dvxproj");
+        const auto originalProject = core::readTextFile(folder / "project.dvxproj");
+        const auto originalScene = core::readTextFile(folder / everyComponent);
+        REQUIRE(originalProject);
+        REQUIRE(originalScene);
+        const TemporaryProject copy(*originalProject);
+        const fs::path scenePath = "assets/scenes/first.dvxscene";
+        copy.add(scenePath, *originalScene);
+        auto project = asset::loadProject(copy.file());
         REQUIRE(project);
         CHECK(project->name == "Frozen");
-        CHECK(asset::projectAge(*project) != asset::ProjectAge::Newer);
+        CHECK(project->startupScene == "res://assets/scenes/first.dvxscene");
+        const auto age = asset::projectAge(*project);
+        REQUIRE(age != asset::ProjectAge::Newer);
+        if (age == asset::ProjectAge::Older)
+        {
+            const auto backup = asset::upgradeProject(*project);
+            REQUIRE(backup);
+            const auto savedProject = core::readTextFile(*backup / copy.file().filename());
+            const auto savedScene = core::readTextFile(*backup / scenePath);
+            REQUIRE(savedProject);
+            REQUIRE(savedScene);
+            CHECK(*savedProject == *originalProject);
+            CHECK(*savedScene == *originalScene);
+        }
+        else
+        {
+            REQUIRE(asset::saveProject(*project));
+        }
+        const auto reopened = asset::loadProject(copy.file());
+        REQUIRE(reopened);
+        CHECK(reopened->name == "Frozen");
+        CHECK(reopened->startupScene == "res://assets/scenes/first.dvxscene");
+        CHECK(reopened->engineVersion == core::version());
+        const auto unchangedScene = core::readTextFile(copy.file().parent_path() / scenePath);
+        REQUIRE(unchangedScene);
+        CHECK(*unchangedScene == *originalScene);
     }
 }
 
