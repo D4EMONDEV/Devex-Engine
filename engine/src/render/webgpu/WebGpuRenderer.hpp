@@ -11,6 +11,7 @@
 #include "../RenderBackend.hpp"
 
 #include <devex/asset/ShaderData.hpp>
+#include <devex/platform/Platform.hpp>
 #include <devex/core/SlotMap.hpp>
 #include <devex/render/Culling.hpp>
 
@@ -499,6 +500,10 @@ private:
     std::array<wgpu::RenderPipeline, 4> m_shadowPipelines;
     // Depth clamped rather than clipped, as Vulkan draws shadows, where the device can.
     bool m_unclippedDepth = false;
+    // The cascades of the sun and the atlas of the local lights, in pixels on a side: half on a phone, whose GPU has less
+    // memory and writes fewer pixels a second, for shadows a little softer.
+    std::uint32_t m_shadowMapSize = platform::isMobile() ? 1024 : 2048;
+    std::uint32_t m_shadowAtlasSize = platform::isMobile() ? 2048 : 4096;
     wgpu::Buffer m_shadowViewBuffer;
     std::uint64_t m_shadowViewCapacity = 0;
     wgpu::Buffer m_shadowMatrixBuffer;

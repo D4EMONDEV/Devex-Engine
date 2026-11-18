@@ -1487,9 +1487,9 @@ void ApplicationRunner::render(bool gameplay)
     {
         world.limitToCompatibility();
     }
-#ifdef __ANDROID__
-    // On Android, what the project turns off there.
-    if (const asset::AssetSource* const source = assetSource(); source != nullptr && source->project().androidRendering.enabled)
+    // On a phone, Android or its browser, what the project turns off there: every heavy effect unless it says otherwise.
+    if (const asset::AssetSource* const source = assetSource();
+        platform::isMobile() && source != nullptr && source->project().androidRendering.enabled)
     {
         const asset::PlatformRendering& android = source->project().androidRendering;
         if (android.compatibility)
@@ -1504,7 +1504,6 @@ void ApplicationRunner::render(bool gameplay)
                                                 .volumetricFog = android.volumetricFog,
                                                 .lightShadows = android.lightShadows});
     }
-#endif
     m_animationViews.clear();
     m_animationViews.push_back(math::Vec3(math::inverse(world.camera.view)[3]));
     for (const auto& view : world.views)
@@ -3892,6 +3891,17 @@ void configureLogging(std::string_view commandLine)
 
 namespace {
 
+// The browser of a phone mixes the sound between frames that may run late: about 85 ms at a time rather than 33, so that
+// it does not crackle. Elsewhere the system chooses.
+[[nodiscard]] std::uint32_t audioPeriodFrames() noexcept
+{
+#if defined(__EMSCRIPTEN__)
+    return platform::isMobile() ? 4096U : 0U;
+#else
+    return 0;
+#endif
+}
+
 // What a run creates and keeps until it ends, in the order it creates it, which is the reverse of the order it goes in:
 // on the heap, since in a browser it outlives the call that starts it.
 struct Session
@@ -4130,7 +4140,7 @@ struct Session
     if (config.enableAudio)
     {
         core::Result<std::unique_ptr<audio::AudioEngine>> created =
-            audio::AudioEngine::create({.device = config.audioOutput});
+            audio::AudioEngine::create({.device = config.audioOutput, .periodFrames = audioPeriodFrames()});
         if (created)
         {
             audioEngine = std::move(*created);

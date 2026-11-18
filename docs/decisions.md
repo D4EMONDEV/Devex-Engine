@@ -6051,6 +6051,29 @@ et la relecture de toute la doc, puis la 0.11.0. Laissés pour plus tard : le C#
    et ses formats figés dans `tests/data/formats/0.11.0`, avec le premier `.dvxmesh`, que le test écrit lui-même en
    figeant une version et relit octet pour octet. Le tag, qui fait publier la release en brouillon, reste à l'utilisateur.
 
+## Le web sur téléphone — décidé le 2026-11-18
+
+Essayé par l'utilisateur sur itch.io : sur un ordinateur (Brave), rien à redire ; sur un téléphone Android, l'arène du
+bac à sable tournait à quelques images par seconde, le son grésillait, et on ne pouvait que lancer des balles. Choisi
+avec lui, avant le code :
+
+- **Le préréglage mobile par défaut** : la carte **Android** devient **Mobile**, et vaut pour Android et pour les
+  navigateurs des téléphones et des tablettes (`platform::isMobile()`, d'après l'agent du navigateur). Un projet qui
+  ne l'a pas écrite coupe tous les effets lourds sur téléphone ; une carte écrite garde ce qu'elle ne coupe pas, comme
+  avant. Le bureau, l'éditeur et les navigateurs des ordinateurs gardent tout.
+- **Les pixels de la page dans le navigateur d'un téléphone**, comme le modèle WebGL de Unity, plutôt que tous ceux de
+  l'écran (deux ou trois fois plus par côté) ; et des cartes d'ombre moitié moins grandes (cascades en 1024, atlas en
+  2048), qui prenaient 128 Mo et beaucoup d'écritures par image. Pas encore pour Android, où ces tailles sont des
+  constantes du renderer Vulkan.
+- **Le son par paquets de 4096 images** dans le navigateur d'un téléphone (environ 85 ms au lieu de 33) : miniaudio y
+  mixe sur le fil principal, entre deux images.
+- **Deux joysticks et des boutons dans l'arène** : marcher à gauche, regarder à droite, Run, Jump et Fire, une action
+  ajoutée au projet (et à la gâchette droite). Un doigt ne capture plus la souris, et le navigateur dit qu'il a un écran
+  tactile dès le chargement (`navigator.maxTouchPoints`), pour que les commandes s'affichent avant le premier doigt.
+
+Vérifié dans le navigateur intégré en téléphone émulé (les commandes, les pixels, les effets coupés) ; la cadence sur un
+vrai téléphone reste à mesurer par l'utilisateur.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

@@ -222,8 +222,10 @@ DEVEX_API void showTerminal(bool shown);
 // Whether the first finger on the screen is also the mouse, and the mouse a finger, for a game made for touch to be
 // tried with a mouse. The first is on and the second off, as in Godot.
 DEVEX_API void setTouchEmulation(bool mouseFromTouch, bool touchFromMouse);
-// Whether the machine has a touch screen.
+// Whether the machine has a touch screen. A browser says so from the start, before the first finger.
 [[nodiscard]] DEVEX_API bool hasTouchScreen() noexcept;
+// Whether the game plays on a phone or a tablet: Android, or the browser of one. Their GPU draws less than a computer's.
+[[nodiscard]] DEVEX_API bool isMobile() noexcept;
 // Whether the terminal of this program goes away with it, and its last message too: it was opened for this program alone.
 [[nodiscard]] DEVEX_API bool terminalClosesWithProgram() noexcept;
 // Shows an error in a box of the system, for a program with nowhere else to say it. Works before

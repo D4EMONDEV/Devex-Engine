@@ -4084,6 +4084,12 @@ public:
   premier clic ou à la première touche. Le plein écran et la souris capturée passent par SDL, qui attend le geste suivant.
 - Le navigateur intégré masqué ne donne pas d'images à la page : une capture d'écran en fait avancer. Ne pas y essayer le
   plein écran ni la souris capturée, qui prendraient l'écran ou la souris de l'utilisateur.
+- Le SDL 3.4 de vcpkg reçoit les doigts par les pointer events (`pointerType: "touch"`), pas par les touch events :
+  pour essayer le tactile depuis la page, envoyer des `PointerEvent` au canvas. `platform::isMobile()` vient de
+  l'agent du navigateur ; `hasTouchScreen()` de `navigator.maxTouchPoints`, SDL ne connaissant l'écran tactile qu'au
+  premier doigt.
+- Sur un téléphone (`isMobile()`), le lecteur web crée sa fenêtre sans `SDL_WINDOW_HIGH_PIXEL_DENSITY` (les pixels de
+  la page), WebGPU fait ses cartes d'ombre moitié moins grandes, et miniaudio mixe par 4096 images.
 
 ## C++ des jeux pour le web (étape 5 du web)
 

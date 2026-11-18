@@ -82,8 +82,9 @@ struct AndroidRenderingField
     std::string_view tip;
 };
 constexpr std::array androidRenderingFields{
-    AndroidRenderingField{"Replace on Android", &asset::PlatformRendering::enabled,
-                          "On Android, the game draws as below, in place of what its cameras, volumes and lights ask for"},
+    AndroidRenderingField{"Replace on Phones", &asset::PlatformRendering::enabled,
+                          "On Android and in the browsers of phones and tablets, the game draws as below, in place of what its cameras, "
+                          "volumes and lights ask for"},
     AndroidRenderingField{"Compatibility", &asset::PlatformRendering::compatibility, "Draws with Compatibility on Android"},
     AndroidRenderingField{"Temporal Antialiasing", &asset::PlatformRendering::temporalAntialiasing, "Unticked, the edges are left as they are"},
     AndroidRenderingField{"Ambient Occlusion", &asset::PlatformRendering::ambientOcclusion, "Unticked, the corners are not darkened"},
@@ -1420,8 +1421,8 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     const FormRow methodRow = formRow(rendering, "Rendering Method");
     renderingMethod = choice(methodRow.editor);
     tooltip(methodRow.row, "Forward+ has every effect. Compatibility leaves out what does not run everywhere, for the same picture on every system.");
-    note(&rendering, "Compatibility turns off ambient occlusion, screen reflections and volumetric fog, here as in the game. The web will need it.", "dim", 2.0f);
-    Section& android = pageCard(kit, rendererPage, "Android");
+    note(&rendering, "Compatibility turns off ambient occlusion, screen reflections and volumetric fog, here as in the game. The web needs it.", "dim", 2.0f);
+    Section& android = pageCard(kit, rendererPage, "Mobile");
     static_assert(androidRenderingFields.size() == std::tuple_size_v<decltype(androidRendering)>);
     for (std::size_t i = 0; i < androidRenderingFields.size(); ++i)
     {
@@ -1430,8 +1431,11 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
         tooltip(row.row, std::string(androidRenderingFields[i].tip));
     }
     mobilePreset = action(kit, actions(&android), Icon::Gauge, "Mobile Preset");
-    tooltip(mobilePreset.entity, "Replaces on Android and turns every heavy effect off");
-    note(&android, "What a phone draws too slowly, turned off on Android only: the editor and the other platforms keep it.", "dim", 2.0f);
+    tooltip(mobilePreset.entity, "Replaces on phones and turns every heavy effect off, as a new project does");
+    note(&android,
+         "What a phone draws too slowly, turned off on Android and in the browsers of phones and tablets, which also draw the pixels of "
+         "the page rather than all those of their screen. The editor and computers keep everything.",
+         "dim", 2.0f);
 
     // Physics.
     Section& physics = pageCard(kit, 2, "");

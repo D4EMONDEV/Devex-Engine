@@ -1698,3 +1698,242 @@ scale = vec3(1, 1, 1)
 [component type="GridMap"]
 palette = asset("19ddbb67-db11-52e3-a22c-c23c10e02652")
 cells = list(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 2, 0, 0, 2, 0, 0, 0, 0, 2, 0, 1, 0, 0, 2, 0, 2, 0, 0, 3, 0, 0, 0, 0, 3, 0, 1, 0, 0, 3, 0, 2, 0, 0, 0, 0, -1, 1, 2, 1, 0, -1, 1, 2, 3, 0, -1, 1, 2, -1, 0, 0, 1, 3, -1, 0, 1, 1, 3, -1, 0, 2, 1, 3, 0, 1, 0, 2, 0, 3, 1, 0, 2, 0, 0, 1, 2, 2, 0, 3, 1, 2, 2, 0, 0, 2, 0, 0, 0, 0, 2, 1, 0, 0, 0, 2, 2, 0, 0, 1, 2, 0, 0, 0, 1, 2, 1, 0, 0, 1, 2, 2, 0, 0, 2, 2, 0, 0, 0, 2, 2, 1, 0, 0, 2, 2, 2, 0, 0, 3, 2, 0, 0, 0, 3, 2, 1, 0, 0, 3, 2, 2, 0, 0)
+[entity uuid="399dbc4a-e9f5-4595-8370-8a3ca4a35018" name="Touch controls"]
+
+[component type="Canvas"]
+scale_mode = "scale_with_screen"
+reference_resolution = vec2(1920, 1080)
+theme = asset("00000000-0000-0000-0000-000000000000")
+match_width_or_height = 0.5
+sort_order = 0
+visible = true
+interactive = true
+
+[entity uuid="ec655aeb-4634-48f7-940e-6cae5ad4ec7d" name="Move stick"]
+parent = "399dbc4a-e9f5-4595-8370-8a3ca4a35018"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 1)
+anchor_max = vec2(0, 1)
+offset_min = vec2(60, -420)
+offset_max = vec2(420, -60)
+pivot = vec2(0.5, 0.5)
+scale = vec2(1, 1)
+rotation = 0
+opacity = 1
+visible = true
+clip_children = false
+style = ""
+
+[component type="UiTouchStick"]
+action = "Move"
+touch_screen_only = true
+dead_zone = 0.15
+knob_size = 0.45
+base_color = vec4(1, 1, 1, 0.18)
+knob_color = vec4(1, 1, 1, 0.55)
+
+[entity uuid="17a0915b-6b85-4d38-93d3-9a8a1149c535" name="Look stick"]
+parent = "399dbc4a-e9f5-4595-8370-8a3ca4a35018"
+
+[component type="UiRect"]
+anchor_min = vec2(1, 1)
+anchor_max = vec2(1, 1)
+offset_min = vec2(-420, -420)
+offset_max = vec2(-60, -60)
+pivot = vec2(0.5, 0.5)
+scale = vec2(1, 1)
+rotation = 0
+opacity = 1
+visible = true
+clip_children = false
+style = ""
+
+[component type="UiTouchStick"]
+action = "Look"
+touch_screen_only = true
+dead_zone = 0.15
+knob_size = 0.45
+base_color = vec4(1, 1, 1, 0.18)
+knob_color = vec4(1, 1, 1, 0.55)
+
+[entity uuid="e6c65d63-f518-400d-9437-8dbb0227b851" name="Run button"]
+parent = "399dbc4a-e9f5-4595-8370-8a3ca4a35018"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 1)
+anchor_max = vec2(0, 1)
+offset_min = vec2(160, -620)
+offset_max = vec2(320, -460)
+pivot = vec2(0.5, 0.5)
+scale = vec2(1, 1)
+rotation = 0
+opacity = 1
+visible = true
+clip_children = false
+style = ""
+
+[component type="UiImage"]
+color = vec4(1, 1, 1, 0.22)
+corner_radius = 80
+outline_color = vec4(1, 1, 1, 0.5)
+outline_width = 2
+raycast_target = true
+
+[component type="UiTouchButton"]
+action = "Run"
+touch_screen_only = true
+pressed_tint = vec4(0.7, 0.7, 0.7, 1)
+
+[entity uuid="df1fb501-827f-4741-a809-0caa90549438" name="Label"]
+parent = "e6c65d63-f518-400d-9437-8dbb0227b851"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+pivot = vec2(0.5, 0.5)
+scale = vec2(1, 1)
+rotation = 0
+opacity = 1
+visible = true
+clip_children = false
+style = ""
+
+[component type="UiText"]
+text = "Run"
+translate = true
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 34
+color = vec4(1, 1, 1, 0.9)
+align = "center"
+vertical_align = "middle"
+wrap = false
+line_spacing = 1
+outline_color = vec4(0, 0, 0, 0.6)
+outline_width = 2
+raycast_target = false
+rich = false
+icons = list()
+
+[entity uuid="674902ca-3d6d-49bb-b9b9-d74286aa3009" name="Jump button"]
+parent = "399dbc4a-e9f5-4595-8370-8a3ca4a35018"
+
+[component type="UiRect"]
+anchor_min = vec2(1, 1)
+anchor_max = vec2(1, 1)
+offset_min = vec2(-320, -620)
+offset_max = vec2(-160, -460)
+pivot = vec2(0.5, 0.5)
+scale = vec2(1, 1)
+rotation = 0
+opacity = 1
+visible = true
+clip_children = false
+style = ""
+
+[component type="UiImage"]
+color = vec4(1, 1, 1, 0.22)
+corner_radius = 80
+outline_color = vec4(1, 1, 1, 0.5)
+outline_width = 2
+raycast_target = true
+
+[component type="UiTouchButton"]
+action = "Jump"
+touch_screen_only = true
+pressed_tint = vec4(0.7, 0.7, 0.7, 1)
+
+[entity uuid="6f72bd3d-e53a-49f6-a24d-0348d622fcb3" name="Label"]
+parent = "674902ca-3d6d-49bb-b9b9-d74286aa3009"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+pivot = vec2(0.5, 0.5)
+scale = vec2(1, 1)
+rotation = 0
+opacity = 1
+visible = true
+clip_children = false
+style = ""
+
+[component type="UiText"]
+text = "Jump"
+translate = true
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 34
+color = vec4(1, 1, 1, 0.9)
+align = "center"
+vertical_align = "middle"
+wrap = false
+line_spacing = 1
+outline_color = vec4(0, 0, 0, 0.6)
+outline_width = 2
+raycast_target = false
+rich = false
+icons = list()
+
+[entity uuid="09f25c78-191d-4ac2-b2ed-04028032cdcd" name="Fire button"]
+parent = "399dbc4a-e9f5-4595-8370-8a3ca4a35018"
+
+[component type="UiRect"]
+anchor_min = vec2(1, 1)
+anchor_max = vec2(1, 1)
+offset_min = vec2(-320, -820)
+offset_max = vec2(-160, -660)
+pivot = vec2(0.5, 0.5)
+scale = vec2(1, 1)
+rotation = 0
+opacity = 1
+visible = true
+clip_children = false
+style = ""
+
+[component type="UiImage"]
+color = vec4(1, 1, 1, 0.22)
+corner_radius = 80
+outline_color = vec4(1, 1, 1, 0.5)
+outline_width = 2
+raycast_target = true
+
+[component type="UiTouchButton"]
+action = "Fire"
+touch_screen_only = true
+pressed_tint = vec4(0.7, 0.7, 0.7, 1)
+
+[entity uuid="6eb7a3e8-3a47-4f9d-b2a0-bffcc911806c" name="Label"]
+parent = "09f25c78-191d-4ac2-b2ed-04028032cdcd"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+pivot = vec2(0.5, 0.5)
+scale = vec2(1, 1)
+rotation = 0
+opacity = 1
+visible = true
+clip_children = false
+style = ""
+
+[component type="UiText"]
+text = "Fire"
+translate = true
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 34
+color = vec4(1, 1, 1, 0.9)
+align = "center"
+vertical_align = "middle"
+wrap = false
+line_spacing = 1
+outline_color = vec4(0, 0, 0, 0.6)
+outline_width = 2
+raycast_target = false
+rich = false
+icons = list()
+

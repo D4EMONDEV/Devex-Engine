@@ -57,6 +57,7 @@ core::Result<std::unique_ptr<AudioEngine>> AudioEngine::create(Config config)
 {
     auto implementation = std::make_unique<Implementation>();
     ma_engine_config engineConfig = ma_engine_config_init();
+    engineConfig.periodSizeInFrames = config.periodFrames;
     if (config.device)
     {
         if (ma_engine_init(&engineConfig, &implementation->engine) == MA_SUCCESS)

@@ -35,8 +35,6 @@ constexpr std::uint32_t prefilterSamples = 256;
 constexpr std::uint32_t irradianceSamples = 512;
 constexpr std::uint32_t brdfSamples = 1024;
 // The shadows of vulkan::VulkanRenderer: the cascades of the sun, and the atlas of the local lights.
-constexpr std::uint32_t shadowMapSize = 2048;
-constexpr std::uint32_t shadowAtlasSize = 4096;
 constexpr std::uint32_t shadowAtlasCell = 512;
 constexpr std::size_t largeShadowLights = 2;
 
@@ -558,7 +556,7 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
     }
     wgpu::TextureDescriptor cascadeMap;
     cascadeMap.label = "Cascades";
-    cascadeMap.size = {shadowMapSize, shadowMapSize, 4};
+    cascadeMap.size = {m_shadowMapSize, m_shadowMapSize, 4};
     cascadeMap.format = depthFormat;
     cascadeMap.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
     m_cascadeMap = m_device.CreateTexture(&cascadeMap);
@@ -572,7 +570,7 @@ core::Result<void> WebGpuRenderer::createScenePipelines()
     }
     wgpu::TextureDescriptor atlasMap = cascadeMap;
     atlasMap.label = "Shadow atlas";
-    atlasMap.size = {shadowAtlasSize, shadowAtlasSize, 1};
+    atlasMap.size = {m_shadowAtlasSize, m_shadowAtlasSize, 1};
     m_atlasMap = m_device.CreateTexture(&atlasMap);
     // Bilinear comparisons, as Vulkan's sampler of shadows.
     wgpu::SamplerDescriptor shadowSampler;
@@ -1182,11 +1180,11 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
     if (sunEnabled && sun.castShadows && sun.shadowDistance > camera.nearPlane)
     {
         cascades = computeShadowCascades(math::inverse(camera.view), ViewVolume::of(camera, aspectRatio), camera.nearPlane,
-                                         sun.shadowDistance, sun.direction, shadowMapSize);
+                                         sun.shadowDistance, sun.direction, m_shadowMapSize);
     }
     const ShadowAssignment assigned =
         assignShadowViews(m_world.lights, frustum, matrices.cameraPosition,
-                          ShadowAtlasLayout{.size = shadowAtlasSize, .cell = shadowAtlasCell, .largeLights = largeShadowLights}, flipY());
+                          ShadowAtlasLayout{.size = m_shadowAtlasSize, .cell = shadowAtlasCell, .largeLights = largeShadowLights}, flipY());
     for (std::size_t index = 0; index < m_lights.size() && index < assigned.firstView.size(); ++index)
     {
         m_lights[index].firstShadowView = assigned.firstView[index];
@@ -1344,7 +1342,7 @@ void WebGpuRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& 
     }
     for (const render::ShadowView& view : assigned.views)
     {
-        const float size = static_cast<float>(shadowAtlasSize);
+        const float size = static_cast<float>(m_shadowAtlasSize);
         views.push_back({flipY() * view.viewProjection, frustumOf(view.viewProjection), true, 0,
                          {view.tile.x * size, view.tile.y * size, view.tile.z * size, view.tile.w * size}});
     }

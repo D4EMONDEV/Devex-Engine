@@ -22,3 +22,6 @@ bindings = list("key:LeftShift", "pad:LeftStick")
 
 [input_action name="Fly" kind="axis" context="Gameplay"]
 bindings = list("key:Space", "key:LeftControl negative", "pad:RightShoulder", "pad:LeftShoulder negative")
+
+[input_action name="Fire" kind="button" context="Gameplay"]
+bindings = list("pad:RightTrigger")

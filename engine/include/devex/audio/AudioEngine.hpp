@@ -26,6 +26,9 @@ public:
         bool device = true;
         std::uint32_t sampleRate = 48000;
         std::uint32_t channels = 2;
+        // The frames the device is given at a time, 0 for those of the system: more lets a slow frame pass without the
+        // sound running dry, at the cost of its delay.
+        std::uint32_t periodFrames = 0;
     };
 
     // Falls back to an engine without a device, with a warning, when the system has no sound output.

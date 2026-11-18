@@ -5,6 +5,9 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 
 ## À venir
 
+- **Les jeux web sur téléphone** : dans le navigateur d'un téléphone ou d'une tablette, le jeu coupe les effets lourds comme sur Android, dessine les pixels de la page plutôt que tous ceux de l'écran, et des ombres moitié moins fines ; il allait jusqu'à quelques images par seconde. Le son ne grésille plus quand une image tarde. Les commandes à l'écran s'affichent dès le chargement, sans attendre le premier doigt.
+- **La carte Mobile de Project Settings > Rendering** remplace la carte Android : elle vaut pour Android et pour les navigateurs des téléphones, et un projet qui ne l'a pas réglée coupe tous les effets lourds sur téléphone.
+- **Se déplacer au doigt dans l'arène du bac à sable** : un joystick pour marcher, un pour regarder, et Run, Jump et Fire. Fire lance une balle, et la gâchette droite d'une manette aussi.
 - **Les sauvegardes du navigateur ne se perdent plus** : une page qui démarrait cachée, comme un onglet ouvert derrière les autres, ou quittée des yeux pendant le chargement, pouvait écrire dans IndexedDB son dossier encore vide et y effacer les sauvegardes, les réglages et les touches du joueur. L'écriture attend maintenant que le jeu ait relu ce qu'il gardait, et rien n'est écrit quand cette lecture échoue.
 
 ## 0.11.0 — 2026-11-18

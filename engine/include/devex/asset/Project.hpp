@@ -372,7 +372,8 @@ struct DEVEX_API Project
     std::string description;
     std::string version;
     RenderingMethod renderingMethod = RenderingMethod::ForwardPlus;
-    PlatformRendering androidRendering;
+    // What phones turn off, on Android and in their browsers: every heavy effect until the project says otherwise.
+    PlatformRendering androidRendering = PlatformRendering::mobile();
     PhysicsSettings physics;
     AudioSettings audio;
     SortingSettings sorting;

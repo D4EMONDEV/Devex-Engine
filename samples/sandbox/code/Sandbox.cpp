@@ -272,13 +272,15 @@ DEVEX_REFLECT(SceneSwitch)
 
 // A click in the world captures the mouse; Escape releases it, then ends the game. A click on the
 // interface belongs to it and leaves the cursor free, and a scene with an interface leaves Escape
-// to its menus, which have their own way out.
+// to its menus, which have their own way out. A finger, which plays the mouse, captures nothing:
+// a phone looks around with its joystick.
 void handleMouseCapture(SystemContext& context)
 {
     devex::platform::Window& window = context.window;
     const bool onInterface = context.ui != nullptr && context.ui->pointerOverInterface();
+    const bool finger = !context.input.touches().empty();
     if (context.input.wasMouseButtonPressed(devex::platform::MouseButton::Left) &&
-        !window.isMouseCaptured() && !onInterface)
+        !window.isMouseCaptured() && !onInterface && !finger)
     {
         window.setMouseCaptured(true);
     }
@@ -361,11 +363,14 @@ void movePlayers(SystemContext& context)
     }
 }
 
-// Runs before movePlayers, so that the click capturing the mouse does not launch a ball.
+// Runs before movePlayers, so that the click capturing the mouse does not launch a ball. The Fire
+// action launches one too: the button on the screen of a phone, or the right trigger of a pad.
 void launchBalls(SystemContext& context)
 {
     Scene& scene = context.scene;
-    if (!context.window.isMouseCaptured() || !context.input.wasMouseButtonPressed(devex::platform::MouseButton::Left))
+    const bool clicked =
+        context.window.isMouseCaptured() && context.input.wasMouseButtonPressed(devex::platform::MouseButton::Left);
+    if (!clicked && !actionPressed(context, "Fire"))
     {
         return;
     }

@@ -700,7 +700,15 @@ core::Result<Window> Platform::createWindow(const WindowConfig& config)
 {
     DEVEX_ASSERT(m_initialized);
 
+    // Every pixel of the screen. The browser of a phone gets those of the page, as Unity's template does: its screen
+    // has two or three times as many, more than its GPU draws in time.
     SDL_WindowFlags flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
+#if defined(__EMSCRIPTEN__)
+    if (isMobile())
+    {
+        flags = 0;
+    }
+#endif
     if (config.resizable)
     {
         flags |= SDL_WINDOW_RESIZABLE;
@@ -1100,6 +1108,28 @@ EM_JS(void, devexPersistUserFiles, (), {
     }
 });
 
+// The browser of a phone or a tablet: what it says of itself, or its name; iPadOS calls itself a Mac with fingers.
+EM_JS(int, devexMobileBrowser, (), {
+    if (typeof navigator === 'undefined') {
+        return 0;
+    }
+    if (navigator.userAgentData && navigator.userAgentData.mobile) {
+        return 1;
+    }
+    if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "")) {
+        return 1;
+    }
+    return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1 ? 1 : 0;
+});
+
+// How many fingers the screen of the page takes: SDL knows of a touch screen only once a finger is on it.
+EM_JS(int, devexTouchPoints, (), {
+    if (typeof navigator !== 'undefined' && navigator.maxTouchPoints) {
+        return navigator.maxTouchPoints;
+    }
+    return typeof window !== 'undefined' && 'ontouchstart' in window ? 1 : 0;
+});
+
 namespace devex::platform {
 #endif
 
@@ -1286,10 +1316,29 @@ void setTouchEmulation(bool mouseFromTouch, bool touchFromMouse)
 
 bool hasTouchScreen() noexcept
 {
+#if defined(__EMSCRIPTEN__)
+    static const bool touch = devexTouchPoints() > 0;
+    if (touch)
+    {
+        return true;
+    }
+#endif
     int count = 0;
     SDL_TouchID* const devices = SDL_GetTouchDevices(&count);
     SDL_free(static_cast<void*>(devices));
     return count > 0;
+}
+
+bool isMobile() noexcept
+{
+#if defined(__ANDROID__)
+    return true;
+#elif defined(__EMSCRIPTEN__)
+    static const bool mobile = devexMobileBrowser() != 0;
+    return mobile;
+#else
+    return false;
+#endif
 }
 
 void showTerminal(bool shown)

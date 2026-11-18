@@ -264,7 +264,9 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
     {
         if (section.type == "android_rendering")
         {
+            // A project that wrote the card keeps what it did not turn off; without the card, phones cut everything.
             PlatformRendering& android = project.androidRendering;
+            android = PlatformRendering{};
             readBool(section, "enabled", android.enabled);
             readBool(section, "compatibility", android.compatibility);
             readBool(section, "temporal_antialiasing", android.temporalAntialiasing);
@@ -931,8 +933,8 @@ std::string writeProjectText(const Project& project)
         }
     }
 
-    // Written when it differs from the desktop: whether it replaces anything, and what it turns off.
-    if (project.androidRendering != PlatformRendering{})
+    // Written when it differs from what phones do by default: whether it replaces anything, and what it turns off.
+    if (project.androidRendering != PlatformRendering::mobile())
     {
         serialization::TextSection& android = document.sections.emplace_back();
         android.type = "android_rendering";

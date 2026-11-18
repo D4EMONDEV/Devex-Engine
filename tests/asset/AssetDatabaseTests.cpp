@@ -661,6 +661,18 @@ TEST_CASE("Window and export settings of projects are saved and read back", "[as
     REQUIRE(parsed.has_value());
     CHECK(parsed->window == project.window);
     CHECK(parsed->root == project.root);
+
+    // Phones cut every heavy effect until the project says otherwise, as a project from before does; a card turned off
+    // keeps everything there, and says so.
+    CHECK(temporary.project.androidRendering == devex::asset::PlatformRendering::mobile());
+    project.androidRendering = devex::asset::PlatformRendering{};
+    REQUIRE(devex::asset::saveProject(project));
+    CHECK(devex::core::readTextFile(project.file)->find("[android_rendering enabled=false]") != std::string::npos);
+    const auto everything = devex::asset::loadProject(project.file);
+    REQUIRE(everything.has_value());
+    CHECK(everything->androidRendering == devex::asset::PlatformRendering{});
+    project.androidRendering = devex::asset::PlatformRendering::mobile();
+    CHECK(devex::asset::writeProjectText(project).find("android_rendering") == std::string::npos);
 }
 
 TEST_CASE("What describes a game and how its window opens are saved and read back", "[asset][project]")

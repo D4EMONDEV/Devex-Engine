@@ -1,5 +1,6 @@
 #include <devex/platform/Input.hpp>
 #include <devex/platform/InputSource.hpp>
+#include <devex/platform/Platform.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -7,6 +8,12 @@ using devex::math::Vec2;
 using devex::platform::Input;
 using devex::platform::Key;
 using devex::platform::MouseButton;
+
+TEST_CASE("A computer is not a phone", "[platform][noweb]")
+{
+    // Android and the browsers of phones are; the tests run on computers.
+    CHECK_FALSE(devex::platform::isMobile());
+}
 
 TEST_CASE("Input sources read and write their names", "[platform][input]")
 {
