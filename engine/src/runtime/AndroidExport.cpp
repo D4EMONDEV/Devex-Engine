@@ -31,6 +31,40 @@ constexpr std::string_view programSuffix = ".exe";
 constexpr std::string_view programSuffix = "";
 #endif
 
+// The version of an NDK, as its source.properties gives it, without what follows a dash (a beta): what Gradle asks for.
+[[nodiscard]] std::string ndkRevision(const fs::path& ndk)
+{
+    const core::Result<std::string> text = core::readTextFile(ndk / "source.properties");
+    if (!text)
+    {
+        return {};
+    }
+    std::string_view rest = *text;
+    while (!rest.empty())
+    {
+        const std::size_t end = rest.find('\n');
+        std::string_view line = rest.substr(0, end);
+        rest = end == std::string_view::npos ? std::string_view{} : rest.substr(end + 1);
+        if (!line.starts_with("Pkg.Revision"))
+        {
+            continue;
+        }
+        const std::size_t equals = line.find('=');
+        if (equals == std::string_view::npos)
+        {
+            return {};
+        }
+        std::string_view value = line.substr(equals + 1);
+        while (!value.empty() && (value.front() == ' ' || value.front() == '\t'))
+        {
+            value.remove_prefix(1);
+        }
+        const std::size_t cut = value.find_first_of("- \t\r");
+        return std::string(value.substr(0, cut));
+    }
+    return {};
+}
+
 // A value of a properties file, where a backslash starts an escape.
 [[nodiscard]] std::string propertyValue(std::string_view value)
 {
@@ -290,7 +324,19 @@ core::Result<ExportResult> exportAndroid(const ExportPlan& plan, const std::func
             DEVEX_LOG_WARNING("The game keeps the default icon: its image could not be read");
         }
     }
-    if (core::Result<void> written = core::writeTextFile(gradle / "devex.properties", androidGradleProperties(plan, hasIcon)); !written)
+    // The NDK it was built with, whose tools strip the libraries: the engine keeps its symbols for the crash reports of
+    // the computer, about 400 MB that a phone has no use for. Gradle takes it only with its version, which it otherwise
+    // assumes to be its own.
+    std::string properties = androidGradleProperties(plan, hasIcon);
+    if (!tools.ndk.empty())
+    {
+        properties += std::format("ndkPath={}\n", propertyValue(core::toUtf8(tools.ndk)));
+        if (const std::string version = ndkRevision(tools.ndk); !version.empty())
+        {
+            properties += std::format("ndkVersion={}\n", propertyValue(version));
+        }
+    }
+    if (core::Result<void> written = core::writeTextFile(gradle / "devex.properties", properties); !written)
     {
         return std::unexpected(written.error());
     }

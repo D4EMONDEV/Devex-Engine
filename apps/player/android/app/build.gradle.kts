@@ -15,6 +15,10 @@ val game = Properties().apply {
 android {
     namespace = "com.devex.player"
     compileSdk = 35
+    // The NDK of the export, whose tools strip the debug symbols of the libraries from the APK, with its version, which
+    // Gradle otherwise assumes to be its own.
+    game.getProperty("ndkPath")?.let { ndkPath = it }
+    game.getProperty("ndkVersion")?.let { ndkVersion = it }
 
     defaultConfig {
         applicationId = game.getProperty("applicationId", "com.devex.player")
