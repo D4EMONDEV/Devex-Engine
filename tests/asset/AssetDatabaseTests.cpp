@@ -644,6 +644,8 @@ TEST_CASE("Window and export settings of projects are saved and read back", "[as
     project.androidRendering = devex::asset::PlatformRendering::mobile();
     project.androidRendering.compatibility = true;
     project.androidRendering.volumetricFog = true;
+    project.androidRendering.renderScale = 0.65f;
+    CHECK(devex::asset::writeProjectText(project).find("render_scale=0.65") != std::string::npos);
     project.window = {.width = 1920, .height = 1080, .fullscreen = true, .vsyncMode = devex::asset::VSyncMode::Disabled, .maxFrameRate = 144,
                       .icon = AssetId::generate(), .desktopEntry = false, .quitOnBack = false, .emulateMouseFromTouch = false,
                       .emulateTouchFromMouse = true};

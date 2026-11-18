@@ -6092,6 +6092,34 @@ tourner le jeu web, par Dawn sur ce même Vulkan 1.1. Choisi avec l'utilisateur,
 Ces téléphones ont l'image de Compatibility, et les shaders du projet n'y ont leur WGSL que si le projet est en
 Compatibility, puisqu'il se compile à l'import pour le web.
 
+## Les API graphiques — plan décidé le 2026-11-19
+
+L'APK de l'arène s'installe et tourne sur le Galaxy A13 5G avec WebGPU, mais il rame, plus que la page itch.io sur le
+même téléphone. L'utilisateur veut à terme les principales API, comme Godot : Vulkan, Direct3D 12, Metal, OpenGL et
+OpenGL ES ; X11 et Wayland, des systèmes de fenêtres et pas des API graphiques, marchent déjà (jalon 70), SDL choisissant
+l'un ou l'autre, et Vulkan comme WebGPU dessinant sur les deux. Choisi avec lui, avant le code :
+
+- **Deux renderers, comme Godot** : le complet, aujourd'hui Vulkan, passera sur une couche commune (le *RenderingDevice*
+  de Godot) qui parlera Vulkan, puis Direct3D 12, puis Metal ; c'est le « second backend au besoin réel » qu'attendait
+  l'extraction d'une RHI (voir *Rendu*). Le léger devient un renderer **OpenGL 3.3, OpenGL ES 3.0 et WebGL2**, le
+  *Compatibility* de Godot, sur un contexte que SDL crée (WGL, GLX, EGL, WebGL).
+- **OpenGL d'abord** : les vieux téléphones, sans Vulkan ou avec un pilote Vulkan faible, les navigateurs sans WebGPU
+  (Firefox sur Android, les vieux Safari) et les vieux ordinateurs. Direct3D 12 et Metal viendront ensuite ; Metal
+  demandera un Mac pour le construire et l'essayer.
+- **Les shaders traduits de Slang** : ceux du renderer léger, compilés en SPIR-V puis traduits en GLSL 3.30 et GLSL ES
+  3.00 par SPIRV-Cross, au build pour ceux du moteur et à l'import pour ceux du projet. Une seule source. Ni WebGL2 ni
+  OpenGL ES 3.0 n'ont de compute : ce que WebGPU calcule ainsi (l'exposition, les cartes de l'environnement) y passe par
+  des fragments.
+- **OpenGL remplace WebGPU** une fois qu'il dessine tout ce que WebGPU dessine : un seul renderer léger, comme Godot. Le
+  web passera par WebGL2, que tous les navigateurs ont ; Android par Vulkan 1.3, sinon OpenGL ES, sans Dawn dans l'APK.
+  D'ici là, WebGPU reste le renderer du web et le secours d'Android.
+- **L'échelle 3D sur téléphone, avant OpenGL** : sur Android, SDL ignore `SDL_WINDOW_HIGH_PIXEL_DENSITY`, et le jeu
+  dessinait chaque pixel de l'écran, environ quatre fois plus que la page sur le même téléphone, ce que le renderer
+  OpenGL n'aurait pas changé. Comme `rendering/scaling_3d/scale` de Godot, la scène est dessinée en moins de pixels puis
+  agrandie, l'interface gardant chaque pixel de l'écran. Un réglage de la carte **Mobile**, à 0,5 dans le préréglage
+  mobile. Les sprites du monde, dessinés dans la même image que la 3D, la suivent. Le navigateur d'un téléphone, qui
+  dessine déjà aux pixels de la page, ne la réduit pas davantage.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

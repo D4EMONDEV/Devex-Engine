@@ -92,7 +92,8 @@ ouvrir que des WebSockets chiffrés, ce qui compte pour le multijoueur (voir plu
   button** et **Touch joystick**, s'affichent dès le chargement.
 - **Sur un téléphone ou une tablette**, le jeu dessine comme sur Android : la carte **Mobile** de Project Settings >
   Rendering coupe les effets lourds (par défaut, tous), et le navigateur dessine les pixels de la page plutôt que tous
-  ceux de l'écran, deux ou trois fois plus nombreux, avec des ombres moitié moins fines. Le son y part par paquets plus
+  ceux de l'écran, deux ou trois fois plus nombreux, avec des ombres moitié moins fines. Son **Render Scale** ne vaut
+  que pour Android, qui dessine sinon tous les pixels de l'écran. Le son y part par paquets plus
   longs, pour ne pas grésiller quand une image tarde.
 - **Le multijoueur** : un jeu dans un navigateur rejoint une partie, mais ne l'héberge pas. Il passe par un WebSocket,
   que l'hôte ouvre sur le même port qu'ENet ; depuis une page en https, il faut un proxy qui chiffre, comme Caddy :

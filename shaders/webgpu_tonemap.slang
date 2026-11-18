@@ -74,17 +74,17 @@ float4 tonemapFragment(VertexOutput input) : SV_Target
     uint imageWidth;
     uint imageHeight;
     sceneTexture.GetDimensions(imageWidth, imageHeight);
-    // A capture draws the whole scene into a smaller image, which samples it rather than reading
-    // its pixels one for one.
+    // A capture draws the whole scene into a smaller image, and a scene drawn in fewer pixels is
+    // stretched over the window: both sample it rather than read its pixels one for one.
     const float2 targetSize = float2(settings.targetWidth, settings.targetHeight);
-    const bool smaller = targetSize.x < float(imageWidth) || targetSize.y < float(imageHeight);
+    const bool resized = targetSize.x != float(imageWidth) || targetSize.y != float(imageHeight);
     const float2 imageUv = (input.position.xy + 0.5) / targetSize;
     const float2 fromMiddle = imageUv - 0.5;
     const float3 sampled = sceneTexture.SampleLevel(clampSampler, input.position.xy / targetSize, 0.0).rgb;
     const float3 loaded = sceneTexture.Load(int3(int2(input.position.xy), 0)).rgb;
     // The halo, read by every pixel as WGSL wants it.
     const float3 halo = max(bloomTexture.Sample(clampSampler, imageUv).rgb, float3(0.0));
-    float3 color = max(smaller ? sampled : loaded, float3(0.0));
+    float3 color = max(resized ? sampled : loaded, float3(0.0));
     if (settings.chromatic > 0.0)
     {
         // Lenses bend the colours apart, the more so away from the middle.

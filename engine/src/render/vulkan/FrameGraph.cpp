@@ -47,6 +47,9 @@ struct VulkanRenderer::FrameGraph
     RenderGraph graph;
     math::Extent2D extent{};
     math::Extent2D windowExtent{};
+    // The size of the target: that of the window, which a scene drawn in fewer pixels is stretched over, or of the image
+    // of a view.
+    math::Extent2D targetExtent{};
     VkFormat targetFormat = VK_FORMAT_UNDEFINED;
     VkFormat toolsFormat = VK_FORMAT_UNDEFINED;
     bool toViewport = false;
@@ -342,6 +345,7 @@ core::Result<void> VulkanRenderer::createFrameImages(FrameGraph& view)
     // A view is drawn straight into its image, imported as the backbuffer is.
     view.target = view.toViewport && view.extraView == nullptr ? *view.created[viewportIndex]
                                                                : view.backbuffer;
+    view.targetExtent = view.toViewport || view.extraView != nullptr ? view.extent : view.windowExtent;
 
     return {};
 }
@@ -1487,7 +1491,7 @@ void VulkanRenderer::addTonemapPasses(FrameGraph& view)
     // Draws the scene into the target, or into the smaller image of a capture.
     std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> captureAccesses = tonemapAccesses;
     view.graph.addPass("Tonemap", std::move(tonemapAccesses), [&](VkCommandBuffer commands)
-                       { drawTonemap(view, commands, view.target, view.extent); });
+                       { drawTonemap(view, commands, view.target, view.targetExtent); });
     if (view.capture)
     {
         const RenderGraph::ImageId captured = *view.created[view.captureIndex];
@@ -1751,7 +1755,7 @@ void VulkanRenderer::addInterfacePasses(FrameGraph& view)
                            {
                                drawInterface(view, commands, view.graph.view(view.target),
                                              VK_ATTACHMENT_LOAD_OP_LOAD, math::Vec4{0.0f},
-                                             view.extent, m_world.uiDraws, 0, *m_uiPipeline,
+                                             view.targetExtent, m_world.uiDraws, 0, *m_uiPipeline,
                                              !targetEncodes);
                            });
     }

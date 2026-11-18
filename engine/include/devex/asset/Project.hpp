@@ -98,8 +98,11 @@ struct DEVEX_API PlatformRendering
     bool volumetricFog = true;
     // The shadows of the spot and point lights; the sun keeps its own.
     bool lightShadows = true;
+    // The share of the pixels of the screen, across and down, Android draws the scene with before it stretches it over
+    // the screen, from 0.25 to 1; the interface keeps every pixel. The browser of a phone draws those of the page.
+    float renderScale = 1.0f;
 
-    // Every heavy effect off.
+    // Every heavy effect off, and the scene drawn with half the pixels across and down.
     [[nodiscard]] static PlatformRendering mobile() noexcept
     {
         return PlatformRendering{.enabled = true,
@@ -109,7 +112,8 @@ struct DEVEX_API PlatformRendering
                                  .bloom = false,
                                  .lensEffects = false,
                                  .volumetricFog = false,
-                                 .lightShadows = false};
+                                 .lightShadows = false,
+                                 .renderScale = 0.5f};
     }
 
     bool operator==(const PlatformRendering&) const = default;

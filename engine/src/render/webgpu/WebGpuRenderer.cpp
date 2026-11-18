@@ -1271,13 +1271,16 @@ core::Result<void> WebGpuRenderer::endFrame()
     m_time = std::fmod(m_time + 1.0f, 1024.0f);
     m_shaderTime = static_cast<float>(
         std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now() - m_startTime).count(), 3600.0));
-    ensureSceneTarget(size);
+    // The scene in fewer pixels, stretched over the window by the tonemapping; the interface keeps every pixel.
+    const math::Extent2D sceneSize = scaledExtent(size, m_world.renderScale);
+    ensureSceneTarget(sceneSize);
     updateExposure();
     m_exposure = exposureFromEv100(m_ev100);
 
     // WebGPU's clip space has Y up, as the engine's matrices: the jitter of the antialiasing, given Y down, turns.
-    const math::Vec2 jitter = m_world.camera.antialiasing == Antialiasing::Temporal ? temporalJitter(m_frameIndex, size) : math::Vec2{0.0f};
-    const ViewMatrices matrices = prepareView(m_world.camera, size, math::Vec2{jitter.x, -jitter.y}, math::Mat4{1.0f});
+    const math::Vec2 jitter =
+        m_world.camera.antialiasing == Antialiasing::Temporal ? temporalJitter(m_frameIndex, sceneSize) : math::Vec2{0.0f};
+    const ViewMatrices matrices = prepareView(m_world.camera, sceneSize, math::Vec2{jitter.x, -jitter.y}, math::Mat4{1.0f});
     // The 2D lights that light what the camera sees of the plane of the sprites, and their shadows, as Vulkan gathers them.
     gatherLights2D(m_world, math::Vec2(matrices.cameraPosition), matrices.unjitteredViewProjection, m_lights2D, m_shadows2D);
     const FrameData frameData{.viewProjection = matrices.viewProjection,

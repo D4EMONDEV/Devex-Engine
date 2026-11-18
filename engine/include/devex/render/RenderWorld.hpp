@@ -5,7 +5,9 @@
 #include <devex/core/SlotMap.hpp>
 #include <devex/math/Math.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -804,6 +806,10 @@ struct DEVEX_API RenderWorld
     // Size in pixels of the image the scene is drawn into for the tools, which show it with
     // UiSource::SceneImage. Zero draws the scene over the whole window.
     math::Extent2D viewport;
+    // Without a viewport, the share of the pixels of the window, across and down, the scene is drawn with before it is
+    // stretched over the window, from 0.25 to 1; the interface keeps every pixel. Vulkan keeps them all in a frame the
+    // tools draw over, which tests the depth of the scene.
+    float renderScale = 1.0f;
     // Other cameras, each drawn into an image of its own before the main image, for the tools: at
     // most four.
     std::vector<RenderView> views;
@@ -998,5 +1004,16 @@ struct DEVEX_API RenderWorld
         toolsDraws = std::move(toolsDrawStorage);
     }
 };
+
+// The size of a scene drawn with `scale` of the pixels of `window`, across and down: from a quarter of them to all, and one
+// pixel at least.
+[[nodiscard]] inline math::Extent2D scaledExtent(math::Extent2D window, float scale) noexcept
+{
+    const float kept = std::isfinite(scale) ? std::clamp(scale, 0.25f, 1.0f) : 1.0f;
+    const auto side = [kept](std::uint32_t pixels) {
+        return std::max(1U, static_cast<std::uint32_t>(std::lround(static_cast<float>(pixels) * kept)));
+    };
+    return {side(window.width), side(window.height)};
+}
 
 } // namespace devex::render

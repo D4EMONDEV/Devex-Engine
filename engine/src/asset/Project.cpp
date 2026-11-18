@@ -276,6 +276,7 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
             readBool(section, "lens_effects", android.lensEffects);
             readBool(section, "volumetric_fog", android.volumetricFog);
             readBool(section, "light_shadows", android.lightShadows);
+            android.renderScale = std::clamp(numberAttribute(section, "render_scale").value_or(1.0f), 0.25f, 1.0f);
             continue;
         }
         if (section.type == "window")
@@ -955,6 +956,10 @@ std::string writeProjectText(const Project& project)
             {
                 android.attributes.push_back({std::string(key), serialization::TextValue(key == "compatibility")});
             }
+        }
+        if (settings.renderScale != 1.0f)
+        {
+            android.attributes.push_back({"render_scale", serialization::TextValue(std::stod(std::format("{}", settings.renderScale)))});
         }
     }
 

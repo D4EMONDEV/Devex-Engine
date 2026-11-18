@@ -1430,11 +1430,18 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
         androidRendering[i] = toggle(row.editor);
         tooltip(row.row, std::string(androidRenderingFields[i].tip));
     }
+    const FormRow scaleRow = formRow(android, "Render Scale");
+    renderScale = numbers(scaleRow.editor, single,
+                          {.minValue = 25.0f, .maxValue = 100.0f, .step = 5.0f, .dragSpeed = 0.5f, .decimals = 0, .format = "{}%"})
+                      .front();
+    tooltip(scaleRow.row, "The share of the pixels of the screen, across and down, Android draws the scene with before it stretches it "
+                          "over the screen. The interface keeps every pixel.");
     mobilePreset = action(kit, actions(&android), Icon::Gauge, "Mobile Preset");
     tooltip(mobilePreset.entity, "Replaces on phones and turns every heavy effect off, as a new project does");
     note(&android,
-         "What a phone draws too slowly, turned off on Android and in the browsers of phones and tablets, which also draw the pixels of "
-         "the page rather than all those of their screen. The editor and computers keep everything.",
+         "What a phone draws too slowly, turned off on Android and in the browsers of phones and tablets. Android draws the scene at the "
+         "Render Scale of its screen; a browser draws the pixels of the page rather than all those of the screen. The editor and "
+         "computers keep everything.",
          "dim", 2.0f);
 
     // Physics.
@@ -1622,6 +1629,7 @@ void ProjectSettingsUi::sync(ToolsState& state, EditorUiKit& kit)
     {
         setToggle(androidRendering[i], project.androidRendering.*androidRenderingFields[i].member);
     }
+    setNumber(renderScale, std::round(project.androidRendering.renderScale * 100.0f));
     setNumber(frameRate, static_cast<float>(project.window.maxFrameRate));
     scene::UiNumberField& rate = scene().get<scene::UiNumberField>(frameRate);
     rate.format = rate.value < 0.5f ? "Unlimited" : "{} fps";
@@ -1771,6 +1779,10 @@ void ProjectSettingsUi::answer(ToolsState& state, EditorUiKit& kit)
         {
             project.androidRendering.*androidRenderingFields[i].member = scene().get<scene::UiToggle>(androidRendering[i]).value;
         }
+    }
+    if (world.wasChanged(renderScale))
+    {
+        project.androidRendering.renderScale = std::clamp(scene().get<scene::UiNumberField>(renderScale).value / 100.0f, 0.25f, 1.0f);
     }
     if (world.wasClicked(mobilePreset.entity))
     {

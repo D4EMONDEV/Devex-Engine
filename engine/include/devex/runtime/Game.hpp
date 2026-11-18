@@ -81,7 +81,8 @@ class GameRegistry;
 // 49: the scene gained the CSG components.
 // 50: the scene gained the GridMap component.
 // 68: the export for Android, in Project, gained the phones whose Android is 32 bits.
-inline constexpr std::uint32_t gameApiVersion = 68;
+// 69: the rendering of phones, in Project, gained the scale of the scene, and RenderWorld its renderScale.
+inline constexpr std::uint32_t gameApiVersion = 69;
 
 enum class SystemPhase : std::uint8_t
 {

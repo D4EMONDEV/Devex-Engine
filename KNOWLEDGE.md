@@ -4094,6 +4094,11 @@ public:
   avec `DEVEX_WEBGPU` dans les préréglages Android). `adb shell setprop debug.devex.renderer webgpu` le force. La surface
   WebGPU se refait quand `Window::native().window` change (`m_surfaceWindow`). L'export donne à Gradle `ndkPath` et
   `ndkVersion`, sans lesquels il n'épure pas les bibliothèques.
+- Sur Android, SDL ignore `SDL_WINDOW_HIGH_PIXEL_DENSITY` : la fenêtre a tous les pixels de la surface. L'échelle 3D
+  (`PlatformRendering::renderScale`, `RenderWorld::renderScale`, `scaledExtent`) réduit l'image de la scène, que la
+  tonemap agrandit sur la fenêtre en l'échantillonnant (`resized` dans `tonemap.slang` et `webgpu_tonemap.slang`) ;
+  l'interface est dessinée à la taille de la cible (`FrameGraph::targetExtent` dans Vulkan). Vulkan garde tous les pixels
+  dans une image où les outils dessinent par-dessus la scène, puisqu'ils testent sa profondeur.
 
 ## C++ des jeux pour le web (étape 5 du web)
 

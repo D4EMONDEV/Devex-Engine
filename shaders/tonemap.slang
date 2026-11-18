@@ -71,10 +71,10 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     uint imageWidth;
     uint imageHeight;
     resolvedTexture.GetDimensions(imageWidth, imageHeight);
-    // A capture draws the whole scene into a smaller image, which samples it rather than reading
-    // its pixels one for one.
+    // A capture draws the whole scene into a smaller image, and a scene drawn in fewer pixels is
+    // stretched over the window: both sample it rather than read its pixels one for one.
     const float2 targetSize = float2(settings.targetWidth, settings.targetHeight);
-    const bool smaller = targetSize.x < float(imageWidth) || targetSize.y < float(imageHeight);
+    const bool resized = targetSize.x != float(imageWidth) || targetSize.y != float(imageHeight);
     const float2 imageUv = (input.position.xy + 0.5) / targetSize;
     // The middle of the image, from which the corners are measured.
     const float2 fromMiddle = imageUv - 0.5;
@@ -88,7 +88,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
                        resolvedTexture.Sample(clampSampler, imageUv).g,
                        resolvedTexture.Sample(clampSampler, imageUv - shift).b);
     }
-    else if (smaller)
+    else if (resized)
     {
         color = resolvedTexture.Sample(clampSampler, input.position.xy / targetSize).rgb;
     }

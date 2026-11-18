@@ -1503,6 +1503,10 @@ void ApplicationRunner::render(bool gameplay)
                                                 .lensEffects = android.lensEffects,
                                                 .volumetricFog = android.volumetricFog,
                                                 .lightShadows = android.lightShadows});
+#if defined(__ANDROID__)
+        // The browser of a phone draws the pixels of the page already, two or three times fewer across.
+        world.renderScale = android.renderScale;
+#endif
     }
     m_animationViews.clear();
     m_animationViews.push_back(math::Vec3(math::inverse(world.camera.view)[3]));

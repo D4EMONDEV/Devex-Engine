@@ -157,7 +157,8 @@ private:
 // The window of a 3D scene drawn by one API: a rough sphere and a metallic one, a textured box on a plane and a
 // skinned box, lit by the sun, a point light and a spot, which cast shadows, and the environment baked from a sky
 // texture, in a height fog, with particles and a ribbon.
-[[nodiscard]] devex::render::CapturedImage drawMeshes(devex::render::RenderApi api, bool temporalAndBloom = false, bool lens = false)
+[[nodiscard]] devex::render::CapturedImage drawMeshes(devex::render::RenderApi api, bool temporalAndBloom = false, bool lens = false,
+                                                     float renderScale = 1.0f)
 {
     auto platform = devex::platform::Platform::create();
     REQUIRE(platform.has_value());
@@ -242,6 +243,7 @@ private:
         world.camera.antialiasing = temporalAndBloom ? devex::render::Antialiasing::Temporal : devex::render::Antialiasing::None;
         world.camera.bloom = temporalAndBloom ? 0.6f : 0.0f;
         world.camera.bloomThreshold = 0.6f;
+        world.renderScale = renderScale;
         world.camera.ambientOcclusion = 0.0f;
         world.camera.screenReflections = 0.0f;
         if (lens)
@@ -329,6 +331,8 @@ private:
             captured.push_back(std::move(image));
         }
     }
+    // The scene in fewer pixels than the window, which the capture shows whole.
+    CHECK(renderer->stats().sceneExtent == devex::render::scaledExtent({320, 240}, renderScale));
     REQUIRE(captured.size() == 1);
     return std::move(captured.front());
 }
@@ -848,6 +852,32 @@ TEST_CASE("WebGPU draws lit meshes, their shadows, the fog and particles as Vulk
     INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));
     CHECK(difference.channels < vulkan.rgba.size() / 100);
     CHECK(difference.mean < 1.5);
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("A scene drawn with half the pixels is stretched over the window, by WebGPU as by Vulkan", "[render][gpu][webgpu]")
+{
+    const ErrorCapture capture;
+    const devex::render::CapturedImage full = drawMeshes(devex::render::RenderApi::Vulkan);
+    const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan, false, false, 0.5f);
+    const devex::render::CapturedImage webgpu = drawMeshes(devex::render::RenderApi::WebGpu, false, false, 0.5f);
+    REQUIRE(vulkan.width == full.width);
+    REQUIRE(vulkan.height == full.height);
+    REQUIRE(webgpu.rgba.size() == vulkan.rgba.size());
+    const Difference apart = compare(vulkan, webgpu, 8);
+    INFO(std::format("WebGPU: {} channels differ, {:.2f} on average", apart.channels, apart.mean));
+    CHECK(apart.channels < vulkan.rgba.size() / 50);
+    CHECK(apart.mean < 2.0);
+    // The same picture as with every pixel, softer along the edges: the scene covers the window, not a corner of it.
+    const Difference softer = compare(full, vulkan, 24);
+    INFO(std::format("Every pixel: {} channels differ, {:.2f} on average", softer.channels, softer.mean));
+    CHECK(softer.channels < full.rgba.size() / 10);
+    CHECK(softer.mean < 4.0);
 
     for (const std::string& error : capture.errors())
     {

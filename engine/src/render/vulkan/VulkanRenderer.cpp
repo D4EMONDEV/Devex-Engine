@@ -1202,10 +1202,15 @@ core::Result<void> VulkanRenderer::endFrame()
     }
 
     const math::Extent2D viewport = m_world.viewport;
+    // What the tools draw over the scene tests its depth, which must then be as large as the window.
+    const bool overlaid = !m_world.sceneLines.empty() || !m_world.overlayLines.empty() || !m_world.overlayTriangles.empty() ||
+                          std::ranges::any_of(m_world.meshes, &MeshInstance::outlined) ||
+                          std::ranges::any_of(m_world.sprites, &RenderSprite::outlined) ||
+                          std::ranges::any_of(m_world.tilemaps, &RenderTilemap::outlined);
     m_sceneExtent = viewport.width > 0 && viewport.height > 0
                         ? math::Extent2D{std::min(viewport.width, maxViewportSize),
                                          std::min(viewport.height, maxViewportSize)}
-                        : m_swapchain->extent();
+                        : scaledExtent(m_swapchain->extent(), overlaid ? 1.0f : m_world.renderScale);
     if (const std::optional<PickRequest>& pick = m_world.pick; pick)
     {
         // A pixel outside the image shows nothing, which needs no GPU work.
