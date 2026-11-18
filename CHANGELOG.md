@@ -5,6 +5,27 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 
 ## À venir
 
+## 0.11.1 — 2026-11-18
+
+Les jeux web sur téléphone : plus fluides, le son sans grésillement, et l'arène du bac à sable jouable au doigt. Et les
+sauvegardes du navigateur, qu'un onglet ouvert en arrière-plan pouvait effacer. C'est toujours un aperçu.
+
+**Télécharger**
+
+- Windows : `devex-0.11.1-windows-x64-setup.exe`, sans droits administrateur, ou le `.zip` à extraire. L'installateur n'est pas
+  signé : si Windows affiche « Windows a protégé votre ordinateur », cliquer sur *Informations complémentaires*, puis *Exécuter quand même*.
+- Linux : `devex-0.11.1-linux-x64.tar.gz`, à extraire, puis lancer `bin/devex-editor`. Ubuntu 24.04 ou plus récent.
+- Le lecteur web vient avec l'éditeur, dans `platforms/web`.
+
+**Mettre à jour**
+
+- L'installateur remplace la version déjà installée, au même endroit. Ni les projets ni les réglages n'y sont : ils restent.
+- Un jeu web exporté avec la 0.11.0 garde son lecteur : l'exporter à nouveau lui donne ces corrections.
+- Un projet qui n'a pas réglé la carte Android coupe désormais les effets lourds sur téléphone, Android compris ; la carte
+  **Mobile** les rend.
+
+**Nouveautés**
+
 - **Les jeux web sur téléphone** : dans le navigateur d'un téléphone ou d'une tablette, le jeu coupe les effets lourds comme sur Android, dessine les pixels de la page plutôt que tous ceux de l'écran, et des ombres moitié moins fines ; il allait jusqu'à quelques images par seconde. Le son ne grésille plus quand une image tarde. Les commandes à l'écran s'affichent dès le chargement, sans attendre le premier doigt.
 - **La carte Mobile de Project Settings > Rendering** remplace la carte Android : elle vaut pour Android et pour les navigateurs des téléphones, et un projet qui ne l'a pas réglée coupe tous les effets lourds sur téléphone.
 - **Se déplacer au doigt dans l'arène du bac à sable** : un joystick pour marcher, un pour regarder, et Run, Jump et Fire. Fire lance une balle, et la gâchette droite d'une manette aussi.
