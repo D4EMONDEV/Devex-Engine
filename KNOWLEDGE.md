@@ -4116,6 +4116,13 @@ public:
 - Les captures dessinent dans une image `SRGB8_ALPHA8`, la fenêtre dans un framebuffer sRGB quand le système le donne
   (`m_windowSrgb`, lu par `GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING`) ; OpenGL l'encode avec `GL_FRAMEBUFFER_SRGB`, OpenGL ES
   de lui-même. Sinon la tonemap et l'interface encodent (`encode`, `displaySpace`).
+- La 3D (`GlScene.cpp`) : la caméra prend `clipCorrection` (z' = 2z - w), et la profondeur inversée de Vulkan se garde
+  (effacée à 0, `GL_GREATER`) ; `frustumOf` prend la matrice sans correction. Les ombres se dessinent avec
+  `shadowCorrection() * lecture`, où la matrice de lecture est celle de Vulkan (Y vers le bas, `flipY()` donné à
+  `assignShadowViews`), et la tuile de l'atlas garde ses pixels comme viewport. Les instances sont des attributs 6 à 11
+  (colonnes, octets des lumières, os), pointés au début de chaque lot (`bindInstances`) ; liaisons des blocs et unités de
+  texture dans `binding::` et `unit::` de `GlRenderer.hpp`. Les entrées d'un shader de sommets tiennent dans une seule
+  structure (`MeshInput`, `SkinnedInput`) : Slang décale les `vk::location` de chaque paramètre.
 
 ## C++ des jeux pour le web (étape 5 du web)
 

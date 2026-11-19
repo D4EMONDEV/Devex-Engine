@@ -29,15 +29,6 @@ namespace {
 using namespace gl;
 
 // The uniform blocks of shaders/gl_*.slang, laid out as std140 lays them out.
-struct SkyData
-{
-    math::Mat4 skyInverseViewProjection{1.0f};
-    math::Vec4 sky{0.0f};
-    float exposure = 1.0f;
-    float rotation = 0.0f;
-    float padding0 = 0.0f;
-    float padding1 = 0.0f;
-};
 struct SpriteFrameData
 {
     math::Mat4 viewProjection{1.0f};
@@ -71,11 +62,7 @@ struct TonemapData
     math::Vec4 filter{1.0f};
     math::Vec4 balance{1.0f};
 };
-static_assert(sizeof(SkyData) == 96 && sizeof(SpriteFrameData) == 80 && sizeof(UiDrawData) == 48 && sizeof(TonemapData) == 80);
-
-// The bindings of the uniform blocks, and the texture units the samplers of a program take in their order.
-constexpr GLuint frameBinding = 0;
-constexpr GLuint drawBinding = 1;
+static_assert(sizeof(SpriteFrameData) == 80 && sizeof(UiDrawData) == 48 && sizeof(TonemapData) == 80);
 
 [[nodiscard]] std::string text(const GLubyte* value)
 {
@@ -92,6 +79,11 @@ void DEVEX_GL_CALL forwardDebugMessage(GLenum source, GLenum type, GLuint id, GL
     if (type == GL_DEBUG_TYPE_ERROR || severity == GL_DEBUG_SEVERITY_HIGH)
     {
         DEVEX_LOG_ERROR("OpenGL: {}", said);
+    }
+    else if (type == GL_DEBUG_TYPE_PERFORMANCE)
+    {
+        // A driver says it compiles a shader again for the state it is drawn with, which happens once.
+        DEVEX_LOG_DEBUG("OpenGL: {}", said);
     }
     else if (severity == GL_DEBUG_SEVERITY_MEDIUM)
     {
@@ -226,16 +218,22 @@ GlRenderer::~GlRenderer()
 {
     if (m_loaded)
     {
+        destroySceneResources();
         m_textures.forEach([](TextureHandle, const GpuTexture& texture) { gl::DeleteTextures(1, &texture.texture); });
+        m_meshes.forEach([](MeshHandle, const GpuMesh& mesh) {
+            const GLuint meshBuffers[] = {mesh.vertices, mesh.indices, mesh.skin};
+            gl::DeleteBuffers(3, meshBuffers);
+            gl::DeleteVertexArrays(1, &mesh.array);
+        });
+        m_materials.forEach([](MaterialHandle, const GpuMaterial& material) { gl::DeleteBuffers(1, &material.uniform); });
         for (const Program* program : {&m_skyProgram, &m_spriteProgram, &m_uiProgram, &m_tonemapProgram})
         {
             gl::DeleteProgram(program->program);
         }
         const GLuint arrays[] = {m_emptyArray, m_spriteArray, m_uiArray};
         gl::DeleteVertexArrays(3, arrays);
-        const GLuint buffers[] = {m_spriteBuffer, m_uiVertexBuffer, m_uiIndexBuffer, m_skyBuffer, m_spriteFrameBuffer, m_tonemapBuffer,
-                                  m_uiDrawBuffer};
-        gl::DeleteBuffers(7, buffers);
+        const GLuint buffers[] = {m_spriteBuffer, m_uiVertexBuffer, m_uiIndexBuffer, m_spriteFrameBuffer, m_tonemapBuffer, m_uiDrawBuffer};
+        gl::DeleteBuffers(6, buffers);
         const GLuint samplers[] = {m_linearSampler, m_nearestSampler, m_clampSampler};
         gl::DeleteSamplers(3, samplers);
         const GLuint textures[] = {m_white, m_black};
@@ -307,6 +305,7 @@ core::Result<void> GlRenderer::initialize()
     // The scene keeps its light in half floats where the system can draw into them; a phone without leaves the light at 8
     // bits, as the display shows it.
     m_sceneFormat = halfFloatTargets ? GL_RGBA16F : GL_RGBA8;
+    m_halfFloatTargets = halfFloatTargets;
     GLint encoding = 0;
     gl::GetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, m_es ? GL_BACK : GL_BACK_LEFT, GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING,
                                             &encoding);
@@ -337,22 +336,21 @@ core::Result<void> GlRenderer::initialize()
     {
         return linked;
     }
-    bindProgram(m_skyProgram, {{"SkyData", frameBinding}}, {"skyTexture"});
-    bindProgram(m_spriteProgram, {{"SpriteFrame", frameBinding}}, {"spriteTexture"});
-    bindProgram(m_uiProgram, {{"DrawData", drawBinding}}, {"uiTexture"});
-    bindProgram(m_tonemapProgram, {{"TonemapData", frameBinding}}, {"sceneTexture", "bloomTexture", "colorTableTexture"});
+    bindProgram(m_skyProgram, {{"SceneData", binding::scene}},
+                {{"irradianceEnvironment", unit::irradiance}, {"specularEnvironment", unit::specular}, {"skyTexture", unit::first}});
+    bindProgram(m_spriteProgram, {{"SpriteFrame", binding::spriteFrame}}, {{"spriteTexture", unit::first}});
+    bindProgram(m_uiProgram, {{"DrawData", binding::uiDraw}}, {{"uiTexture", unit::first}});
+    bindProgram(m_tonemapProgram, {{"TonemapData", binding::tonemap}},
+                {{"sceneTexture", unit::first}, {"bloomTexture", unit::second}, {"colorTableTexture", unit::third}});
 
     gl::GenVertexArrays(1, &m_emptyArray);
     gl::GenVertexArrays(1, &m_spriteArray);
     gl::GenVertexArrays(1, &m_uiArray);
-    const std::array buffers{&m_spriteBuffer, &m_uiVertexBuffer, &m_uiIndexBuffer, &m_skyBuffer, &m_spriteFrameBuffer, &m_tonemapBuffer,
-                             &m_uiDrawBuffer};
+    const std::array buffers{&m_spriteBuffer, &m_uiVertexBuffer, &m_uiIndexBuffer, &m_spriteFrameBuffer, &m_tonemapBuffer, &m_uiDrawBuffer};
     for (GLuint* buffer : buffers)
     {
         gl::GenBuffers(1, buffer);
     }
-    gl::BindBuffer(GL_UNIFORM_BUFFER, m_skyBuffer);
-    gl::BufferData(GL_UNIFORM_BUFFER, sizeof(SkyData), nullptr, GL_DYNAMIC_DRAW);
     gl::BindBuffer(GL_UNIFORM_BUFFER, m_spriteFrameBuffer);
     gl::BufferData(GL_UNIFORM_BUFFER, sizeof(SpriteFrameData), nullptr, GL_DYNAMIC_DRAW);
     gl::BindBuffer(GL_UNIFORM_BUFFER, m_tonemapBuffer);
@@ -403,7 +401,13 @@ core::Result<void> GlRenderer::initialize()
     };
     pixel(m_white, {255, 255, 255, 255});
     pixel(m_black, {0, 0, 0, 255});
+    // A normal map that leaves the normal as it is.
+    pixel(m_flatNormal, {128, 128, 255, 255});
     gl::BindTexture(GL_TEXTURE_2D, 0);
+    if (core::Result<void> scene = createSceneResources(); !scene)
+    {
+        return scene;
+    }
     applyPresentMode();
     if (const GLenum error = gl::GetError(); error != GL_NO_ERROR)
     {
@@ -448,7 +452,7 @@ core::Result<GlRenderer::Program> GlRenderer::linkProgram(std::string_view verte
 }
 
 void GlRenderer::bindProgram(const Program& program, std::initializer_list<std::pair<const char*, GLuint>> blocks,
-                             std::initializer_list<const char*> samplers) const
+                             std::initializer_list<std::pair<const char*, GLint>> samplers) const
 {
     for (const auto& [name, binding] : blocks)
     {
@@ -464,14 +468,12 @@ void GlRenderer::bindProgram(const Program& program, std::initializer_list<std::
         }
     }
     gl::UseProgram(program.program);
-    GLint unit = 0;
-    for (const char* name : samplers)
+    for (const auto& [name, textureUnit] : samplers)
     {
         if (const GLint location = gl::GetUniformLocation(program.program, name); location >= 0)
         {
-            gl::Uniform1i(location, unit);
+            gl::Uniform1i(location, textureUnit);
         }
-        ++unit;
     }
     gl::UseProgram(0);
 }
@@ -592,7 +594,49 @@ core::Result<MeshHandle> GlRenderer::createMesh(const asset::MeshData& mesh)
     {
         return core::makeError(core::ErrorCode::InvalidArgument, "a mesh needs vertices and indices");
     }
-    return m_meshes.insert({.submeshes = static_cast<std::uint32_t>(std::max<std::size_t>(mesh.submeshes.size(), 1))});
+    GpuMesh gpu;
+    const auto upload = [](GLuint& buffer, GLenum target, const void* data, std::size_t size) {
+        gl::GenBuffers(1, &buffer);
+        gl::BindBuffer(target, buffer);
+        gl::BufferData(target, static_cast<GLsizeiptr>(size), data, GL_STATIC_DRAW);
+    };
+    gl::GenVertexArrays(1, &gpu.array);
+    gl::BindVertexArray(gpu.array);
+    upload(gpu.vertices, GL_ARRAY_BUFFER, mesh.vertices.data(), mesh.vertices.size() * sizeof(asset::Vertex));
+    const auto at = [](std::size_t offset) { return reinterpret_cast<const void*>(offset); };
+    constexpr GLsizei stride = sizeof(asset::Vertex);
+    gl::VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, at(offsetof(asset::Vertex, position)));
+    gl::VertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, at(offsetof(asset::Vertex, normal)));
+    gl::VertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, at(offsetof(asset::Vertex, uv)));
+    gl::VertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, at(offsetof(asset::Vertex, tangent)));
+    for (GLuint location = 0; location < 4; ++location)
+    {
+        gl::EnableVertexAttribArray(location);
+    }
+    if (!mesh.skin.empty())
+    {
+        upload(gpu.skin, GL_ARRAY_BUFFER, mesh.skin.data(), mesh.skin.size() * sizeof(asset::VertexSkin));
+        constexpr GLsizei skinStride = sizeof(asset::VertexSkin);
+        gl::VertexAttribIPointer(4, 4, GL_UNSIGNED_SHORT, skinStride, at(offsetof(asset::VertexSkin, joints)));
+        gl::VertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, skinStride, at(offsetof(asset::VertexSkin, weights)));
+        gl::EnableVertexAttribArray(4);
+        gl::EnableVertexAttribArray(5);
+    }
+    // The attributes of its instances, which each batch points at where its own start: once an instance.
+    for (GLuint location = 6; location < 12; ++location)
+    {
+        gl::EnableVertexAttribArray(location);
+        gl::VertexAttribDivisor(location, 1);
+    }
+    upload(gpu.indices, GL_ELEMENT_ARRAY_BUFFER, mesh.indices.data(), mesh.indices.size() * sizeof(std::uint32_t));
+    gl::BindVertexArray(0);
+    gpu.submeshes = mesh.submeshes;
+    if (gpu.submeshes.empty())
+    {
+        gpu.submeshes.push_back({.firstIndex = 0, .indexCount = static_cast<std::uint32_t>(mesh.indices.size())});
+    }
+    gpu.bounds = mesh.bounds;
+    return m_meshes.insert(std::move(gpu));
 }
 
 bool GlRenderer::isReady(MeshHandle mesh) const noexcept
@@ -607,13 +651,18 @@ bool GlRenderer::isReady(TextureHandle texture) const noexcept
 
 void GlRenderer::destroyMesh(MeshHandle mesh)
 {
-    static_cast<void>(m_meshes.remove(mesh));
+    if (const std::optional<GpuMesh> removed = m_meshes.remove(mesh))
+    {
+        const GLuint buffers[] = {removed->vertices, removed->indices, removed->skin};
+        gl::DeleteBuffers(3, buffers);
+        gl::DeleteVertexArrays(1, &removed->array);
+    }
 }
 
 std::uint32_t GlRenderer::submeshCount(MeshHandle mesh) const noexcept
 {
     const GpuMesh* const record = m_meshes.find(mesh);
-    return record != nullptr ? record->submeshes : 0;
+    return record != nullptr ? static_cast<std::uint32_t>(record->submeshes.size()) : 0;
 }
 
 core::Result<TextureHandle> GlRenderer::createTexture(const asset::TextureData& texture)
@@ -729,12 +778,16 @@ void GlRenderer::updateMaterial(MaterialHandle handle, const MaterialDesc& mater
     if (GpuMaterial* const stored = m_materials.find(handle))
     {
         stored->description = material;
+        stored->written = false;
     }
 }
 
 void GlRenderer::destroyMaterial(MaterialHandle material)
 {
-    static_cast<void>(m_materials.remove(material));
+    if (const std::optional<GpuMaterial> removed = m_materials.remove(material))
+    {
+        gl::DeleteBuffers(1, &removed->uniform);
+    }
 }
 
 core::Result<ShaderHandle> GlRenderer::createShader(const asset::ShaderData& shader)
@@ -766,6 +819,7 @@ RenderWorld& GlRenderer::beginFrame() noexcept
 
 void GlRenderer::resetSceneHistory() noexcept
 {
+    m_snapExposure = true;
 }
 
 core::Result<void> GlRenderer::endFrame()
@@ -783,27 +837,54 @@ core::Result<void> GlRenderer::endFrame()
     m_world.camera = blendPostVolumes(m_world.camera, m_world.postVolumes);
     m_drawCalls = 0;
     m_time = std::fmod(m_time + 1.0f, 1024.0f);
-    // The exposure the camera sets; the measured one comes with the 3D.
-    m_ev100 = m_world.camera.ev100 - m_world.camera.exposureCompensation;
+    updateExposure();
     m_exposure = exposureFromEv100(m_ev100);
 
     // The scene in fewer pixels, stretched over the window by the tonemapping; the interface keeps every pixel.
     const math::Extent2D sceneSize = scaledExtent(size, m_world.renderScale);
-    if (core::Result<void> target = ensureTarget(m_scene, sceneSize, m_sceneFormat, GL_RGBA, m_sceneFormat == GL_RGBA16F ? GL_HALF_FLOAT
-                                                                                                                         : GL_UNSIGNED_BYTE);
-        !target)
+    if (m_scene.size != sceneSize || m_scene.framebuffer == 0)
     {
-        if (m_sceneFormat == GL_RGBA8)
+        if (core::Result<void> target = ensureTarget(m_scene, sceneSize, m_sceneFormat, GL_RGBA,
+                                                     m_sceneFormat == GL_RGBA16F ? GL_HALF_FLOAT : GL_UNSIGNED_BYTE);
+            !target)
         {
-            return target;
+            if (m_sceneFormat == GL_RGBA8)
+            {
+                return target;
+            }
+            m_sceneFormat = GL_RGBA8;
+            if (core::Result<void> plain = ensureTarget(m_scene, sceneSize, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE); !plain)
+            {
+                return plain;
+            }
         }
-        m_sceneFormat = GL_RGBA8;
-        if (core::Result<void> plain = ensureTarget(m_scene, sceneSize, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE); !plain)
+        // Its depth, reversed as Vulkan keeps it: 0 is infinitely far.
+        if (m_sceneDepth != 0)
         {
-            return plain;
+            gl::DeleteTextures(1, &m_sceneDepth);
+        }
+        gl::GenTextures(1, &m_sceneDepth);
+        gl::BindTexture(GL_TEXTURE_2D, m_sceneDepth);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+        gl::TexImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(GL_DEPTH_COMPONENT32F), static_cast<GLsizei>(sceneSize.width),
+                       static_cast<GLsizei>(sceneSize.height), 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        gl::BindTexture(GL_TEXTURE_2D, 0);
+        gl::BindFramebuffer(GL_FRAMEBUFFER, m_scene.framebuffer);
+        gl::FramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_sceneDepth, 0);
+        if (const GLenum status = gl::CheckFramebufferStatus(GL_FRAMEBUFFER); status != GL_FRAMEBUFFER_COMPLETE)
+        {
+            return core::makeError(core::ErrorCode::Graphics, "OpenGL cannot draw the scene with its depth: {:#x}", status);
         }
     }
-    const ViewMatrices matrices = prepareView(m_world.camera, sceneSize, math::Vec2{0.0f}, math::Mat4{1.0f});
+    // The clip space of OpenGL runs from -1 to 1 in depth: the reversed depth of Vulkan, from 0 to 1, is stretched over it,
+    // which keeps what the depth buffer holds.
+    math::Mat4 clipCorrection{1.0f};
+    clipCorrection[2][2] = 2.0f;
+    clipCorrection[3][2] = -1.0f;
+    const ViewMatrices matrices = prepareView(m_world.camera, sceneSize, math::Vec2{0.0f}, clipCorrection);
+    // The frustum of the depth from 0 to 1, which the culling expects.
+    const Frustum frustum = frustumOf(math::inverse(clipCorrection) * matrices.unjitteredViewProjection);
+    prepareMeshes(matrices, frustum, sceneSize);
 
     // The sprites in drawing order, by runs that read one texture.
     const SpriteResources resources{
@@ -813,51 +894,51 @@ core::Result<void> GlRenderer::endFrame()
         },
         .materialIndex = [](MaterialHandle) { return 0U; },
         .canvasShader = [](MaterialHandle) { return ShaderHandle{}; },
-        .sortDistance =
-            [this, camera = matrices.cameraPosition](math::Vec3 point) {
-                if (m_world.camera.projection == Projection::Orthographic)
-                {
-                    return -(m_world.camera.view * math::Vec4(point, 1.0f)).z;
-                }
-                const math::Vec3 toCamera = point - camera;
-                return math::dot(toCamera, toCamera);
-            },
+        .sortDistance = [this, camera = matrices.cameraPosition](math::Vec3 point) { return sortDistance(point, camera); },
     };
-    gatherSprites(m_world, frustumOf(matrices.unjitteredViewProjection), resources, m_spriteFrame);
-    m_spriteRuns.clear();
-    for (const SpriteBatch& batch : m_spriteFrame.batches)
-    {
-        for (std::uint32_t index = batch.first; index < batch.first + batch.count; ++index)
-        {
-            const std::uint32_t texture = m_spriteFrame.sprites[index].texture;
-            if (m_spriteRuns.empty() || m_spriteRuns.back().texture != texture ||
-                m_spriteRuns.back().first + m_spriteRuns.back().count != index)
-            {
-                m_spriteRuns.push_back({.first = index, .texture = texture});
-            }
-            ++m_spriteRuns.back().count;
-        }
-    }
+    gatherSprites(m_world, frustum, resources, m_spriteFrame);
     if (!m_spriteFrame.sprites.empty())
     {
         growBuffer(m_spriteBuffer, GL_ARRAY_BUFFER, m_spriteCapacity, m_spriteFrame.sprites.size() * sizeof(GpuSprite));
         gl::BufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(m_spriteFrame.sprites.size() * sizeof(GpuSprite)),
                           m_spriteFrame.sprites.data());
     }
-
-    // The scene: the environment, then the sprites over it.
-    gl::BindFramebuffer(GL_FRAMEBUFFER, m_scene.framebuffer);
-    gl::Viewport(0, 0, static_cast<GLsizei>(sceneSize.width), static_cast<GLsizei>(sceneSize.height));
-    gl::Disable(GL_DEPTH_TEST);
-    gl::Disable(GL_CULL_FACE);
-    gl::Disable(GL_SCISSOR_TEST);
-    gl::Disable(GL_BLEND);
-    gl::ColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    drawSky(matrices);
     const SpriteFrameData frame{.viewProjection = matrices.viewProjection, .canvasModulate = math::Vec4(m_world.canvasModulate, 1.0f)};
     gl::BindBuffer(GL_UNIFORM_BUFFER, m_spriteFrameBuffer);
     gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(frame), &frame);
-    drawSprites();
+    orderTransparent();
+
+    // The shadows, then the scene: the environment, the opaque meshes, then what is blended, meshes and sprites, in their
+    // order, testing the depth of the opaque surfaces without writing it.
+    drawShadows();
+    gl::BindFramebuffer(GL_FRAMEBUFFER, m_scene.framebuffer);
+    gl::Viewport(0, 0, static_cast<GLsizei>(sceneSize.width), static_cast<GLsizei>(sceneSize.height));
+    gl::Disable(GL_SCISSOR_TEST);
+    gl::Disable(GL_BLEND);
+    gl::ColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    gl::DepthMask(GL_TRUE);
+    if (gl::ClearDepthf != nullptr)
+    {
+        gl::ClearDepthf(0.0f);
+    }
+    else
+    {
+        gl::ClearDepth(0.0);
+    }
+    gl::Clear(GL_DEPTH_BUFFER_BIT);
+    gl::Disable(GL_DEPTH_TEST);
+    gl::DepthMask(GL_FALSE);
+    drawSky();
+    gl::Enable(GL_DEPTH_TEST);
+    gl::DepthFunc(GL_GREATER);
+    gl::DepthMask(GL_TRUE);
+    drawMeshes(false);
+    gl::DepthMask(GL_FALSE);
+    drawTransparent();
+    gl::Disable(GL_DEPTH_TEST);
+    gl::DepthMask(GL_TRUE);
+    gl::Disable(GL_CULL_FACE);
+    measureLuminance();
 
     // The interface, in batches of one texture and one shape, cut to their rectangles.
     packUi(m_world, false, m_ui);
@@ -928,41 +1009,38 @@ core::Result<void> GlRenderer::endFrame()
     return {};
 }
 
-void GlRenderer::drawSky(const ViewMatrices& matrices)
+void GlRenderer::drawSky()
 {
     const GpuTexture* const sky = m_textures.find(m_world.environment.sky);
-    const SkyData data{.skyInverseViewProjection = math::inverse(matrices.skyViewProjection),
-                       .sky = math::Vec4(m_world.environment.color * m_world.environment.intensity, 1.0f),
-                       .exposure = m_exposure,
-                       .rotation = m_world.environment.rotation};
-    gl::BindBuffer(GL_UNIFORM_BUFFER, m_skyBuffer);
-    gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(data), &data);
-    gl::BindBufferRange(GL_UNIFORM_BUFFER, frameBinding, m_skyBuffer, 0, sizeof(data));
     gl::UseProgram(m_skyProgram.program);
-    // Around the horizon, the texture goes on from its right edge to its left.
-    bindTexture(0, sky != nullptr && sky->bindable ? sky->texture : m_white, m_linearSampler);
+    bindSceneTextures();
+    bindTexture(unit::first, sky != nullptr && sky->bindable ? sky->texture : m_white, m_skySampler);
     gl::BindVertexArray(m_emptyArray);
     gl::DrawArrays(GL_TRIANGLES, 0, 3);
     ++m_drawCalls;
 }
 
-void GlRenderer::drawSprites()
+void GlRenderer::drawSprites(std::uint32_t firstRun, std::uint32_t runCount)
 {
-    if (m_spriteRuns.empty())
+    if (runCount == 0)
     {
         return;
     }
-    // Premultiplied: what is drawn adds to what it lets through.
+    // Premultiplied: what is drawn adds to what it lets through. Behind what the meshes drew nearer, without hiding the
+    // others.
     gl::Enable(GL_BLEND);
     gl::BlendEquation(GL_FUNC_ADD);
     gl::BlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    gl::Disable(GL_CULL_FACE);
+    gl::DepthFunc(GL_GEQUAL);
     gl::UseProgram(m_spriteProgram.program);
-    gl::BindBufferRange(GL_UNIFORM_BUFFER, frameBinding, m_spriteFrameBuffer, 0, sizeof(SpriteFrameData));
+    gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::spriteFrame, m_spriteFrameBuffer, 0, sizeof(SpriteFrameData));
     gl::BindVertexArray(m_spriteArray);
     gl::BindBuffer(GL_ARRAY_BUFFER, m_spriteBuffer);
     constexpr GLsizei stride = sizeof(GpuSprite);
-    for (const SpriteRun& run : m_spriteRuns)
+    for (std::uint32_t index = firstRun; index < firstRun + runCount; ++index)
     {
+        const SpriteRun& run = m_spriteRuns[index];
         // OpenGL ES 3.0 has no first instance: the attributes start at the run.
         const std::size_t base = std::size_t{run.first} * sizeof(GpuSprite);
         const auto at = [base](std::size_t offset) { return reinterpret_cast<const void*>(base + offset); };
@@ -977,7 +1055,7 @@ void GlRenderer::drawSprites()
         gl::VertexAttribPointer(8, 2, GL_FLOAT, GL_FALSE, stride, at(offsetof(GpuSprite, naturalSize)));
         gl::VertexAttribIPointer(9, 2, GL_UNSIGNED_INT, stride, at(offsetof(GpuSprite, texture)));
         const GpuTexture* const texture = textureAtSlot(run.texture);
-        bindTexture(0, texture != nullptr ? texture->texture : m_white,
+        bindTexture(unit::first, texture != nullptr ? texture->texture : m_white,
                     texture != nullptr && texture->nearest ? m_nearestSampler : m_linearSampler);
         gl::DrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<GLsizei>(run.count));
         ++m_drawCalls;
@@ -1014,11 +1092,11 @@ void GlRenderer::drawImage(math::Extent2D size, bool interface, bool srgb)
     };
     gl::BindBuffer(GL_UNIFORM_BUFFER, m_tonemapBuffer);
     gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(settings), &settings);
-    gl::BindBufferRange(GL_UNIFORM_BUFFER, frameBinding, m_tonemapBuffer, 0, sizeof(settings));
+    gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::tonemap, m_tonemapBuffer, 0, sizeof(settings));
     gl::UseProgram(m_tonemapProgram.program);
-    bindTexture(0, m_scene.texture, m_clampSampler);
-    bindTexture(1, m_black, m_clampSampler);
-    bindTexture(2, m_black, m_clampSampler);
+    bindTexture(unit::first, m_scene.texture, m_clampSampler);
+    bindTexture(unit::second, m_black, m_clampSampler);
+    bindTexture(unit::third, m_black, m_clampSampler);
     gl::BindVertexArray(m_emptyArray);
     gl::DrawArrays(GL_TRIANGLES, 0, 3);
     ++m_drawCalls;
@@ -1062,8 +1140,8 @@ void GlRenderer::drawImage(math::Extent2D size, bool interface, bool srgb)
         // The scissor of OpenGL counts from the bottom row.
         gl::Scissor(static_cast<GLint>(drawn.scissor[0]), static_cast<GLint>(size.height - bottom),
                     static_cast<GLsizei>(right - drawn.scissor[0]), static_cast<GLsizei>(bottom - drawn.scissor[1]));
-        gl::BindBufferRange(GL_UNIFORM_BUFFER, drawBinding, m_uiDrawBuffer, static_cast<GLintptr>(index * stride), sizeof(UiDrawData));
-        bindTexture(0, drawn.texture, drawn.nearest ? m_nearestSampler : m_linearSampler);
+        gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::uiDraw, m_uiDrawBuffer, static_cast<GLintptr>(index * stride), sizeof(UiDrawData));
+        bindTexture(unit::first, drawn.texture, drawn.nearest ? m_nearestSampler : m_linearSampler);
         gl::DrawElements(GL_TRIANGLES, static_cast<GLsizei>(drawn.indexCount), GL_UNSIGNED_INT,
                          reinterpret_cast<const void*>(std::size_t{drawn.firstIndex} * sizeof(std::uint32_t)));
         ++m_drawCalls;
@@ -1134,6 +1212,7 @@ RendererStats GlRenderer::stats() const noexcept
     stats.materialCount = m_materials.size();
     stats.shaderCount = m_shaders.size();
     stats.ev100 = m_ev100;
+    stats.lightCount = static_cast<std::uint32_t>(m_lights.size());
     stats.swapchainExtent = m_windowSize;
     stats.sceneExtent = m_scene.size;
     return stats;

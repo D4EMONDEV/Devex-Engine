@@ -6148,6 +6148,24 @@ Vulkan, dans les deux versions. Ce qu'elle a demandé :
 - **`SV_VulkanVertexID`** dans les shaders : Slang retire de `SV_VertexID` le premier sommet du draw, que GLSL ES n'a pas.
 - **Pas de première instance** en OpenGL ES 3.0 : chaque série de sprites redonne où ses attributs commencent.
 
+**La 3D, faite le 2026-11-19** (`GlScene.cpp`, `gl_scene`, `gl_mesh`, `gl_shadow`, `gl_ibl`) : les maillages, avec ou sans
+squelette, leurs matériaux, le soleil et ses cascades d'ombre, les lumières locales et leur atlas d'ombres, la lumière de
+l'environnement, le brouillard, les surfaces mélangées parmi les sprites et l'exposition mesurée, comparés à Vulkan en
+OpenGL 3.3 et en OpenGL ES 3.0 ; les particules, les décals, les terrains, l'herbe, les effets après la lumière et les
+shaders du projet viendront ensuite. Ce qu'elle a demandé :
+
+- **La profondeur de Vulkan**, inversée et de 0 à 1, étirée sur celle d'OpenGL, de -1 à 1, par la correction de clip que
+  prend `prepareView` : le tampon de profondeur garde les mêmes valeurs. Le frustum de l'élimination se calcule sans elle.
+- **Les ombres dessinées avec les matrices de Vulkan**, Y vers le bas, que les shaders relisent telles quelles : OpenGL
+  range ses lignes depuis le bas. Une profondeur de 24 bits en OpenGL ES, qui ne filtre pas les flottants.
+- **Les lumières par objet** : au plus 32 par image, celles que la caméra voit, les plus proches d'abord, et 8 par objet,
+  celles qui atteignent sa boîte, en octets dans ses attributs. Les os dans une texture de flottants, quatre texels chacun.
+- **La lumière de l'environnement cuite par des triangles** sur chaque face des cubes, sans compute, avec les calculs
+  d'`ibl.slang`. Un système qui ne dessine pas de demi-flottants s'éclaire de cubes blancs teintés par le ciel.
+- **L'exposition lue sans attendre** : la grille de luminance passe par un pixel buffer et une fence, lus une image plus tard.
+- **Tous les attributs d'un dessin dans une seule structure** : Slang compte les emplacements de chaque paramètre depuis la
+  fin du précédent, ce qui dépassait les 16 d'OpenGL.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

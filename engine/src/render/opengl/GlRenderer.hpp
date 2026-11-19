@@ -3,17 +3,23 @@
 // The renderer of OpenGL: OpenGL 3.3 on a computer, OpenGL ES 3.0 on a phone and WebGL2 in a browser, the light renderer
 // that will take the place of WebGPU (see "Les API graphiques" in docs/decisions.md). It draws, as the first step of its
 // plan, the 2D and the interface: the environment behind the scene, sprites and tilemaps, the tonemapping, the interface
-// and the captures. The meshes, the lights, the particles and the shaders of projects are kept, not drawn yet. Its shaders
-// are those of shaders/gl_*.slang, translated into GLSL at the build.
+// and the captures; then, in GlScene.cpp, meshes, skinned or not, lit by the sun, the local lights and the environment,
+// with their shadows, in the fog, and the exposure measured. The particles, the decals, the terrains, the effects after
+// the light and the shaders of projects are kept, not drawn yet. Its shaders are those of shaders/gl_*.slang, translated
+// into GLSL at the build.
 #include "GlApi.hpp"
 
 #include "../FramePreparation.hpp"
 #include "../GpuTypes.hpp"
 #include "../RenderBackend.hpp"
 
+#include <devex/asset/MeshData.hpp>
 #include <devex/core/SlotMap.hpp>
 #include <devex/platform/Platform.hpp>
+#include <devex/render/Culling.hpp>
 
+#include <array>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -21,6 +27,36 @@
 #include <vector>
 
 namespace devex::render::opengl {
+
+// Where the uniform blocks of shaders/gl_*.slang are bound, by their names.
+namespace binding {
+inline constexpr gl::GLuint scene = 0;
+inline constexpr gl::GLuint lights = 1;
+inline constexpr gl::GLuint shadowViews = 2;
+inline constexpr gl::GLuint material = 3;
+inline constexpr gl::GLuint shadowView = 4;
+inline constexpr gl::GLuint spriteFrame = 5;
+inline constexpr gl::GLuint tonemap = 6;
+inline constexpr gl::GLuint uiDraw = 7;
+inline constexpr gl::GLuint bake = 8;
+} // namespace binding
+
+// The texture units of their samplers: those of the scene first, which every lit shader reads, then those of each draw.
+namespace unit {
+inline constexpr gl::GLint irradiance = 0;
+inline constexpr gl::GLint specular = 1;
+inline constexpr gl::GLint brdf = 2;
+inline constexpr gl::GLint cascades = 3;
+inline constexpr gl::GLint atlas = 4;
+// The texture of a draw: the base colour of a material, the sky, a sprite, the interface, the scene to tonemap, or what a
+// bake reads.
+inline constexpr gl::GLint first = 5;
+inline constexpr gl::GLint second = 6;
+inline constexpr gl::GLint third = 7;
+inline constexpr gl::GLint fourth = 8;
+inline constexpr gl::GLint fifth = 9;
+inline constexpr gl::GLint bones = 10;
+} // namespace unit
 
 class GlRenderer final : public RenderBackend
 {
@@ -82,14 +118,23 @@ private:
         // Read at its nearest pixel, for pixel art.
         bool nearest = false;
     };
-    // What a mesh is until the 3D comes: its submeshes, which the scene asks for.
+    // A mesh in its buffers, and the vertex array that reads them: its vertices, then the skin of a skinned one; the
+    // attributes of its instances follow where each batch starts.
     struct GpuMesh
     {
-        std::uint32_t submeshes = 0;
+        gl::GLuint vertices = 0;
+        gl::GLuint indices = 0;
+        gl::GLuint skin = 0;
+        gl::GLuint array = 0;
+        std::vector<asset::Submesh> submeshes;
+        math::Aabb bounds;
     };
     struct GpuMaterial
     {
         MaterialDesc description;
+        // Its factors, as the shaders read them; written again when it changes.
+        gl::GLuint uniform = 0;
+        bool written = false;
     };
     struct GpuShader
     {
@@ -120,6 +165,56 @@ private:
         // Pixels from the top left corner: left, top, width, height.
         std::uint32_t scissor[4]{};
     };
+    // The meshes of the frame that share a mesh, a submesh, a material and a way to be drawn, at once; a blended one
+    // alone, in its order from the farthest.
+    struct MeshBatch
+    {
+        const GpuMesh* mesh = nullptr;
+        std::uint32_t submesh = 0;
+        MaterialHandle material;
+        std::uint32_t flags = 0;
+        std::uint32_t firstInstance = 0;
+        std::uint32_t instanceCount = 0;
+        float distance = 0.0f;
+    };
+    // The casters of one view of the shadows: a cascade of the sun, or a tile of the atlas of the local lights.
+    struct ShadowPass
+    {
+        std::uint32_t firstBatch = 0;
+        std::uint32_t batchCount = 0;
+        bool atlas = false;
+        std::uint32_t layer = 0;
+        // Pixels of the atlas: left, bottom, width, height.
+        std::array<float, 4> viewport{};
+    };
+    // What the blended pass draws in its order: a batch of blended meshes, or runs of sprites.
+    struct TransparentDraw
+    {
+        bool sprites = false;
+        std::uint32_t index = 0;
+        std::uint32_t firstRun = 0;
+        std::uint32_t runCount = 0;
+    };
+    // The light of the environment, baked from the sky texture: its irradiance and its specular reflections by roughness.
+    struct Environment
+    {
+        TextureHandle sky;
+        bool baked = false;
+        gl::GLuint irradiance = 0;
+        gl::GLuint specular = 0;
+        std::uint32_t specularMips = 1;
+    };
+    // What a bake of the environment draws with: its uniform block, with the face changed for each.
+    struct BakeSettings
+    {
+        float roughness = 0.0f;
+        std::uint32_t sampleCount = 0;
+        float sourceLod = 0.0f;
+        float sourceSize = 0.0f;
+        gl::GLuint source = 0;
+        // The width of the equirectangular map, whose detail each level of the cube samples at.
+        std::uint32_t sourceWidth = 0;
+    };
     struct CaptureRequest
     {
         std::uint64_t id = 0;
@@ -137,9 +232,9 @@ private:
     GlRenderer(platform::Window& window, const RendererConfig& config) noexcept;
     [[nodiscard]] core::Result<void> initialize();
     [[nodiscard]] core::Result<Program> linkProgram(std::string_view vertex, std::string_view fragment) const;
-    // Binds the uniform block of `name` to `binding`, and the samplers of `samplers` to the texture units of their order.
+    // Binds the uniform blocks of a program to their bindings, and its samplers to their texture units, by their names.
     void bindProgram(const Program& program, std::initializer_list<std::pair<const char*, gl::GLuint>> blocks,
-                     std::initializer_list<const char*> samplers) const;
+                     std::initializer_list<std::pair<const char*, gl::GLint>> samplers) const;
     // Gives a buffer `size` bytes at least, kept when it already has them.
     void growBuffer(gl::GLuint buffer, gl::GLenum target, std::size_t& capacity, std::size_t size) const;
     [[nodiscard]] core::Result<void> ensureTarget(Target& target, math::Extent2D size, gl::GLenum internalFormat, gl::GLenum format,
@@ -149,8 +244,33 @@ private:
     void bindTexture(gl::GLuint unit, gl::GLuint texture, gl::GLuint sampler) const;
     void applyPresentMode();
 
-    void drawSky(const ViewMatrices& matrices);
-    void drawSprites();
+    // GlScene.cpp: the 3D.
+    [[nodiscard]] core::Result<void> createSceneResources();
+    void destroySceneResources() noexcept;
+    [[nodiscard]] gl::GLuint whiteCube() const;
+    // Draws a triangle over each face of each level of `cube`, through `program`, with the settings of the bake.
+    void bakeFaces(const Program& program, gl::GLuint cube, std::uint32_t size, std::uint32_t mips, const BakeSettings& settings);
+    void bakeBrdfTable();
+    void bakeEnvironment(TextureHandle sky);
+    [[nodiscard]] float sortDistance(math::Vec3 point, math::Vec3 cameraPosition) const noexcept;
+    // The lights, the shadows, the instances and the batches of the frame, and the scene the shaders read.
+    void prepareMeshes(const ViewMatrices& matrices, const Frustum& frustum, math::Extent2D sceneSize);
+    void orderTransparent();
+    [[nodiscard]] gl::GLuint materialUniform(GpuMaterial& material) const;
+    void bindMaterial(GpuMaterial& material, bool shadow) const;
+    // Points the attributes of the instances of `mesh` at those of a batch.
+    void bindInstances(const GpuMesh& mesh, std::uint32_t firstInstance) const;
+    void bindSceneTextures() const;
+    void drawShadows();
+    void drawMeshBatch(const MeshBatch& batch);
+    void drawMeshes(bool blended);
+    void drawTransparent();
+    // The luminance of the scene, measured on a coarse grid read back frames later, which the automatic exposure follows.
+    void updateExposure();
+    void measureLuminance();
+
+    void drawSky();
+    void drawSprites(std::uint32_t firstRun, std::uint32_t runCount);
     // The scene tonemapped into the framebuffer bound, of `size`, and the interface over it. A framebuffer that keeps sRGB
     // encodes the colours itself, and blends them as light; another takes them encoded by the shaders.
     void drawImage(math::Extent2D size, bool interface, bool srgb);
@@ -187,6 +307,15 @@ private:
     Program m_spriteProgram;
     Program m_uiProgram;
     Program m_tonemapProgram;
+    Program m_meshProgram;
+    Program m_skinnedProgram;
+    Program m_shadowProgram;
+    Program m_skinnedShadowProgram;
+    Program m_cubeProgram;
+    Program m_prefilterProgram;
+    Program m_irradianceProgram;
+    Program m_brdfProgram;
+    Program m_luminanceProgram;
     // The vertex arrays of what reads no vertices, of the sprites and of the interface.
     gl::GLuint m_emptyArray = 0;
     gl::GLuint m_spriteArray = 0;
@@ -198,7 +327,15 @@ private:
     gl::GLuint m_uiIndexBuffer = 0;
     std::size_t m_uiIndexCapacity = 0;
     // The uniform blocks: those of one draw, then those of each batch of the interface at an aligned offset of their own.
-    gl::GLuint m_skyBuffer = 0;
+    gl::GLuint m_sceneBuffer = 0;
+    gl::GLuint m_lightBuffer = 0;
+    gl::GLuint m_shadowViewBuffer = 0;
+    gl::GLuint m_bakeBuffer = 0;
+    // The matrices of the views of the shadows, each at an aligned offset of its own.
+    gl::GLuint m_shadowMatrixBuffer = 0;
+    std::size_t m_shadowMatrixCapacity = 0;
+    gl::GLuint m_instanceBuffer = 0;
+    std::size_t m_instanceCapacity = 0;
     gl::GLuint m_spriteFrameBuffer = 0;
     gl::GLuint m_tonemapBuffer = 0;
     gl::GLuint m_uiDrawBuffer = 0;
@@ -206,13 +343,48 @@ private:
     gl::GLuint m_linearSampler = 0;
     gl::GLuint m_nearestSampler = 0;
     gl::GLuint m_clampSampler = 0;
+    // Nearest and clamped, which the bones need: a texture of floats cannot be filtered everywhere.
+    gl::GLuint m_pointSampler = 0;
+    // Around the horizon, not over the poles.
+    gl::GLuint m_skySampler = 0;
+    gl::GLuint m_cubeSampler = 0;
+    // Bilinear comparisons, as the sampler of shadows of Vulkan.
+    gl::GLuint m_shadowSampler = 0;
     gl::GLuint m_white = 0;
     gl::GLuint m_black = 0;
-    // The scene in light, which the tonemapping maps to the display.
+    gl::GLuint m_flatNormal = 0;
+    gl::GLuint m_brdfTable = 0;
+    gl::GLuint m_boneTexture = 0;
+    std::uint32_t m_boneRows = 0;
+    // The cascades of the sun, one layer each, and the atlas of the local lights.
+    gl::GLuint m_cascadeMap = 0;
+    std::array<gl::GLuint, 4> m_cascadeFramebuffers{};
+    gl::GLuint m_atlasMap = 0;
+    gl::GLuint m_atlasFramebuffer = 0;
+    std::uint32_t m_shadowMapSize = 2048;
+    std::uint32_t m_shadowAtlasSize = 4096;
+    gl::GLenum m_shadowDepthFormat = 0;
+    bool m_depthClamp = false;
+    // The scene in light, which the tonemapping maps to the display, and its depth.
     Target m_scene;
     gl::GLenum m_sceneFormat = 0;
+    gl::GLuint m_sceneDepth = 0;
+    // Whether OpenGL draws into images of half floats, which the light of the environment is baked into.
+    bool m_halfFloatTargets = false;
+    Environment m_environment;
+    MaterialHandle m_defaultMaterial;
+    // The grid the luminance is measured on, the buffer it is read back into, and when the GPU is done with it.
+    Target m_luminanceTarget;
+    gl::GLuint m_luminanceBuffer = 0;
+    gl::GLsync m_luminanceFence = nullptr;
+    float m_measuredExposure = 0.0f;
 
     RenderWorld m_world;
+    std::vector<GpuLight> m_lights;
+    std::vector<MeshBatch> m_meshBatches;
+    std::vector<MeshBatch> m_shadowBatches;
+    std::vector<ShadowPass> m_shadowPasses;
+    std::vector<TransparentDraw> m_transparentDraws;
     SpriteFrame m_spriteFrame;
     std::vector<SpriteRun> m_spriteRuns;
     PackedUi m_ui;
@@ -220,7 +392,11 @@ private:
     std::vector<std::byte> m_uiDraws;
 
     float m_ev100 = 0.0f;
+    float m_targetEv100 = 0.0f;
     float m_exposure = 1.0f;
+    bool m_exposureInitialized = false;
+    bool m_snapExposure = true;
+    std::chrono::steady_clock::time_point m_lastExposureUpdate;
     float m_time = 0.0f;
     std::uint32_t m_drawCalls = 0;
     math::Extent2D m_windowSize;

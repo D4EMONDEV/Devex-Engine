@@ -516,11 +516,15 @@ if(DEVEX_OPENGL AND NOT ANDROID AND NOT EMSCRIPTEN)
     set(devex_glsl_source "${CMAKE_CURRENT_BINARY_DIR}/generated/GlShaders.cpp")
     devex_embed_glsl(OUTPUT "${devex_glsl_source}"
         SOURCES
+            gl_ibl.slang
+            gl_mesh.slang
+            gl_shadow.slang
             gl_sky.slang
             gl_sprite.slang
             gl_tonemap.slang
             gl_ui.slang
         MODULES
+            gl_scene.slang
             sprite_shape.slang
             surface_shading.slang
             tonemapping.slang
@@ -532,6 +536,7 @@ if(DEVEX_OPENGL AND NOT ANDROID AND NOT EMSCRIPTEN)
             src/render/opengl/GlApi.hpp
             src/render/opengl/GlRenderer.cpp
             src/render/opengl/GlRenderer.hpp
+            src/render/opengl/GlScene.cpp
             src/render/opengl/GlShaders.hpp
             "${devex_glsl_source}"
     )

@@ -25,6 +25,8 @@ using GLchar = char;
 using GLubyte = unsigned char;
 using GLsizeiptr = std::ptrdiff_t;
 using GLintptr = std::ptrdiff_t;
+using GLsync = struct __GLsync*;
+using GLuint64 = std::uint64_t;
 using GLDebugProc = void(DEVEX_GL_CALL*)(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
                                          const GLchar* message, const void* user);
 
@@ -112,6 +114,7 @@ inline constexpr GLenum GL_NUM_EXTENSIONS = 0x821D;
 inline constexpr GLenum GL_MAX_TEXTURE_SIZE = 0x0D33;
 inline constexpr GLenum GL_DEBUG_OUTPUT_SYNCHRONOUS = 0x8242;
 inline constexpr GLenum GL_DEBUG_TYPE_ERROR = 0x824C;
+inline constexpr GLenum GL_DEBUG_TYPE_PERFORMANCE = 0x8250;
 inline constexpr GLenum GL_DEBUG_SEVERITY_NOTIFICATION = 0x826B;
 inline constexpr GLenum GL_DEBUG_SEVERITY_HIGH = 0x9146;
 inline constexpr GLenum GL_DEBUG_SEVERITY_MEDIUM = 0x9147;
@@ -123,6 +126,34 @@ inline constexpr GLenum GL_BACK = 0x0405;
 inline constexpr GLenum GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING = 0x8210;
 inline constexpr GLenum GL_SRGB = 0x8C40;
 inline constexpr GLenum GL_FRAMEBUFFER_SRGB = 0x8DB9;
+inline constexpr GLenum GL_UNSIGNED_SHORT = 0x1403;
+inline constexpr GLenum GL_NONE = 0;
+inline constexpr GLenum GL_FRONT = 0x0404;
+inline constexpr GLenum GL_CCW = 0x0901;
+inline constexpr GLenum GL_LEQUAL = 0x0203;
+inline constexpr GLenum GL_GREATER = 0x0204;
+inline constexpr GLenum GL_GEQUAL = 0x0206;
+inline constexpr GLenum GL_ALWAYS = 0x0207;
+inline constexpr GLenum GL_POLYGON_OFFSET_FILL = 0x8037;
+inline constexpr GLenum GL_DEPTH_CLAMP = 0x864F;
+inline constexpr GLenum GL_TEXTURE_2D_ARRAY = 0x8C1A;
+inline constexpr GLenum GL_TEXTURE_CUBE_MAP = 0x8513;
+inline constexpr GLenum GL_TEXTURE_CUBE_MAP_POSITIVE_X = 0x8515;
+inline constexpr GLenum GL_TEXTURE_CUBE_MAP_SEAMLESS = 0x884F;
+inline constexpr GLenum GL_TEXTURE_COMPARE_MODE = 0x884C;
+inline constexpr GLenum GL_TEXTURE_COMPARE_FUNC = 0x884D;
+inline constexpr GLenum GL_COMPARE_REF_TO_TEXTURE = 0x884E;
+inline constexpr GLenum GL_DEPTH_COMPONENT = 0x1902;
+inline constexpr GLenum GL_DEPTH_COMPONENT24 = 0x81A6;
+inline constexpr GLenum GL_DEPTH_COMPONENT32F = 0x8CAC;
+inline constexpr GLenum GL_DEPTH_ATTACHMENT = 0x8D00;
+inline constexpr GLenum GL_RGBA32F = 0x8814;
+inline constexpr GLenum GL_PIXEL_PACK_BUFFER = 0x88EB;
+inline constexpr GLenum GL_STREAM_READ = 0x88E1;
+inline constexpr GLbitfield GL_MAP_READ_BIT = 0x0001;
+inline constexpr GLenum GL_SYNC_GPU_COMMANDS_COMPLETE = 0x9117;
+inline constexpr GLenum GL_ALREADY_SIGNALED = 0x911A;
+inline constexpr GLenum GL_CONDITION_SATISFIED = 0x911C;
 
 // Every function, by its name without gl, what it returns and what it takes. The optional ones may stay null: the debug
 // output, which OpenGL 4.3 and OpenGL ES 3.2 have.
@@ -145,6 +176,25 @@ inline constexpr GLenum GL_FRAMEBUFFER_SRGB = 0x8DB9;
     REQUIRED(DrawArrays, void, (GLenum mode, GLint first, GLsizei count))                                                           \
     REQUIRED(DrawArraysInstanced, void, (GLenum mode, GLint first, GLsizei count, GLsizei instances))                               \
     REQUIRED(DrawElements, void, (GLenum mode, GLsizei count, GLenum type, const void* indices))                                    \
+    REQUIRED(DrawElementsInstanced, void, (GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instances))       \
+    REQUIRED(CullFace, void, (GLenum mode))                                                                                         \
+    REQUIRED(FrontFace, void, (GLenum mode))                                                                                        \
+    REQUIRED(DepthFunc, void, (GLenum function))                                                                                    \
+    REQUIRED(PolygonOffset, void, (GLfloat factor, GLfloat units))                                                                  \
+    REQUIRED(DrawBuffers, void, (GLsizei count, const GLenum* buffers))                                                             \
+    REQUIRED(ReadBuffer, void, (GLenum buffer))                                                                                     \
+    REQUIRED(TexImage3D, void,                                                                                                      \
+             (GLenum target, GLint level, GLint internalFormat, GLsizei width, GLsizei height, GLsizei depth, GLint border,        \
+              GLenum format, GLenum type, const void* pixels))                                                                      \
+    REQUIRED(FramebufferTextureLayer, void, (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint layer))           \
+    REQUIRED(Uniform1f, void, (GLint location, GLfloat value))                                                                      \
+    REQUIRED(MapBufferRange, void*, (GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access))                        \
+    REQUIRED(UnmapBuffer, GLboolean, (GLenum target))                                                                               \
+    REQUIRED(FenceSync, GLsync, (GLenum condition, GLbitfield flags))                                                               \
+    REQUIRED(ClientWaitSync, GLenum, (GLsync sync, GLbitfield flags, GLuint64 timeout))                                             \
+    REQUIRED(DeleteSync, void, (GLsync sync))                                                                                       \
+    OPTIONAL(ClearDepthf, void, (GLfloat depth))                                                                                    \
+    OPTIONAL(ClearDepth, void, (double depth))                                                                                      \
     REQUIRED(Flush, void, ())                                                                                                       \
     REQUIRED(Finish, void, ())                                                                                                      \
     REQUIRED(PixelStorei, void, (GLenum name, GLint value))                                                                         \
