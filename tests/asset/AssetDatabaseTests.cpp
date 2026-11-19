@@ -843,6 +843,27 @@ TEST_CASE("Failed imports keep the previous assets and report the error", "[asse
           devex::math::Vec4{1, 0, 0, 1});
 }
 
+TEST_CASE("A source written again at its size and its time is imported again", "[asset][database]")
+{
+    // The clock of files moves by ticks of a few milliseconds on Linux: a file written again within the tick of its import
+    // keeps its time, and a contents of the same size can only be told by reading it.
+    TemporaryProject project;
+    project.write("m.dvxmat", redMaterial);
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database.has_value());
+    static_cast<void>(settle(**database));
+    const AssetId id = *(*database)->findByPath("res://assets/m.dvxmat");
+    const std::filesystem::path file = project.assets() / "m.dvxmat";
+    const std::filesystem::file_time_type imported = std::filesystem::last_write_time(file);
+
+    project.write("m.dvxmat", blueMaterial);
+    std::filesystem::last_write_time(file, imported);
+    (*database)->refresh();
+    static_cast<void>(settle(**database));
+    CHECK(devex::asset::decodeMaterial(*(*database)->loadArtifact(id))->baseColorFactor == devex::math::Vec4{0, 0, 1, 1});
+}
+
 TEST_CASE("An import that failed for a moment is retried when the database opens again", "[asset][database]")
 {
     TemporaryProject project;

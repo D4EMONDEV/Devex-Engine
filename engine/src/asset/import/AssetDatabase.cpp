@@ -17,6 +17,7 @@
 #include <atomic>
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <format>
@@ -81,8 +82,19 @@ struct FileStamp
     return *stamp;
 }
 
-// Compares the file with its stamp, reading the contents only when its size or time changed. A
-// file touched without changing is re-stamped in place.
+// Whether a time of a file is too recent to tell a change: the clock of files moves by ticks of a few milliseconds on
+// Linux, and a file written again within the tick of its stamp keeps its time, as git knows of its index.
+[[nodiscard]] bool isRecent(std::int64_t time)
+{
+    using FileClock = std::filesystem::file_time_type::clock;
+    const auto now = static_cast<std::int64_t>(FileClock::now().time_since_epoch().count());
+    const auto margin =
+        static_cast<std::int64_t>(std::chrono::duration_cast<std::filesystem::file_time_type::duration>(std::chrono::seconds(2)).count());
+    return now - time < margin;
+}
+
+// Compares the file with its stamp, reading the contents only when its size or time changed, or when its time is too
+// recent to tell. A file touched without changing is re-stamped in place.
 [[nodiscard]] bool isUnchanged(const std::filesystem::path& file, FileStamp& stamp)
 {
     const std::optional<FileStamp> current = quickStamp(file);
@@ -90,7 +102,7 @@ struct FileStamp
     {
         return current.has_value() == stamp.exists;
     }
-    if (current->size == stamp.size && current->time == stamp.time)
+    if (current->size == stamp.size && current->time == stamp.time && !isRecent(current->time))
     {
         return true;
     }
