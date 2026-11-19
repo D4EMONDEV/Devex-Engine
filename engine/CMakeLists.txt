@@ -517,30 +517,37 @@ if(DEVEX_OPENGL AND NOT EMSCRIPTEN)
     devex_embed_glsl(OUTPUT "${devex_glsl_source}"
         SOURCES
             gl_blit.slang
+            gl_bloom.slang
             gl_ibl.slang
+            gl_lens.slang
             gl_mesh.slang
             gl_particle.slang
             gl_shadow.slang
             gl_sky.slang
             gl_sprite.slang
+            gl_taa.slang
             gl_terrain.slang
             gl_tonemap.slang
             gl_ui.slang
         MODULES
+            bloom_filter.slang
             decal_layer.slang
             gl_canvas.slang
             gl_scene.slang
+            lens_filter.slang
             particle_shape.slang
             sprite_shape.slang
             surface_shading.slang
             terrain_shading.slang
             tonemapping.slang
+            temporal.slang
             ui_shape.slang
     )
     target_sources(devex_render
         PRIVATE
             src/render/opengl/GlApi.cpp
             src/render/opengl/GlApi.hpp
+            src/render/opengl/GlPost.cpp
             src/render/opengl/GlRenderer.cpp
             src/render/opengl/GlRenderer.hpp
             src/render/opengl/GlScene.cpp

@@ -4154,6 +4154,12 @@ public:
   10 son masque et sa normal map (depuis `GpuSprite::lightMask`), 11 les octets des lumières locales d'un sprite éclairé,
   dans un tampon à part (`m_spriteLightBuffer`). Les séries se coupent aussi à chaque normal map (unité `second`). Le
   programme des sprites lit la scène (`SceneData`, lumières, ombres) pour les sprites éclairés.
+- Après la lumière (`GlPost.cpp`, `gl_taa`, `gl_lens`, `gl_bloom`) : `resolve`, `drawLens` puis `drawBloom`, comme
+  WebGPU, chacun un triangle sur une image de demi-flottants, ses réglages dans le bloc `binding::post` réécrit à chaque
+  pas. Les matrices sont celles d'OpenGL (profondeur de -1 à 1 : `depth * 2 - 1`), les coordonnées de texture partent de
+  la ligne du bas comme le clip. Le saut de l'antialiasing est tourné vers Y en haut, comme WebGPU. Sans images de
+  demi-flottants (`drawsPostEffects`), aucun de ces effets. Le tonemap lit `m_finishedImage`, `m_bloomImage` et la table
+  de couleurs (`colorTableOf`).
 - OpenGL ES ne lit aucun BC, et un vieil OpenGL pas BC7 : `createTexture` décode alors les blocs en pixels RGBA8 (ou
   `SRGB8_ALPHA8`), avec `decodeBlocks` de `engine/src/render/BlockDecoding.hpp`, partagé avec WebGPU. ASTC sans
   l'extension est refusé.

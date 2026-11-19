@@ -45,6 +45,8 @@ inline constexpr gl::GLuint terrainDraw = 11;
 inline constexpr gl::GLuint blit = 12;
 inline constexpr gl::GLuint decals = 13;
 inline constexpr gl::GLuint lights2D = 14;
+// The settings of a step of what follows the light: the antialiasing, the lens or the bloom.
+inline constexpr gl::GLuint post = 15;
 } // namespace binding
 
 // The texture units of their samplers: those of the scene first, which every lit shader reads, then those of each draw.
@@ -334,6 +336,22 @@ private:
     void updateExposure();
     void measureLuminance();
 
+    // GlPost.cpp: what follows the light.
+    [[nodiscard]] core::Result<void> createPostResources();
+    void destroyPostResources() noexcept;
+    // Whether the scene keeps half floats, which the effects after the light need.
+    [[nodiscard]] bool drawsPostEffects() const noexcept;
+    // A triangle over `into` through `program`, with its settings in the uniform block of the steps.
+    void drawPostStep(const Program& program, const Target& into, const void* settings, std::size_t size);
+    // The scene antialiased with the frames before, or the scene itself: what the next steps read.
+    [[nodiscard]] gl::GLuint resolve(const ViewMatrices& matrices);
+    // The depth of field and the motion blur over `source`, or `source` itself.
+    [[nodiscard]] gl::GLuint drawLens(const ViewMatrices& matrices, gl::GLuint source);
+    // The halo of the bright parts of `finished`, or 0 without bloom.
+    [[nodiscard]] gl::GLuint drawBloom(gl::GLuint finished);
+    // The table of colours of the camera, a strip of squares, or nothing.
+    [[nodiscard]] const GpuTexture* colorTableOf(TextureHandle handle) const;
+
     void drawSky();
     void drawSprites(std::uint32_t firstRun, std::uint32_t runCount);
     // The scene tonemapped into the framebuffer bound, of `size`, and the interface over it. A framebuffer that keeps sRGB
@@ -387,6 +405,10 @@ private:
     Program m_groundShadowProgram;
     Program m_grassProgram;
     Program m_blitProgram;
+    Program m_taaProgram;
+    // The threshold, the halving and the adding back of the bloom; the eight steps of the lens.
+    std::array<Program, 3> m_bloomPrograms;
+    std::array<Program, 8> m_lensPrograms;
     // The vertex arrays of what reads no vertices, of the sprites and of the interface.
     gl::GLuint m_emptyArray = 0;
     gl::GLuint m_spriteArray = 0;
@@ -486,6 +508,22 @@ private:
     std::uint32_t m_shadowAtlasSize = 4096;
     gl::GLenum m_shadowDepthFormat = 0;
     bool m_depthClamp = false;
+    // What follows the light: the settings of each step, the two images the antialiasing resolves into in turn, the halved
+    // images of the bloom, the chain of the lens and what it gives, and what the frame before was seen through.
+    gl::GLuint m_postBuffer = 0;
+    std::array<Target, 2> m_resolved;
+    std::array<Target, 5> m_bloomChain;
+    std::array<Target, 7> m_lensImages;
+    Target m_lensOutput;
+    std::uint32_t m_lensTileSize = 8;
+    bool m_historyValid = false;
+    float m_historyExposure = 1.0f;
+    math::Mat4 m_previousViewProjection{1.0f};
+    math::Mat4 m_previousSkyViewProjection{1.0f};
+    std::uint64_t m_frameIndex = 0;
+    // What the tonemapping reads this frame: the scene as the antialiasing and the lens leave it, and the halo of the bloom.
+    gl::GLuint m_finishedImage = 0;
+    gl::GLuint m_bloomImage = 0;
     // The scene in light, which the tonemapping maps to the display, and its depth.
     Target m_scene;
     gl::GLenum m_sceneFormat = 0;

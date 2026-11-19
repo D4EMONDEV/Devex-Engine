@@ -6213,6 +6213,11 @@ tiennent dans un bloc uniforme, et les distances de leurs ombres dans une textur
 texel par texel : OpenGL ES 3.0 n'a pas les storage buffers de WebGPU. Un sprite éclairé prend, comme une particule, les
 lumières locales qui atteignent son origine, en octets dans un tampon d'attributs à part.
 
+**Les effets après la lumière d'OpenGL, faits le 2026-11-19** : l'antialiasing temporel, la profondeur de champ, le flou
+de mouvement et le bloom, avec les filtres que partagent Vulkan et WebGPU, chacun un triangle sur une image de
+demi-flottants. Un système qui ne dessine pas de demi-flottants, dont la scène reste à 8 bits, n'en dessine aucun : le
+bloom n'aurait rien au-dessus de 1, et le cercle de confusion ne tiendrait pas dans 8 bits.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

@@ -231,6 +231,7 @@ GlRenderer::~GlRenderer()
 {
     if (m_loaded)
     {
+        destroyPostResources();
         destroySceneResources();
         m_textures.forEach([](TextureHandle, const GpuTexture& texture) { gl::DeleteTextures(1, &texture.texture); });
         m_meshes.forEach([](MeshHandle, const GpuMesh& mesh) {
@@ -441,6 +442,10 @@ core::Result<void> GlRenderer::initialize()
     // A normal map that leaves the normal as it is.
     pixel(m_flatNormal, {128, 128, 255, 255});
     gl::BindTexture(GL_TEXTURE_2D, 0);
+    if (core::Result<void> post = createPostResources(); !post)
+    {
+        return post;
+    }
     if (core::Result<void> scene = createSceneResources(); !scene)
     {
         return scene;
@@ -936,7 +941,11 @@ core::Result<void> GlRenderer::endFrame()
     math::Mat4 clipCorrection{1.0f};
     clipCorrection[2][2] = 2.0f;
     clipCorrection[3][2] = -1.0f;
-    const ViewMatrices matrices = prepareView(m_world.camera, sceneSize, math::Vec2{0.0f}, clipCorrection);
+    // The clip space of OpenGL has Y up, as the engine's matrices: the jitter of the antialiasing, given Y down, turns.
+    const math::Vec2 jitter = m_world.camera.antialiasing == Antialiasing::Temporal && drawsPostEffects()
+                                  ? temporalJitter(m_frameIndex, sceneSize)
+                                  : math::Vec2{0.0f};
+    const ViewMatrices matrices = prepareView(m_world.camera, sceneSize, math::Vec2{jitter.x, -jitter.y}, clipCorrection);
     // The frustum of the depth from 0 to 1, which the culling expects.
     const Frustum frustum = frustumOf(math::inverse(clipCorrection) * matrices.unjitteredViewProjection);
     prepareMeshes(matrices, frustum, sceneSize);
@@ -1038,6 +1047,14 @@ core::Result<void> GlRenderer::endFrame()
     gl::DepthMask(GL_TRUE);
     gl::Disable(GL_CULL_FACE);
     measureLuminance();
+
+    // What the antialiasing resolved, through the lens, and its halo, which the tonemapping reads with the table of colours.
+    gl::Disable(GL_SCISSOR_TEST);
+    m_finishedImage = drawLens(matrices, resolve(matrices));
+    m_bloomImage = drawBloom(m_finishedImage);
+    m_previousViewProjection = matrices.unjitteredViewProjection;
+    m_previousSkyViewProjection = matrices.skyViewProjection;
+    ++m_frameIndex;
 
     // The interface, in batches of one texture and one shape, cut to their rectangles.
     packUi(m_world, false, m_ui);
@@ -1186,6 +1203,7 @@ void GlRenderer::drawImage(math::Extent2D size, bool interface, bool srgb)
     gl::Disable(GL_SCISSOR_TEST);
     const RenderCamera& camera = m_world.camera;
     const math::Vec3 balance = whiteBalanceFactors(camera.temperature, camera.tint);
+    const GpuTexture* const colorTable = colorTableOf(camera.colorTable);
     const TonemapData settings{
         .tonemapper = static_cast<std::uint32_t>(camera.tonemapper),
         .vignette = std::clamp(camera.vignette, 0.0f, 1.0f),
@@ -1196,7 +1214,10 @@ void GlRenderer::drawImage(math::Extent2D size, bool interface, bool srgb)
         .encode = srgb ? 0U : 1U,
         .saturation = std::max(camera.saturation, 0.0f),
         .contrast = std::max(camera.contrast, 0.01f),
+        .bloom = m_bloomImage != 0 ? std::max(camera.bloom, 0.0f) : 0.0f,
         .chromatic = std::max(camera.chromaticAberration, 0.0f),
+        // A strip of squares is as tall as one step of the table.
+        .colorTableSize = colorTable != nullptr ? static_cast<float>(colorTable->size.height) : 0.0f,
         .filter = math::Vec4(math::max(camera.colorFilter, math::Vec3{0.0f}), 1.0f),
         .balance = math::Vec4(balance, 1.0f),
     };
@@ -1204,9 +1225,9 @@ void GlRenderer::drawImage(math::Extent2D size, bool interface, bool srgb)
     gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(settings), &settings);
     gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::tonemap, m_tonemapBuffer, 0, sizeof(settings));
     gl::UseProgram(m_tonemapProgram.program);
-    bindTexture(unit::first, m_scene.texture, m_clampSampler);
-    bindTexture(unit::second, m_black, m_clampSampler);
-    bindTexture(unit::third, m_black, m_clampSampler);
+    bindTexture(unit::first, m_finishedImage != 0 ? m_finishedImage : m_scene.texture, m_clampSampler);
+    bindTexture(unit::second, m_bloomImage != 0 ? m_bloomImage : m_black, m_clampSampler);
+    bindTexture(unit::third, colorTable != nullptr ? colorTable->texture : m_black, m_clampSampler);
     gl::BindVertexArray(m_emptyArray);
     gl::DrawArrays(GL_TRIANGLES, 0, 3);
     ++m_drawCalls;
@@ -1263,6 +1284,12 @@ void GlRenderer::drawImage(math::Extent2D size, bool interface, bool srgb)
     {
         gl::Disable(GL_FRAMEBUFFER_SRGB);
     }
+}
+
+const GlRenderer::GpuTexture* GlRenderer::colorTableOf(TextureHandle handle) const
+{
+    const GpuTexture* const texture = m_textures.find(handle);
+    return texture != nullptr && texture->bindable && texture->size.height > 1 ? texture : nullptr;
 }
 
 CapturedImage GlRenderer::readPixels(std::uint64_t request, math::Extent2D size) const

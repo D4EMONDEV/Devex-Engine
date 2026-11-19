@@ -156,6 +156,55 @@ TEST_CASE("OpenGL ES 3.0 draws the same lit meshes, decals and particles, where 
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("OpenGL resolves the temporal antialiasing and the bloom as Vulkan does", "[render][gpu][opengl]")
+{
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan, true);
+    const devex::render::CapturedImage openGl = drawMeshes(devex::render::RenderApi::OpenGl, true);
+    checkMeshesLikeVulkan(vulkan, openGl);
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("OpenGL draws the depth of field, the motion blur and the table of colours as Vulkan does", "[render][gpu][opengl]")
+{
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan, false, true);
+    const devex::render::CapturedImage openGl = drawMeshes(devex::render::RenderApi::OpenGl, false, true);
+    checkMeshesLikeVulkan(vulkan, openGl);
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("OpenGL ES 3.0 draws the same effects after the light, where the computer offers it", "[render][gpu][opengl]")
+{
+    if (const std::optional<std::string> missing = withoutOpenGlEs())
+    {
+        SKIP(*missing);
+    }
+    const ErrorCapture capture;
+    const devex::render::CapturedImage temporalVulkan = drawMeshes(devex::render::RenderApi::Vulkan, true);
+    const devex::render::CapturedImage temporalEs = drawMeshes(devex::render::RenderApi::OpenGl, true, false, 1.0f, true, true, true);
+    checkMeshesLikeVulkan(temporalVulkan, temporalEs);
+    const devex::render::CapturedImage lensVulkan = drawMeshes(devex::render::RenderApi::Vulkan, false, true);
+    const devex::render::CapturedImage lensEs = drawMeshes(devex::render::RenderApi::OpenGl, false, true, 1.0f, true, true, true);
+    checkMeshesLikeVulkan(lensVulkan, lensEs);
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("OpenGL lights sprites with the 2D lights, their shadows and the local lights as Vulkan does", "[render][gpu][opengl]")
 {
     const ErrorCapture capture;
