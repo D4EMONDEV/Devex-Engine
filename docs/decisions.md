@@ -6234,6 +6234,19 @@ sans peine. Le navigateur prend donc WebGPU là où il donne son GPU (Chrome, Ed
 sinon (Firefox sur Android, vieux Safari), au lieu de refuser le jeu. WebGPU ne sort que d'Android, où OpenGL ES le
 remplace. Alléger les shaders de WebGL2 vient ensuite.
 
+**Le C# sur toutes les plateformes, décidé le 2026-11-19** avec l'utilisateur, OpenGL fini. Le C# ne tourne que sur
+ordinateur, où le moteur héberge le .NET de Microsoft (CoreCLR) par `hostfxr`, qui n'existe ni sur Android ni dans le
+navigateur. Ce qui tranche les *Questions ouvertes* :
+
+- **Mono sur Android, comme Godot** : le runtime Mono des packs Android de .NET (`libmonosgen-2.0.so` et la bibliothèque
+  de classes), dans l'APK à côté du moteur, démarré par son API d'hébergement (`monovm_initialize`), les points d'entrée
+  `[UnmanagedCallersOnly]` trouvés comme avec `hostfxr`. Il garde la réflexion, dont dépend le code managé du moteur :
+  le C# des jeux tourne tel quel. L'APK grossit d'environ 10 à 15 Mo. Écarté : NativeAOT, plus petit et plus rapide à
+  démarrer, mais sans réflexion libre, ce qui demanderait de réécrire le code managé avec des générateurs de source, et
+  encore expérimental sur Android.
+- **Android d'abord, le navigateur ensuite**, avec son propre plan : il y faudra le runtime WebAssembly de .NET à côté du
+  nôtre, ou NativeAOT-LLVM, expérimental. Godot 4 n'exporte pas encore le C# vers le web.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.
