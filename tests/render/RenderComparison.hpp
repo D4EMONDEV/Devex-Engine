@@ -104,10 +104,12 @@ private:
         world.canvasModulate = {1.0f, 0.9f, 0.8f};
         world.sprites.push_back({.transform = at(0.0f, 0.0f, 0.0f), .size = {2.0f, 2.0f}, .naturalSize = {2.0f, 2.0f},
                                  .texture = *texture, .layer = 1});
-        world.sprites.push_back({.transform = at(-2.0f, 1.0f, 0.0f), .size = {1.5f, 0.75f}, .naturalSize = {0.5f, 0.5f},
+        // At 60 pixels a unit, every edge falls between two pixels: one on the centre of a row, Vulkan and OpenGL may
+        // each give to their side, as Mesa does.
+        world.sprites.push_back({.transform = at(-2.0f, 1.0f, 0.0f), .size = {1.5f, 0.8f}, .naturalSize = {0.5f, 0.5f},
                                  .border = {0.1f, 0.1f, 0.1f, 0.1f}, .texture = *texture,
                                  .mode = devex::render::SpriteMode::Sliced, .flipX = true});
-        world.sprites.push_back({.transform = at(2.0f, -1.0f, 0.0f), .size = {1.5f, 0.75f}, .naturalSize = {0.25f, 0.25f},
+        world.sprites.push_back({.transform = at(2.0f, -1.0f, 0.0f), .size = {1.5f, 0.8f}, .naturalSize = {0.25f, 0.25f},
                                  .texture = *texture, .mode = devex::render::SpriteMode::Tiled});
         world.sprites.push_back({.transform = at(-2.0f, -1.2f, 0.0f), .size = {1.0f, 1.0f}, .color = {0.5f, 0.5f, 0.5f, 1.0f},
                                  .additive = true});

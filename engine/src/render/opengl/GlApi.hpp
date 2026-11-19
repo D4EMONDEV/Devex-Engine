@@ -115,6 +115,7 @@ inline constexpr GLenum GL_MINOR_VERSION = 0x821C;
 inline constexpr GLenum GL_NUM_EXTENSIONS = 0x821D;
 inline constexpr GLenum GL_MAX_TEXTURE_SIZE = 0x0D33;
 inline constexpr GLenum GL_DEBUG_OUTPUT_SYNCHRONOUS = 0x8242;
+inline constexpr GLenum GL_DEBUG_SOURCE_SHADER_COMPILER = 0x8248;
 inline constexpr GLenum GL_DEBUG_TYPE_ERROR = 0x824C;
 inline constexpr GLenum GL_DEBUG_TYPE_PERFORMANCE = 0x8250;
 inline constexpr GLenum GL_DEBUG_SEVERITY_NOTIFICATION = 0x826B;

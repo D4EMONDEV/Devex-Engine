@@ -85,11 +85,16 @@ static_assert(sizeof(SpriteFrameData) == 96 && sizeof(UiDrawData) == 48 && sizeo
 void DEVEX_GL_CALL forwardDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message,
                                        const void* user)
 {
-    static_cast<void>(source);
     static_cast<void>(id);
     static_cast<void>(user);
     const std::string_view said(message, length >= 0 ? static_cast<std::size_t>(length) : std::strlen(message));
-    if (type == GL_DEBUG_TYPE_ERROR || severity == GL_DEBUG_SEVERITY_HIGH)
+    // Mesa gives the warnings of its shader compiler the highest severity: only a failed compile is an error.
+    const bool compilerWarning = source == GL_DEBUG_SOURCE_SHADER_COMPILER && type != GL_DEBUG_TYPE_ERROR;
+    if (compilerWarning)
+    {
+        DEVEX_LOG_WARNING("OpenGL: {}", said);
+    }
+    else if (type == GL_DEBUG_TYPE_ERROR || severity == GL_DEBUG_SEVERITY_HIGH)
     {
         DEVEX_LOG_ERROR("OpenGL: {}", said);
     }
@@ -1112,13 +1117,14 @@ core::Result<void> GlRenderer::endFrame()
     for (const CaptureRequest& request : std::exchange(m_captureRequests, {}))
     {
         const math::Extent2D captured = request.window ? size : fitted(size, request.maxSize);
-        // In sRGB, as the window of Vulkan keeps it.
+        // The scene in sRGB; the window as it keeps its colours, for its interface blends as the window blends it.
+        const bool srgb = !request.window || m_windowSrgb;
         Target target;
-        if (core::Result<void> made = ensureTarget(target, captured, GL_SRGB8_ALPHA8, GL_RGBA, GL_UNSIGNED_BYTE); !made)
+        if (core::Result<void> made = ensureTarget(target, captured, srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE); !made)
         {
             return made;
         }
-        drawImage(captured, request.window, true);
+        drawImage(captured, request.window, srgb);
         m_captured.push_back(readPixels(request.id, captured));
         destroyTarget(target);
     }

@@ -4137,9 +4137,15 @@ public:
 - Les blocs uniformes s'appellent comme leur type, suivi de `_std140` (`bindProgram` essaie les deux noms). Une matrice d'un
   bloc arrive en `row_major` : la matrice de glm s'envoie telle quelle. Celle d'un sprite, en quatre attributs qui sont ses
   colonnes, se multiplie par la droite (`mul(position, colonnes)`).
-- Les captures dessinent dans une image `SRGB8_ALPHA8`, la fenêtre dans un framebuffer sRGB quand le système le donne
-  (`m_windowSrgb`, lu par `GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING`) ; OpenGL l'encode avec `GL_FRAMEBUFFER_SRGB`, OpenGL ES
-  de lui-même. Sinon la tonemap et l'interface encodent (`encode`, `displaySpace`).
+- Les captures de la scène dessinent dans une image `SRGB8_ALPHA8`, la fenêtre dans un framebuffer sRGB quand le système
+  le donne (`m_windowSrgb`, lu par `GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING`) ; OpenGL l'encode avec `GL_FRAMEBUFFER_SRGB`,
+  OpenGL ES de lui-même. Sinon la tonemap et l'interface encodent (`encode`, `displaySpace`), et l'interface se mélange
+  dans les couleurs de l'écran. Une capture de la fenêtre garde ses couleurs comme elle (`RGBA8` sinon). Le framebuffer
+  par défaut de NVIDIA se dit linéaire, celui de Mesa sRGB ; la swapchain de lavapipe sans écran n'est pas sRGB : le test
+  de la scène 2D laisse le panneau de côté quand les deux fenêtres mélangent différemment (`blendsInDisplaySpace`).
+- Les tests de comparaison évitent les bords sur le centre d'un pixel : Vulkan les donne au côté du haut, l'OpenGL de Mesa
+  (origine en bas à gauche) à celui du bas, une ligne d'écart. Le compilateur de shaders de Mesa envoie ses avertissements
+  avec la sévérité haute : `forwardDebugMessage` les garde en avertissements.
 - La 3D (`GlScene.cpp`) : la caméra prend `clipCorrection` (z' = 2z - w), et la profondeur inversée de Vulkan se garde
   (effacée à 0, `GL_GREATER`) ; `frustumOf` prend la matrice sans correction. Les ombres se dessinent avec
   `shadowCorrection() * lecture`, où la matrice de lecture est celle de Vulkan (Y vers le bas, `flipY()` donné à

@@ -11,7 +11,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <format>
 #include <optional>
@@ -22,6 +25,25 @@ namespace {
 
 using namespace devex::test;
 
+// Whether a window blends its interface in the colours of the display: one that does not keep sRGB, as lavapipe's
+// without a screen or OpenGL's on NVIDIA, takes the colours of the interface encoded and blends them as a browser does.
+// Over the red quarter, 70% of the panel's blue leaves a red of 139 so, of 163 as light.
+[[nodiscard]] bool blendsInDisplaySpace(const devex::render::CapturedImage& window)
+{
+    return window.rgba[(std::size_t{75} * window.width + 115) * 4] < 151;
+}
+
+// The image without the rounded panel of the interface, the one part blended over others.
+[[nodiscard]] devex::render::CapturedImage withoutPanel(devex::render::CapturedImage image)
+{
+    for (std::uint32_t y = 29; y < 92; ++y)
+    {
+        std::fill_n(image.rgba.begin() + static_cast<std::ptrdiff_t>((std::size_t{y} * image.width + 29) * 4), 103 * 4,
+                    std::uint8_t{0});
+    }
+    return image;
+}
+
 // Whether the image of OpenGL is that of Vulkan, but for a few pixels along the edges, where the two may round a
 // coverage differently.
 void checkLikeVulkan(const devex::render::CapturedImage& vulkan, const devex::render::CapturedImage& openGl)
@@ -29,8 +51,11 @@ void checkLikeVulkan(const devex::render::CapturedImage& vulkan, const devex::re
     REQUIRE(openGl.width == vulkan.width);
     REQUIRE(openGl.height == vulkan.height);
     REQUIRE(openGl.rgba.size() == vulkan.rgba.size());
-    const Difference difference = compare(vulkan, openGl, 6);
-    INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));
+    // Two windows that keep their colours differently blend the panel differently, as they should.
+    const bool blendApart = blendsInDisplaySpace(vulkan) != blendsInDisplaySpace(openGl);
+    const Difference difference = blendApart ? compare(withoutPanel(vulkan), withoutPanel(openGl), 6) : compare(vulkan, openGl, 6);
+    INFO(std::format("{} channels differ, {:.2f} on average{}", difference.channels, difference.mean,
+                     blendApart ? ", out of the panel one window blends in the colours of the display" : ""));
     CHECK(difference.channels < vulkan.rgba.size() / 200);
     CHECK(difference.mean < 1.0);
     // The environment shows through in a corner, exposed and encoded as the display shows it.
