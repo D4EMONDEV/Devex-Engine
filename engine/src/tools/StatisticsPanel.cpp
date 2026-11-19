@@ -272,10 +272,12 @@ void StatisticsUi::update(ToolsState& state, EditorUiKit& kit, const scene::Scen
                 plot.guides.push_back(guide);
             }
         }
-        std::string reading = std::format("{} now, {} at most", measure.format(history.last()), measure.format(history.maximum()));
-        if (measure.history == &Monitors::frameTime && history.last() > 0.0f)
+        // Read once: MSVC 14.52 takes each read of an empty history in Release for a division by zero below.
+        const float latest = history.last();
+        std::string reading = std::format("{} now, {} at most", measure.format(latest), measure.format(history.maximum()));
+        if (measure.history == &Monitors::frameTime && latest > 0.0f)
         {
-            reading = std::format("{} now ({:.0f} FPS), {} at most", measure.format(history.last()), 1000.0f / history.last(),
+            reading = std::format("{} now ({:.0f} FPS), {} at most", measure.format(latest), 1000.0f / latest,
                                   measure.format(history.maximum()));
         }
         this->scene().get<scene::UiText>(monitors[index].reading).text = std::move(reading);

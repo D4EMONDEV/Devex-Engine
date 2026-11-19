@@ -28,7 +28,9 @@ inline constexpr std::size_t maxTextNesting = 64;
 
 struct TextValue;
 
-struct DEVEX_API TextCall
+// Not exported: exporting it would make its members here, where TextValue is not yet complete, which MSVC 14.52 refuses.
+// They are all inline.
+struct TextCall
 {
     std::string name;
     std::vector<TextValue> arguments;

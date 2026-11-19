@@ -4050,6 +4050,17 @@ public:
   (`baked.dvxmesh`, un carré de deux sous-maillages) et relit celui de chaque version qui en a un, octet pour octet.
 - `.po` et `.pot` (traductions) sont du texte de gettext, pas un format de Devex.
 
+## MSVC 14.52 (Visual Studio mis à jour le 2026-11-19)
+
+- Une mise à jour de Visual Studio qui retire l'ancien MSVC casse les dossiers de build : leur cache garde le chemin de
+  l'ancien `cl.exe`, `link.exe` et `lib.exe`. Supprimer `CMakeFiles/<version de CMake>` et reconfigurer avec
+  `cmake -U CMAKE_AR -U CMAKE_LINKER -U Z_VCPKG_CL -U MSVC_REDIST_DIR -S . -B <dossier>` depuis le shell de Visual Studio
+  garde les autres choix du dossier. Le projet du test `devex.documentation.configure` (`tests/documentation/game` du
+  dossier) a son propre cache, à supprimer aussi.
+- Un type exporté (`DEVEX_API`) fait ses membres implicites à sa définition : il ne peut pas tenir un `std::vector` d'un
+  type encore incomplet (`TextCall` n'est donc plus exporté). En Release, C4723 (« division potentielle par 0 ») tombe
+  aussi sur une division gardée : lire la valeur une fois avant de la tester et de diviser.
+
 ## Les threads sur le web
 
 - Le préréglage `web-threads` (`/root/build/web-threads` dans WSL) prend le triplet `wasm32-emscripten-threads`, qui
