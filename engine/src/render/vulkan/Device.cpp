@@ -169,9 +169,12 @@ struct RequiredFeatures
         {
             continue;
         }
-        VkBool32 canPresent = VK_FALSE;
-        DEVEX_VK_TRY(vkGetPhysicalDeviceSurfaceSupportKHR, physicalDevice, family, surface,
-                     &canPresent);
+        // Without a surface, before the window is made, any queue that draws and computes will do.
+        VkBool32 canPresent = surface == VK_NULL_HANDLE ? VK_TRUE : VK_FALSE;
+        if (surface != VK_NULL_HANDLE)
+        {
+            DEVEX_VK_TRY(vkGetPhysicalDeviceSurfaceSupportKHR, physicalDevice, family, surface, &canPresent);
+        }
         if (canPresent == VK_TRUE)
         {
             queueFamily = family;
@@ -443,6 +446,31 @@ bool Device::supportsMutableSwapchainFormat() const noexcept
 bool Device::supportsExclusiveDisplayChoice() const noexcept
 {
     return m_exclusiveDisplayChoice;
+}
+
+core::Result<std::string> Device::whyNoneCanDraw(VkInstance instance)
+{
+    auto physicalDevices = enumerate<VkPhysicalDevice>("vkEnumeratePhysicalDevices", vkEnumeratePhysicalDevices, instance);
+    if (!physicalDevices)
+    {
+        return std::unexpected(physicalDevices.error());
+    }
+    std::string reasons;
+    for (VkPhysicalDevice physicalDevice : *physicalDevices)
+    {
+        const core::Result<Inspection> inspection = inspect(physicalDevice, VK_NULL_HANDLE);
+        if (!inspection)
+        {
+            return std::unexpected(inspection.error());
+        }
+        if (inspection->candidate.missingRequirement.empty())
+        {
+            return std::string{};
+        }
+        reasons += std::format("{}{} {}", reasons.empty() ? "" : "; ", inspection->candidate.info.name,
+                               inspection->candidate.missingRequirement);
+    }
+    return reasons.empty() ? std::string("no GPU offers Vulkan") : reasons;
 }
 
 core::Result<std::string> Device::describeAll(VkInstance instance, VkSurfaceKHR surface, std::string_view inUse)

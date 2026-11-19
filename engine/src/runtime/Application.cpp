@@ -4069,13 +4069,19 @@ struct Session
         }
     }
     // What someone can do about a machine that cannot draw: most often, its driver is older than the engine.
-    constexpr std::string_view graphicsAdvice = ". Devex needs a graphics driver with Vulkan 1.3: updating it may solve this";
+    constexpr std::string_view graphicsAdvice =
+        ". Devex needs a graphics driver with Vulkan 1.3, or OpenGL 3.3 for a game: updating it may solve this";
+    // The API is chosen before the window, which a phone makes for Vulkan or for OpenGL ES: a game without Vulkan 1.3 draws
+    // with OpenGL; the editor, whose tools need Vulkan, does not.
+    const render::RenderApi api =
+        effective.enableRendering ? render::Renderer::chooseApi(*platform, !config.editor) : render::RenderApi::Automatic;
     core::Result<platform::Window> createdWindow = platform->createWindow({
         .title = effective.title,
         .width = effective.width,
         .height = effective.height,
         .resizable = effective.resizable,
-        .vulkan = effective.enableRendering,
+        .vulkan = effective.enableRendering && api == render::RenderApi::Vulkan,
+        .openGl = effective.enableRendering && api == render::RenderApi::OpenGl,
         .fullscreen = fullscreen,
         .borderless = borderless,
     });
@@ -4131,6 +4137,7 @@ struct Session
             .applicationName = effective.title,
             .presentMode = effective.presentMode,
             .preferredGpu = config.preferredGpu,
+            .api = api,
         });
         if (!created)
         {

@@ -382,6 +382,8 @@ add_library(Devex::Render ALIAS devex_render)
 target_sources(devex_render
     PRIVATE
         src/render/Atmosphere.cpp
+        src/render/BlockDecoding.cpp
+        src/render/BlockDecoding.hpp
         src/render/Culling.cpp
         src/render/CubeMaps.cpp
         src/render/SphericalHarmonics.cpp
@@ -497,8 +499,6 @@ if(DEVEX_WEBGPU)
     )
     target_sources(devex_render
         PRIVATE
-            src/render/webgpu/BlockDecoding.cpp
-            src/render/webgpu/BlockDecoding.hpp
             src/render/webgpu/WebGpuHelpers.hpp
             src/render/webgpu/WebGpuRenderer.cpp
             src/render/webgpu/WebGpuRenderer.hpp
@@ -510,9 +510,9 @@ if(DEVEX_WEBGPU)
     target_link_libraries(devex_render PRIVATE dawn::webgpu_dawn)
     target_compile_definitions(devex_render PRIVATE DEVEX_RENDERER_WEBGPU=1)
 endif()
-# The OpenGL backend, for OpenGL 3.3 on a computer, which takes the system's from SDL. Its shaders are translated into GLSL
-# at the build and kept in the program. OpenGL ES on Android and WebGL2 in a browser come later in its plan.
-if(DEVEX_OPENGL AND NOT ANDROID AND NOT EMSCRIPTEN)
+# The OpenGL backend, for OpenGL 3.3 on a computer and OpenGL ES 3.0 on Android, which takes the system's from SDL. Its
+# shaders are translated into GLSL at the build and kept in the program. WebGL2 in a browser comes later in its plan.
+if(DEVEX_OPENGL AND NOT EMSCRIPTEN)
     set(devex_glsl_source "${CMAKE_CURRENT_BINARY_DIR}/generated/GlShaders.cpp")
     devex_embed_glsl(OUTPUT "${devex_glsl_source}"
         SOURCES

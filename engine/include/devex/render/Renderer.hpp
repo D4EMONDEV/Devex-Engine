@@ -192,6 +192,11 @@ public:
     [[nodiscard]] static core::Result<Renderer> create(const platform::Platform& platform,
                                                        platform::Window& window,
                                                        const RendererConfig& config);
+    // The API a renderer draws with on this machine, chosen before its window, which a phone makes for Vulkan or for
+    // OpenGL ES, not both: Vulkan where a GPU has Vulkan 1.3 and what the renderer needs of it; otherwise OpenGL when
+    // `openGlFallback`, as a game takes it and the editor does not. WebGPU in a browser. On Android,
+    // `adb shell setprop debug.devex.renderer opengl` or `webgpu` chooses.
+    [[nodiscard]] static RenderApi chooseApi(const platform::Platform& platform, bool openGlFallback);
 
     Renderer(Renderer&& other) noexcept;
     Renderer& operator=(Renderer&& other) noexcept;

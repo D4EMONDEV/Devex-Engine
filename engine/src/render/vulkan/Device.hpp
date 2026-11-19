@@ -22,6 +22,8 @@ public:
     // machines where no device can be created too. inUse names the GPU that is running, if any.
     [[nodiscard]] static core::Result<std::string> describeAll(VkInstance instance, VkSurfaceKHR surface,
                                                                std::string_view inUse = {});
+    // Why no GPU of the machine can run Devex, before any window: empty when one can.
+    [[nodiscard]] static core::Result<std::string> whyNoneCanDraw(VkInstance instance);
 
     Device(Device&& other) noexcept;
     Device& operator=(Device&& other) noexcept;

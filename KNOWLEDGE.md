@@ -4101,9 +4101,11 @@ public:
   premier doigt.
 - Sur un téléphone (`isMobile()`), le lecteur web crée sa fenêtre sans `SDL_WINDOW_HIGH_PIXEL_DENSITY` (les pixels de
   la page), WebGPU fait ses cartes d'ombre moitié moins grandes, et miniaudio mixe par 4096 images.
-- Android sans Vulkan 1.3 : `Renderer::create` essaie Vulkan, et en `RenderApi::Automatic` passe à WebGPU (Dawn, compilé
-  avec `DEVEX_WEBGPU` dans les préréglages Android). `adb shell setprop debug.devex.renderer webgpu` le force. La surface
-  WebGPU se refait quand `Window::native().window` change (`m_surfaceWindow`). L'export donne à Gradle `ndkPath` et
+- Sans Vulkan 1.3 : `Renderer::chooseApi` décide avant la fenêtre (`VulkanRenderer::probe`, qui inspecte les GPU sans
+  surface par `Device::whyNoneCanDraw`), et l'application crée la fenêtre pour Vulkan ou pour OpenGL : un jeu passe à
+  OpenGL (ES 3.0 sur Android, 3.3 sur un ordinateur), l'éditeur reste en Vulkan. `adb shell setprop debug.devex.renderer
+  webgpu` (ou `opengl`) choisit sur Android. La surface WebGPU se refait quand `Window::native().window` change
+  (`m_surfaceWindow`). Une fenêtre OpenGL que l'EGL refuse en sRGB se refait sans. L'export donne à Gradle `ndkPath` et
   `ndkVersion`, sans lesquels il n'épure pas les bibliothèques.
 - Sur Android, SDL ignore `SDL_WINDOW_HIGH_PIXEL_DENSITY` : la fenêtre a tous les pixels de la surface. L'échelle 3D
   (`PlatformRendering::renderScale`, `RenderWorld::renderScale`, `scaledExtent`) réduit l'image de la scène, que la
@@ -4141,6 +4143,13 @@ public:
   dessine les couches avec `gl_blit` (`GL_FRAMEBUFFER_SRGB` pour les couleurs sur ordinateur) et se refait quand
   `m_textureRevision` change. Dans les shaders, `SV_VulkanVertexID` et `SV_VulkanInstanceID`, jamais `SV_VertexID` ni
   `SV_InstanceID`.
+- OpenGL ES ne lit aucun BC, et un vieil OpenGL pas BC7 : `createTexture` décode alors les blocs en pixels RGBA8 (ou
+  `SRGB8_ALPHA8`), avec `decodeBlocks` de `engine/src/render/BlockDecoding.hpp`, partagé avec WebGPU. ASTC sans
+  l'extension est refusé.
+- L'OpenGL ES de l'émulateur Android (« OpenGL ES Translator ») n'encode en sRGB ce qu'il dessine dans la couche d'un
+  tableau (`FramebufferTextureLayer`) qu'après qu'une texture 2D sRGB a été attachée au framebuffer : `fillTerrainLayers`
+  en attache une d'un pixel d'abord. Sans elle, les couleurs du terrain sortaient sombres (la couleur linéaire écrite telle
+  quelle). Mesurer sur l'émulateur : `adb shell setprop debug.devex.renderer opengl`, puis `ReadPixels` dans le log.
 
 ## C++ des jeux pour le web (étape 5 du web)
 

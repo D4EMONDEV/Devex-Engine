@@ -177,3 +177,11 @@ TEST_CASE("OpenGL ES 3.0 draws the same terrains, where the computer offers it",
     }
     CHECK(capture.errors().empty());
 }
+
+TEST_CASE("A machine with Vulkan 1.3 draws its games with Vulkan, chosen before any window", "[render][gpu]")
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform.has_value());
+    CHECK(devex::render::Renderer::chooseApi(*platform, true) == devex::render::RenderApi::Vulkan);
+    CHECK(devex::render::Renderer::chooseApi(*platform, false) == devex::render::RenderApi::Vulkan);
+}

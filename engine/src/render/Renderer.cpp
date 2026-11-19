@@ -17,34 +17,70 @@
 #include <sys/system_properties.h>
 #endif
 
+#include <string>
 #include <string_view>
 #include <utility>
 
 namespace devex::render {
 
-#if DEVEX_RENDERER_WEBGPU
 namespace {
 
 #if DEVEX_RENDERER_VULKAN
-constexpr bool hasVulkan = true;
+[[maybe_unused]] constexpr bool hasVulkan = true;
 #else
-constexpr bool hasVulkan = false;
+[[maybe_unused]] constexpr bool hasVulkan = false;
 #endif
 
-// What a developer asks of a phone, to try WebGPU on one that has Vulkan 1.3:
-// adb shell setprop debug.devex.renderer webgpu
-[[nodiscard]] bool webGpuAsked() noexcept
+// What a developer asks of a phone, to try another renderer on one that has Vulkan 1.3:
+// adb shell setprop debug.devex.renderer webgpu (or opengl)
+[[nodiscard]] std::string askedRenderer()
 {
 #if defined(__ANDROID__)
     char value[PROP_VALUE_MAX]{};
-    return __system_property_get("debug.devex.renderer", value) > 0 && std::string_view(value) == "webgpu";
+    return __system_property_get("debug.devex.renderer", value) > 0 ? std::string(value) : std::string{};
 #else
-    return false;
+    return {};
 #endif
 }
 
 } // namespace
+
+RenderApi Renderer::chooseApi(const platform::Platform& platform, bool openGlFallback)
+{
+    static_cast<void>(platform);
+    static_cast<void>(openGlFallback);
+    const std::string asked = askedRenderer();
+    static_cast<void>(asked);
+#if DEVEX_RENDERER_WEBGPU
+    if (asked == "webgpu" || !hasVulkan)
+    {
+        return RenderApi::WebGpu;
+    }
 #endif
+#if DEVEX_RENDERER_OPENGL
+    if (asked == "opengl")
+    {
+        return RenderApi::OpenGl;
+    }
+#endif
+#if DEVEX_RENDERER_VULKAN
+    const core::Result<void> probed = vulkan::VulkanRenderer::probe(platform);
+    if (probed)
+    {
+        return RenderApi::Vulkan;
+    }
+#if DEVEX_RENDERER_OPENGL
+    if (openGlFallback)
+    {
+        DEVEX_LOG_WARNING("Vulkan cannot draw here ({}): drawing with OpenGL", probed.error());
+        return RenderApi::OpenGl;
+    }
+#endif
+    return RenderApi::Vulkan;
+#else
+    return RenderApi::Automatic;
+#endif
+}
 
 core::Result<Renderer> Renderer::create(const platform::Platform& platform,
                                         platform::Window& window, const RendererConfig& config)
@@ -71,7 +107,7 @@ core::Result<Renderer> Renderer::create(const platform::Platform& platform,
         return Renderer(std::unique_ptr<RenderBackend>(std::move(*implementation)));
     };
     // WebGPU when asked, or when there is no Vulkan: in a browser.
-    if (config.api == RenderApi::WebGpu || (config.api == RenderApi::Automatic && (!hasVulkan || webGpuAsked())))
+    if (config.api == RenderApi::WebGpu || (config.api == RenderApi::Automatic && (!hasVulkan || askedRenderer() == "webgpu")))
     {
         return webGpu();
     }

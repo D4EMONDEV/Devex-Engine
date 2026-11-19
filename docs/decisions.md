@@ -6181,6 +6181,17 @@ téléphone par le préréglage mobile. Ce qu'ils ont demandé :
 - **`SV_VulkanInstanceID`**, comme `SV_VulkanVertexID` : Slang retire de l'autre la première instance du dessin, que
   GLSL ES n'a pas. Les niveaux d'une texture passent par le bloc uniforme, GLSL ES ne sachant pas les demander.
 
+**OpenGL ES en secours d'Android, décidé le 2026-11-19** avec l'utilisateur, une fois l'arène dessinée en OpenGL :
+
+- **OpenGL ES dès maintenant** plutôt que WebGPU jusqu'à la parité : un téléphone sans Vulkan 1.3 dessine en OpenGL ES 3.0,
+  sans les décals, les shaders du projet ni les lumières 2D, qu'OpenGL ne dessine pas encore. WebGPU reste dans l'APK, que
+  `adb shell setprop debug.devex.renderer webgpu` choisit ; `opengl` choisit OpenGL ES sur un téléphone en Vulkan 1.3.
+  Le manifeste demande OpenGL ES 3.0, et plus Vulkan : un téléphone sans Vulkan installe le jeu.
+- **Les jeux d'un vieil ordinateur en OpenGL 3.3** : sans Vulkan 1.3, le lecteur prend OpenGL au lieu de refuser le jeu.
+  L'éditeur, dont les outils dessinent avec Vulkan, ne le fait pas.
+- **Le choix avant la fenêtre**, comme décidé : `Renderer::chooseApi` crée une instance Vulkan et inspecte les GPU comme le
+  renderer, sans surface ; l'application fait la fenêtre pour l'API choisie.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

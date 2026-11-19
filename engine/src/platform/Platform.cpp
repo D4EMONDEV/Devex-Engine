@@ -743,9 +743,15 @@ core::Result<Window> Platform::createWindow(const WindowConfig& config)
         flags |= SDL_WINDOW_BORDERLESS;
     }
 
-    SDL_Window* const window =
+    SDL_Window* window =
         SDL_CreateWindow(config.title.c_str(), static_cast<int>(config.width),
                          static_cast<int>(config.height), flags);
+    // A phone whose EGL keeps no colours in sRGB still draws, its shaders encoding them.
+    if (window == nullptr && config.openGl)
+    {
+        SDL_GL_SetAttribute(SDL_GL_FRAMEBUFFER_SRGB_CAPABLE, 0);
+        window = SDL_CreateWindow(config.title.c_str(), static_cast<int>(config.width), static_cast<int>(config.height), flags);
+    }
     if (window == nullptr)
     {
         return core::makeError(core::ErrorCode::Platform, "cannot create window '{}': {}",
@@ -1593,7 +1599,12 @@ core::Result<std::span<const char* const>> Platform::vulkanInstanceExtensions() 
 {
     DEVEX_ASSERT(m_initialized);
     Uint32 count = 0;
-    const char* const* const extensions = SDL_Vulkan_GetInstanceExtensions(&count);
+    const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&count);
+    // Before any window of Vulkan, some systems want the loader loaded first.
+    if (extensions == nullptr && SDL_Vulkan_LoadLibrary(nullptr))
+    {
+        extensions = SDL_Vulkan_GetInstanceExtensions(&count);
+    }
     if (extensions == nullptr)
     {
         return core::makeError(core::ErrorCode::Unsupported,

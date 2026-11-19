@@ -2,6 +2,8 @@
 
 #include "GlShaders.hpp"
 
+#include "../BlockDecoding.hpp"
+
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/ShaderData.hpp>
 #include <devex/core/Log.hpp>
@@ -671,13 +673,19 @@ core::Result<TextureHandle> GlRenderer::createTexture(const asset::TextureData& 
     {
         return std::unexpected(valid.error());
     }
-    const FormatLayout layout = layoutOf(texture.format);
+    FormatLayout layout = layoutOf(texture.format);
     const bool bptc = texture.format == asset::TextureFormat::Bc7Unorm || texture.format == asset::TextureFormat::Bc7Srgb;
     const bool astc = texture.format == asset::TextureFormat::Astc4x4Unorm || texture.format == asset::TextureFormat::Astc4x4Srgb;
-    // The blocks of BC5 OpenGL 3.0 reads; BC7 and ASTC, the systems that say so. OpenGL ES reads no BC.
-    if ((bptc && !m_bptc) || (astc && !m_astc) || (m_es && texture.format == asset::TextureFormat::Bc5Unorm))
+    if (astc && !m_astc)
     {
         return core::makeError(core::ErrorCode::Unsupported, "this OpenGL cannot read {} textures", asset::toString(texture.format));
+    }
+    // The blocks of BC5 OpenGL 3.0 reads, and BC7 the systems that say so; OpenGL ES reads no BC. The others get the pixels,
+    // as WebGPU in the browser of a phone.
+    const bool decode = (bptc && !m_bptc) || (m_es && texture.format == asset::TextureFormat::Bc5Unorm);
+    if (decode)
+    {
+        layout = {texture.format == asset::TextureFormat::Bc7Srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, 4};
     }
     GpuTexture gpu;
     gpu.format = texture.format;
@@ -694,7 +702,13 @@ core::Result<TextureHandle> GlRenderer::createTexture(const asset::TextureData& 
     for (std::size_t level = 0; level < texture.mips.size(); ++level)
     {
         const asset::TextureMip& mip = texture.mips[level];
-        if (layout.compressed)
+        if (decode)
+        {
+            const std::vector<std::byte> pixels = decodeBlocks(texture.format, mip.bytes, mip.width, mip.height);
+            gl::TexImage2D(GL_TEXTURE_2D, static_cast<GLint>(level), static_cast<GLint>(layout.internalFormat),
+                           static_cast<GLsizei>(mip.width), static_cast<GLsizei>(mip.height), 0, layout.format, layout.type, pixels.data());
+        }
+        else if (layout.compressed)
         {
             gl::CompressedTexImage2D(GL_TEXTURE_2D, static_cast<GLint>(level), layout.internalFormat, static_cast<GLsizei>(mip.width),
                                      static_cast<GLsizei>(mip.height), 0, static_cast<GLsizei>(mip.bytes.size()), mip.bytes.data());

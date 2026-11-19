@@ -1,6 +1,6 @@
 #include "WebGpuRenderer.hpp"
 
-#include "BlockDecoding.hpp"
+#include "../BlockDecoding.hpp"
 #include "WebGpuHelpers.hpp"
 #include "WebGpuShaders.hpp"
 

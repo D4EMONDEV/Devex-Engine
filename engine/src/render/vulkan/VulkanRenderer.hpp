@@ -68,6 +68,9 @@ public:
     // The same with no renderer: a machine that cannot make one is the first to need a report.
     [[nodiscard]] static core::Result<std::string> describeGraphicsWithoutRenderer(const platform::Platform& platform,
                                                                                    platform::Window& window);
+    // Whether a GPU of the machine draws with Vulkan 1.3 and what the renderer needs of it, before any window is made for
+    // it: the reason when none does.
+    [[nodiscard]] static core::Result<void> probe(const platform::Platform& platform);
 
     [[nodiscard]] core::Result<MeshHandle> createMesh(const asset::MeshData& mesh) override;
     [[nodiscard]] bool isReady(MeshHandle mesh) const noexcept override;

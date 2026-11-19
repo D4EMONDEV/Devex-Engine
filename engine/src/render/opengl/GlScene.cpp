@@ -1203,9 +1203,21 @@ void GlRenderer::fillTerrainLayers(TerrainLayers& layers, const RenderTerrain& t
     gl::UseProgram(m_blitProgram.program);
     gl::BindVertexArray(m_emptyArray);
     gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::blit, m_blitBuffer, 0, sizeof(BlitData));
+    // The OpenGL ES of the Android emulator encodes the colours drawn into sRGB only in a framebuffer that has held an sRGB
+    // texture in 2D, not into the layer of an array alone: one is attached first, which the other systems do not mind.
+    GLuint srgbTexture = 0;
+    if (m_es)
+    {
+        constexpr std::array<std::uint8_t, 4> pixel{};
+        gl::GenTextures(1, &srgbTexture);
+        gl::BindTexture(GL_TEXTURE_2D, srgbTexture);
+        gl::TexImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(GL_SRGB8_ALPHA8), 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+        gl::BindTexture(GL_TEXTURE_2D, 0);
+        gl::FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, srgbTexture, 0);
+    }
     for (std::size_t array = 0; array < arrays.size(); ++array)
     {
-        // The colours are encoded back into sRGB as they are drawn.
+        // The colours are encoded back into sRGB as they are drawn: by OpenGL when told to, by OpenGL ES always.
         if (!m_es)
         {
             array == 0 ? gl::Enable(GL_FRAMEBUFFER_SRGB) : gl::Disable(GL_FRAMEBUFFER_SRGB);
@@ -1224,6 +1236,11 @@ void GlRenderer::fillTerrainLayers(TerrainLayers& layers, const RenderTerrain& t
                 gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(blit), &blit);
                 gl::FramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, *arrays[array].first, static_cast<GLint>(mip),
                                             static_cast<GLint>(layer));
+                if (const GLenum status = gl::CheckFramebufferStatus(GL_FRAMEBUFFER); status != GL_FRAMEBUFFER_COMPLETE)
+                {
+                    DEVEX_LOG_WARNING("OpenGL cannot draw the layers of a terrain into level {} of their array: {:#x}", mip, status);
+                    continue;
+                }
                 gl::Viewport(0, 0, static_cast<GLsizei>(side), static_cast<GLsizei>(side));
                 gl::DrawArrays(GL_TRIANGLES, 0, 3);
             }
@@ -1235,6 +1252,7 @@ void GlRenderer::fillTerrainLayers(TerrainLayers& layers, const RenderTerrain& t
     }
     gl::BindFramebuffer(GL_FRAMEBUFFER, 0);
     gl::DeleteFramebuffers(1, &framebuffer);
+    gl::DeleteTextures(1, &srgbTexture);
 }
 
 void GlRenderer::prepareTerrains(const ViewMatrices& matrices, const Frustum& frustum)

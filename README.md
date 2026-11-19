@@ -358,8 +358,8 @@ ctest --preset test-linux-debug --label-exclude gpu
 Pour Android, le moteur et le lecteur (`libmain.so`) se compilent depuis Windows ou Linux avec le
 NDK d'Android Studio, que désigne `ANDROID_NDK_HOME` : `android-arm64` pour les téléphones,
 `android-arm32` pour ceux dont l'Android est en 32 bits, `android-x86_64` pour l'émulateur d'Android
-Studio. Un téléphone en Vulkan 1.3 dessine avec Vulkan ; un autre, en Vulkan 1.1, avec le renderer
-WebGPU du web, par Dawn, qui ne montre que ce que montre Compatibility. Une fois ces builds faits à côté de celui de
+Studio. Un téléphone en Vulkan 1.3 dessine avec Vulkan ; un autre, en Vulkan 1.1 ou sans Vulkan, avec le
+renderer OpenGL, en OpenGL ES 3.0. Une fois ces builds faits à côté de celui de
 l'éditeur, **Project > Export Game...** les propose sur la plateforme Android, ou en ligne de commande.
 Gradle fait l'APK ou l'AAB, le code C++ du jeu se compile avec le NDK, et `--install` lance le jeu
 sur l'appareil branché ou l'émulateur. La première fois, Gradle télécharge ce qu'il lui faut. L'éditeur trouve seul le

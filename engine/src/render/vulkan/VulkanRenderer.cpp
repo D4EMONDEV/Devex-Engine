@@ -470,6 +470,33 @@ core::Result<std::string> VulkanRenderer::describeGraphicsWithoutRenderer(const 
     return Device::describeAll(instance->handle(), surface.handle());
 }
 
+core::Result<void> VulkanRenderer::probe(const platform::Platform& platform)
+{
+    const core::Result<std::span<const char* const>> extensions = platform.vulkanInstanceExtensions();
+    if (!extensions)
+    {
+        return std::unexpected(extensions.error());
+    }
+    const core::Result<Instance> instance = Instance::create({
+        .applicationName = "Devex probe",
+        .requiredExtensions = *extensions,
+    });
+    if (!instance)
+    {
+        return std::unexpected(instance.error());
+    }
+    const core::Result<std::string> missing = Device::whyNoneCanDraw(instance->handle());
+    if (!missing)
+    {
+        return std::unexpected(missing.error());
+    }
+    if (!missing->empty())
+    {
+        return core::makeError(core::ErrorCode::Unsupported, "{}", *missing);
+    }
+    return {};
+}
+
 core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
 {
     if (core::Result<void> valid = asset::validate(mesh); !valid)

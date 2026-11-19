@@ -4,7 +4,7 @@
 #include <array>
 #include <cstring>
 
-namespace devex::render::webgpu {
+namespace devex::render {
 namespace {
 
 // The tables of the BC7 specification: the subset of each pixel for the 64 partitions of two and three subsets, and
@@ -466,4 +466,4 @@ std::vector<std::byte> decodeBlocks(asset::TextureFormat format, std::span<const
     return rgba;
 }
 
-} // namespace devex::render::webgpu
+} // namespace devex::render

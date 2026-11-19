@@ -1,7 +1,7 @@
 // The WebGPU renderer, on a computer with Dawn: it draws a 2D scene as Vulkan does, and decodes the blocks of BC
 // textures for a device without them as basisu does.
 #include "RenderComparison.hpp"
-#include "render/webgpu/BlockDecoding.hpp"
+#include "render/BlockDecoding.hpp"
 
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/import/ShaderFile.hpp>
@@ -628,7 +628,7 @@ TEST_CASE("Blocks of BC7 and BC5 decode as basisu decodes them", "[render][webgp
             {
                 SKIP("this build has no basisu to compare with");
             }
-            const std::vector<std::byte> decoded = devex::render::webgpu::decodeBlocks(format, bytes, 64, 64);
+            const std::vector<std::byte> decoded = devex::render::decodeBlocks(format, bytes, 64, 64);
             REQUIRE(decoded.size() == expected->rgba.size());
             std::size_t different = 0;
             for (std::size_t at = 0; at < decoded.size(); ++at)
