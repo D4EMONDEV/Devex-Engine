@@ -3266,6 +3266,7 @@ void compileWebShader(const ShaderSource& parsed, std::string_view sourceName, c
     std::filesystem::remove(output, error);
 }
 
+#if DEVEX_GLSL_TRANSLATION
 // The entry points of the code for OpenGL of a kind, and whether each is a vertex shader.
 [[nodiscard]] std::vector<std::pair<std::string_view, bool>> openGlEntries(ShaderKind kind)
 {
@@ -3284,7 +3285,6 @@ void compileWebShader(const ShaderSource& parsed, std::string_view sourceName, c
     return {};
 }
 
-#if DEVEX_GLSL_TRANSLATION
 // GLSL ES 3.00 and GLSL 3.30 of one entry point of a module of SPIR-V, as cmake/EmbedGlsl.cmake translates those of the
 // engine: GLSL ES 3.00 links what the vertex stage hands the fragment stage by name, which each stage spells its own way,
 // so both are renamed after their location, devex_varying<location>.
