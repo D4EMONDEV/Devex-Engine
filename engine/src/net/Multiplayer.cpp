@@ -356,6 +356,49 @@ struct Multiplayer::Impl
         events.push_back({.kind = NetworkEvent::Kind::PeerJoined, .peer = id});
     }
 
+    // Whether a connection has answered none of what was sent to it for longer than the silence limit: ENet keeps when it
+    // began waiting (earliestTimeout, cleared by any answer), but ends a connection only at a retransmission, whose wait
+    // doubles each time, up to twice the limit later. This is checked at every poll, once what came is read: a game that
+    // was frozen itself is not taken for the other's silence.
+    [[nodiscard]] bool silent(const ENetPeer* connection) const noexcept
+    {
+        // Milliseconds of ENet, which wrap around: their difference does too.
+        return connection != nullptr && connection->state == ENET_PEER_STATE_CONNECTED && connection->earliestTimeout != 0 &&
+               enet->serviceTime - connection->earliestTimeout >= silenceLimit;
+    }
+
+    // The players, or the host, that have answered nothing for longer than the silence limit are gone.
+    void dropSilent()
+    {
+        if (enet == nullptr)
+        {
+            return;
+        }
+        if (!hosting)
+        {
+            if (state == MultiplayerState::Online && silent(server))
+            {
+                enet_peer_disconnect_now(server, 0);
+                close();
+                events.push_back({.kind = NetworkEvent::Kind::Disconnected});
+            }
+            return;
+        }
+        for (auto client = clients.begin(); client != clients.end();)
+        {
+            if (silent(client->connection))
+            {
+                enet_peer_disconnect_now(client->connection, 0);
+                removeClient(client);
+                client = clients.begin();
+            }
+            else
+            {
+                ++client;
+            }
+        }
+    }
+
     void clientLeft(const ENetEvent& event)
     {
         const auto found = std::ranges::find(clients, event.peer, &Client::connection);
@@ -805,6 +848,7 @@ void Multiplayer::service()
             break;
         }
     }
+    impl.dropSilent();
 #if !defined(__EMSCRIPTEN__)
     impl.serviceWebSockets();
 #endif

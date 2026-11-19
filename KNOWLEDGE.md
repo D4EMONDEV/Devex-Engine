@@ -2204,6 +2204,10 @@ namespace devex::ui {
 - Exemple multijoueur : `samples/sandbox/assets/scenes/arena_online.dvxscene`, `code/Online.cs`, guide `docs/multiplayer.md`.
 - Instances de Play : `PlayGroup` (`runtime/EditorPlay`), le menu près de Play (`playInstancesMenu`, `tools/EditorMenus.cpp`),
   `ScriptSettings::playInstances`, `EditorPlayClient::startNetwork`, `Multiplayer::keepAlive`, `TestInstance`.
+- Silence d'un joueur (`Multiplayer::setSilenceLimit`) : `dropSilent`, à chaque `poll` après lecture de ce qui est arrivé,
+  coupe une connexion dont `ENetPeer::earliestTimeout` (début de l'attente sans réponse, remis à 0 par tout accusé) est
+  plus vieux que la limite. ENet ne le vérifie qu'aux retransmissions, dont l'attente double : la coupure tombait jusqu'à
+  deux fois la limite plus tard. `lastReceiveTime` ne bouge qu'aux accusés : un jeu gelé lui-même le croirait silencieux.
 - Réplication : `scene/NetworkComponents.hpp` (`NetworkSpawner`, `NetworkSync`), `runtime/NetworkReplication`
   (`receive` après `poll`, `send` avant `flush`), `runtime::setAuthority` ; les cases sont dans
   `tools/NetworkFieldsUi.cpp` ; `net/Bytes.hpp` écrit et lit ce qui voyage.
