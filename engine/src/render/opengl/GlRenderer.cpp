@@ -684,6 +684,8 @@ core::Result<TextureHandle> GlRenderer::createTexture(const asset::TextureData& 
     gpu.size = {texture.mips.front().width, texture.mips.front().height};
     gpu.bindable = texture.format != asset::TextureFormat::R32Float;
     gpu.nearest = texture.filter == asset::TextureFilter::Nearest;
+    gpu.mips = static_cast<std::uint32_t>(texture.mips.size());
+    ++m_textureRevision;
     gl::GenTextures(1, &gpu.texture);
     gl::BindTexture(GL_TEXTURE_2D, gpu.texture);
     gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
@@ -719,6 +721,7 @@ void GlRenderer::destroyTexture(TextureHandle texture)
     if (const std::optional<GpuTexture> removed = m_textures.remove(texture))
     {
         gl::DeleteTextures(1, &removed->texture);
+        ++m_textureRevision;
     }
 }
 
@@ -738,6 +741,7 @@ core::Result<void> GlRenderer::updateTexture(TextureHandle texture, std::uint32_
     {
         return core::makeError(core::ErrorCode::InvalidArgument, "the rows go past the texture");
     }
+    ++m_textureRevision;
     gl::BindTexture(GL_TEXTURE_2D, gpu->texture);
     gl::PixelStorei(GL_UNPACK_ALIGNMENT, 1);
     gl::TexSubImage2D(GL_TEXTURE_2D, 0, 0, static_cast<GLint>(top), static_cast<GLsizei>(gpu->size.width), static_cast<GLsizei>(height),
@@ -837,6 +841,8 @@ core::Result<void> GlRenderer::endFrame()
     m_world.camera = blendPostVolumes(m_world.camera, m_world.postVolumes);
     m_drawCalls = 0;
     m_time = std::fmod(m_time + 1.0f, 1024.0f);
+    m_shaderTime = static_cast<float>(
+        std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now() - m_startTime).count(), 3600.0));
     updateExposure();
     m_exposure = exposureFromEv100(m_ev100);
 
@@ -906,7 +912,9 @@ core::Result<void> GlRenderer::endFrame()
     const SpriteFrameData frame{.viewProjection = matrices.viewProjection, .canvasModulate = math::Vec4(m_world.canvasModulate, 1.0f)};
     gl::BindBuffer(GL_UNIFORM_BUFFER, m_spriteFrameBuffer);
     gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(frame), &frame);
-    orderTransparent();
+    prepareParticles(matrices);
+    prepareTerrains(matrices, frustum);
+    orderTransparent(matrices);
 
     // The shadows, then the scene: the environment, the opaque meshes, then what is blended, meshes and sprites, in their
     // order, testing the depth of the opaque surfaces without writing it.
@@ -933,7 +941,10 @@ core::Result<void> GlRenderer::endFrame()
     gl::DepthFunc(GL_GREATER);
     gl::DepthMask(GL_TRUE);
     drawMeshes(false);
+    drawTerrains(std::nullopt);
+    drawGrass();
     gl::DepthMask(GL_FALSE);
+    copySceneDepth(sceneSize);
     drawTransparent();
     gl::Disable(GL_DEPTH_TEST);
     gl::DepthMask(GL_TRUE);

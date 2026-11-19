@@ -6166,6 +6166,21 @@ shaders du projet viendront ensuite. Ce qu'elle a demandé :
 - **Tous les attributs d'un dessin dans une seule structure** : Slang compte les emplacements de chaque paramètre depuis la
   fin du précédent, ce qui dépassait les 16 d'OpenGL.
 
+**Les particules et les terrains, faits le 2026-11-19** (`gl_particle`, `gl_terrain`, `gl_blit`), ce que l'arène du bac à
+sable dessine encore, au-delà des maillages : son brouillard volumétrique et ses effets après la lumière sont coupés sur
+téléphone par le préréglage mobile. Ce qu'ils ont demandé :
+
+- **Les particules en attributs d'instance**, et chaque segment d'une traînée avec ses deux points, rangés par le CPU dans
+  l'ordre de `trailSegments`. Une particule éclairée prend les lumières qui atteignent le centre de son dessin.
+- **Une copie de la profondeur** pour les particules qui s'effacent contre les surfaces : OpenGL ne lit pas ce dans quoi il
+  dessine. Elle n'est faite que dans une image qui en a.
+- **Les blocs et les touffes d'herbe en attributs d'instance** : une touffe est l'instance de tous ses brins, son diviseur
+  étant leur nombre. Les sommets se trouvent par leur indice, sans tampon, comme ceux de WebGPU.
+- **Les textures des couches dessinées par un triangle** dans les tableaux, niveau par niveau : une copie de framebuffers ne
+  lit pas les textures compressées.
+- **`SV_VulkanInstanceID`**, comme `SV_VulkanVertexID` : Slang retire de l'autre la première instance du dessin, que
+  GLSL ES n'a pas. Les niveaux d'une texture passent par le bloc uniforme, GLSL ES ne sachant pas les demander.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

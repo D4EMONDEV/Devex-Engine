@@ -64,7 +64,10 @@ TEST_CASE("Every shader of OpenGL is translated for OpenGL ES 3.0 and OpenGL 3.3
 {
     for (const std::string_view entry : {"skyVertex", "skyFragment", "spriteVertex", "spriteFragment", "uiVertex", "uiFragment", "meshVertex",
                                          "skinnedVertex", "meshFragment", "shadowVertex", "skinnedShadowVertex", "shadowFragment", "bakeVertex",
-                                         "equirectangularToCube", "prefilterSpecular", "irradiance", "brdfTable", "luminanceFragment",
+                                         "equirectangularToCube", "prefilterSpecular", "irradiance", "brdfTable", "luminanceFragment", "particleVertex",
+                                         "particleFragment", "ribbonVertex", "ribbonFragment",
+                                         "groundVertex", "groundFragment", "groundShadowVertex", "groundShadowFragment", "grassVertex",
+                                         "grassFragment", "blitVertex", "blitFragment",
                                          "tonemapVertex", "tonemapFragment"})
     {
         INFO(entry);
@@ -110,10 +113,10 @@ TEST_CASE("OpenGL ES 3.0 draws the same 2D scene, where the computer offers it",
     CHECK(capture.errors().empty());
 }
 
-TEST_CASE("OpenGL draws lit meshes, their shadows and the fog as Vulkan does", "[render][gpu][opengl]")
+TEST_CASE("OpenGL draws lit meshes, their shadows, the fog and particles as Vulkan does", "[render][gpu][opengl]")
 {
     const ErrorCapture capture;
-    // Without the decal and the particles, which OpenGL does not draw yet.
+    // Without the decal, which OpenGL does not draw yet.
     const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan, false, false, 1.0f, false);
     const devex::render::CapturedImage openGl = drawMeshes(devex::render::RenderApi::OpenGl, false, false, 1.0f, false);
     checkMeshesLikeVulkan(vulkan, openGl);
@@ -125,7 +128,7 @@ TEST_CASE("OpenGL draws lit meshes, their shadows and the fog as Vulkan does", "
     CHECK(capture.errors().empty());
 }
 
-TEST_CASE("OpenGL ES 3.0 draws the same lit meshes, where the computer offers it", "[render][gpu][opengl]")
+TEST_CASE("OpenGL ES 3.0 draws the same lit meshes and particles, where the computer offers it", "[render][gpu][opengl]")
 {
     if (const std::optional<std::string> missing = withoutOpenGlEs())
     {
@@ -133,7 +136,39 @@ TEST_CASE("OpenGL ES 3.0 draws the same lit meshes, where the computer offers it
     }
     const ErrorCapture capture;
     const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan, false, false, 1.0f, false);
-    const devex::render::CapturedImage openGlEs = drawMeshes(devex::render::RenderApi::OpenGl, false, false, 1.0f, false, true);
+    const devex::render::CapturedImage openGlEs = drawMeshes(devex::render::RenderApi::OpenGl, false, false, 1.0f, false, true, true);
+    checkMeshesLikeVulkan(vulkan, openGlEs);
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("OpenGL draws terrains, their layers, their shadows and their grass as Vulkan does", "[render][gpu][opengl]")
+{
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawTerrain(devex::render::RenderApi::Vulkan);
+    const devex::render::CapturedImage openGl = drawTerrain(devex::render::RenderApi::OpenGl);
+    checkMeshesLikeVulkan(vulkan, openGl);
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("OpenGL ES 3.0 draws the same terrains, where the computer offers it", "[render][gpu][opengl]")
+{
+    if (const std::optional<std::string> missing = withoutOpenGlEs())
+    {
+        SKIP(*missing);
+    }
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawTerrain(devex::render::RenderApi::Vulkan);
+    const devex::render::CapturedImage openGlEs = drawTerrain(devex::render::RenderApi::OpenGl, true);
     checkMeshesLikeVulkan(vulkan, openGlEs);
 
     for (const std::string& error : capture.errors())

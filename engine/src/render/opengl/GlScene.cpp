@@ -97,6 +97,72 @@ struct InstanceData
     std::uint32_t firstBone = 0;
     std::uint32_t boneCount = 0;
 };
+struct ParticleDrawData
+{
+    std::uint32_t facing = 0;
+    std::uint32_t flags = 0;
+    std::uint32_t textured = 0;
+    std::uint32_t padding0 = 0;
+    math::Vec2 sheet{1.0f};
+    float softness = 0.0f;
+    std::uint32_t padding1 = 0;
+    std::array<std::uint32_t, 2> lights{0xFFFFFFFFU, 0xFFFFFFFFU};
+    std::uint32_t padding2 = 0;
+    std::uint32_t padding3 = 0;
+};
+// A terrain as gl_terrain.slang reads it, with the local lights that shine on it.
+struct TerrainData
+{
+    math::Vec3 origin{0.0f};
+    float size = 1.0f;
+    std::uint32_t resolution = 0;
+    std::uint32_t layerCount = 0;
+    float textureSize = 4.0f;
+    float blendSharpness = 0.5f;
+    std::uint32_t triplanar = 0;
+    std::int32_t autoBaseLayer = 0;
+    std::int32_t autoSlopeLayer = -1;
+    float autoSlope = 0.0f;
+    std::int32_t autoHeightLayer = -1;
+    float autoHeight = 0.0f;
+    float autoBlend = 0.0f;
+    float windStrength = 0.0f;
+    float windSpeed = 0.0f;
+    float grassDistance = 0.0f;
+    float leafRange = 0.0f;
+    std::uint32_t gridCells = terrainBlockCells;
+    math::Vec3 grassColor{0.0f};
+    float grassHeight = 0.0f;
+    math::Vec3 grassTipColor{0.0f};
+    float grassWidth = 0.0f;
+    std::array<math::Vec4, 8> baseColorFactors{};
+    std::array<math::Vec4, 8> layerFactors{};
+    std::array<std::uint32_t, 2> lights{0xFFFFFFFFU, 0xFFFFFFFFU};
+    std::uint32_t padding0 = 0;
+    std::uint32_t padding1 = 0;
+};
+struct TerrainDrawData
+{
+    math::Vec3 cameraPosition{0.0f};
+    std::uint32_t bladesPerTile = 1;
+    float bladeWidthScale = 1.0f;
+    float time = 0.0f;
+    float padding0 = 0.0f;
+    float padding1 = 0.0f;
+};
+struct BlitData
+{
+    float targetWidth = 1.0f;
+    float targetHeight = 1.0f;
+    float sourceLevels = 1.0f;
+    float padding0 = 0.0f;
+};
+// A segment of a ribbon as gl_particle.slang reads it: the point it starts at, then the one it ends at.
+struct RibbonSegment
+{
+    GpuTrailPoint from;
+    GpuTrailPoint to;
+};
 struct BakeData
 {
     std::uint32_t size = 0;
@@ -109,7 +175,13 @@ struct BakeData
     std::uint32_t padding1 = 0;
 };
 static_assert(sizeof(SceneData) == 688 && sizeof(GpuLight) == 64 && sizeof(LightData) == 2048 && sizeof(ShadowView) == 80 &&
-              sizeof(MaterialData) == 64 && sizeof(InstanceData) == 80 && sizeof(BakeData) == 32);
+              sizeof(MaterialData) == 64 && sizeof(InstanceData) == 80 && sizeof(BakeData) == 32 && sizeof(ParticleDrawData) == 48 &&
+              sizeof(GpuParticle) == 64 && sizeof(RibbonSegment) == 96 && sizeof(TerrainData) == 384 && sizeof(TerrainDrawData) == 32 &&
+              sizeof(GpuTerrainNode) == 16);
+
+// The textures of the layers of a terrain: as large, and with as many levels, as WebGPU's.
+constexpr std::uint32_t terrainLayerSize = 512;
+constexpr std::uint32_t terrainLayerMips = 10;
 
 // The sizes and the samples of the bakes, as WebGPU's.
 constexpr std::uint32_t radianceSize = 512;
@@ -204,7 +276,13 @@ core::Result<void> GlRenderer::createSceneResources()
         program = *linked;
         return {};
     };
-    const std::array<std::tuple<Program*, std::string_view, std::string_view>, 9> programs{{
+    const std::array<std::tuple<Program*, std::string_view, std::string_view>, 15> programs{{
+        {&m_groundProgram, "groundVertex", "groundFragment"},
+        {&m_groundShadowProgram, "groundShadowVertex", "groundShadowFragment"},
+        {&m_grassProgram, "grassVertex", "grassFragment"},
+        {&m_blitProgram, "blitVertex", "blitFragment"},
+        {&m_particleProgram, "particleVertex", "particleFragment"},
+        {&m_ribbonProgram, "ribbonVertex", "ribbonFragment"},
         {&m_meshProgram, "meshVertex", "meshFragment"},
         {&m_skinnedProgram, "skinnedVertex", "meshFragment"},
         {&m_shadowProgram, "shadowVertex", "shadowFragment"},
@@ -241,6 +319,45 @@ core::Result<void> GlRenderer::createSceneResources()
                      {"emissiveTexture", unit::fifth},
                      {"boneTexture", unit::bones}});
     }
+    for (const Program* particles : {&m_particleProgram, &m_ribbonProgram})
+    {
+        bindProgram(*particles,
+                    {{"SceneData", binding::scene},
+                     {"LightData", binding::lights},
+                     {"ShadowViewData", binding::shadowViews},
+                     {"ParticleDraw", binding::particleDraw}},
+                    {{"irradianceEnvironment", unit::irradiance},
+                     {"specularEnvironment", unit::specular},
+                     {"brdfLut", unit::brdf},
+                     {"cascadeMap", unit::cascades},
+                     {"atlasMap", unit::atlas},
+                     {"particleTexture", unit::first},
+                     {"sceneDepth", unit::second}});
+    }
+    for (const Program* terrain : {&m_groundProgram, &m_groundShadowProgram, &m_grassProgram})
+    {
+        bindProgram(*terrain,
+                    {{"SceneData", binding::scene},
+                     {"LightData", binding::lights},
+                     {"ShadowViewData", binding::shadowViews},
+                     {"TerrainData", binding::terrain},
+                     {"TerrainDrawData", binding::terrainDraw},
+                     {"ViewData", binding::shadowView}},
+                    {{"irradianceEnvironment", unit::irradiance},
+                     {"specularEnvironment", unit::specular},
+                     {"brdfLut", unit::brdf},
+                     {"cascadeMap", unit::cascades},
+                     {"atlasMap", unit::atlas},
+                     {"heightMap", unit::first},
+                     {"slopeMap", unit::second},
+                     {"paintMap0", unit::third},
+                     {"paintMap1", unit::fourth},
+                     {"detailMap", unit::fifth},
+                     {"layerColors", unit::layerColors},
+                     {"layerSurfaces", unit::layerSurfaces},
+                     {"layerNormals", unit::layerNormals}});
+    }
+    bindProgram(m_blitProgram, {{"BlitData", binding::blit}}, {{"sourceImage", unit::first}});
     for (const Program* shadow : {&m_shadowProgram, &m_skinnedShadowProgram})
     {
         bindProgram(*shadow, {{"ViewData", binding::shadowView}, {"MaterialData", binding::material}},
@@ -263,6 +380,73 @@ core::Result<void> GlRenderer::createSceneResources()
     uniform(m_bakeBuffer, sizeof(BakeData));
     gl::GenBuffers(1, &m_shadowMatrixBuffer);
     gl::GenBuffers(1, &m_instanceBuffer);
+    gl::GenBuffers(1, &m_particleBuffer);
+    gl::GenBuffers(1, &m_ribbonBuffer);
+    gl::GenBuffers(1, &m_particleDrawBuffer);
+    gl::GenBuffers(1, &m_terrainNodeBuffer);
+    gl::GenBuffers(1, &m_grassTileBuffer);
+    gl::GenBuffers(1, &m_terrainBuffer);
+    gl::GenBuffers(1, &m_terrainDrawBuffer);
+    uniform(m_blitBuffer, sizeof(BlitData));
+    const auto aligned = [this](std::size_t size) {
+        const auto alignment = static_cast<std::size_t>(m_uniformAlignment);
+        return (size + alignment - 1) / alignment * alignment;
+    };
+    m_terrainStride = aligned(sizeof(TerrainData));
+    m_terrainDrawStride = aligned(sizeof(TerrainDrawData));
+    // A block is a grid of terrainBlockCells cells on a side, its four quarters one after the other, as Vulkan has it, so
+    // that a block can draw a quarter of itself where its smaller blocks are not drawn; and a blade of grass, two vertices
+    // at each of three heights then its tip, or far away one triangle from its foot to its tip.
+    constexpr std::uint32_t cells = terrainBlockCells;
+    constexpr std::uint32_t half = cells / 2;
+    std::vector<std::uint32_t> grid;
+    for (std::uint32_t quarter = 0; quarter < 4; ++quarter)
+    {
+        const std::uint32_t firstX = (quarter & 1U) * half;
+        const std::uint32_t firstZ = (quarter >> 1U) * half;
+        for (std::uint32_t z = firstZ; z < firstZ + half; ++z)
+        {
+            for (std::uint32_t x = firstX; x < firstX + half; ++x)
+            {
+                const std::uint32_t corner = z * (cells + 1) + x;
+                const std::uint32_t right = corner + 1;
+                const std::uint32_t below = corner + cells + 1;
+                grid.insert(grid.end(), {corner, below, right, right, below, below + 1});
+            }
+        }
+    }
+    constexpr std::array<std::uint32_t, 18> blade{0, 1, 2, 2, 1, 3, 2, 3, 4, 4, 3, 5, 4, 5, 6, 0, 1, 6};
+    // The blocks and the tiles of grass are instances of two attributes: corner and size, then level.
+    gl::GenVertexArrays(1, &m_terrainArray);
+    gl::BindVertexArray(m_terrainArray);
+    gl::EnableVertexAttribArray(0);
+    gl::EnableVertexAttribArray(1);
+    for (const auto& [buffer, indices] : {std::pair{&m_terrainGrid, std::span<const std::uint32_t>(grid)},
+                                          std::pair{&m_grassBlade, std::span<const std::uint32_t>(blade)}})
+    {
+        gl::GenBuffers(1, buffer);
+        gl::BindBuffer(GL_ELEMENT_ARRAY_BUFFER, *buffer);
+        gl::BufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indices.size_bytes()), indices.data(), GL_STATIC_DRAW);
+    }
+    gl::BindVertexArray(0);
+    m_particleDrawStride = (sizeof(ParticleDrawData) + static_cast<std::size_t>(m_uniformAlignment) - 1) /
+                           static_cast<std::size_t>(m_uniformAlignment) * static_cast<std::size_t>(m_uniformAlignment);
+    // A particle is an instance of four attributes, a segment of a ribbon one of six: its two points.
+    gl::GenVertexArrays(1, &m_particleArray);
+    gl::BindVertexArray(m_particleArray);
+    for (GLuint location = 0; location < 4; ++location)
+    {
+        gl::EnableVertexAttribArray(location);
+        gl::VertexAttribDivisor(location, 1);
+    }
+    gl::GenVertexArrays(1, &m_ribbonArray);
+    gl::BindVertexArray(m_ribbonArray);
+    for (GLuint location = 0; location < 6; ++location)
+    {
+        gl::EnableVertexAttribArray(location);
+        gl::VertexAttribDivisor(location, 1);
+    }
+    gl::BindVertexArray(0);
 
     m_pointSampler = makeSampler(GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
     m_skySampler = makeSampler(GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR, GL_REPEAT, GL_CLAMP_TO_EDGE);
@@ -324,13 +508,30 @@ core::Result<void> GlRenderer::createSceneResources()
 void GlRenderer::destroySceneResources() noexcept
 {
     for (const Program* program : {&m_meshProgram, &m_skinnedProgram, &m_shadowProgram, &m_skinnedShadowProgram, &m_cubeProgram,
-                                   &m_prefilterProgram, &m_irradianceProgram, &m_brdfProgram, &m_luminanceProgram})
+                                   &m_prefilterProgram, &m_irradianceProgram, &m_brdfProgram, &m_luminanceProgram,
+                                   &m_particleProgram, &m_ribbonProgram})
     {
         gl::DeleteProgram(program->program);
     }
-    const GLuint buffers[] = {m_sceneBuffer, m_lightBuffer, m_shadowViewBuffer, m_bakeBuffer, m_shadowMatrixBuffer, m_instanceBuffer,
-                              m_luminanceBuffer};
-    gl::DeleteBuffers(7, buffers);
+    const GLuint buffers[] = {m_sceneBuffer,    m_lightBuffer,    m_shadowViewBuffer,  m_bakeBuffer,         m_shadowMatrixBuffer,
+                              m_instanceBuffer, m_luminanceBuffer, m_particleBuffer, m_ribbonBuffer, m_particleDrawBuffer};
+    gl::DeleteBuffers(10, buffers);
+    const GLuint arrays[] = {m_particleArray, m_ribbonArray, m_terrainArray};
+    gl::DeleteVertexArrays(3, arrays);
+    const GLuint terrainBuffers[] = {m_terrainGrid,   m_grassBlade,        m_terrainNodeBuffer, m_grassTileBuffer,
+                                     m_terrainBuffer, m_terrainDrawBuffer, m_blitBuffer};
+    gl::DeleteBuffers(7, terrainBuffers);
+    for (const TerrainLayers& layers : m_terrainLayers)
+    {
+        const GLuint textures[] = {layers.colors, layers.surfaces, layers.normals};
+        gl::DeleteTextures(3, textures);
+    }
+    for (const Program* program : {&m_groundProgram, &m_groundShadowProgram, &m_grassProgram, &m_blitProgram})
+    {
+        gl::DeleteProgram(program->program);
+    }
+    gl::DeleteFramebuffers(1, &m_depthCopyFramebuffer);
+    gl::DeleteTextures(1, &m_depthCopy);
     const GLuint samplers[] = {m_pointSampler, m_skySampler, m_cubeSampler, m_shadowSampler};
     gl::DeleteSamplers(4, samplers);
     const GLuint textures[] = {m_flatNormal, m_brdfTable, m_boneTexture, m_cascadeMap, m_atlasMap, m_sceneDepth,
@@ -539,31 +740,6 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
     {
         m_lights.push_back(all[seen[index].second]);
     }
-    // At most 8 an object: those that reach its box, the nearest first.
-    std::vector<std::pair<float, std::uint32_t>> reaching;
-    const auto lightsOf = [&](const math::Aabb& box, math::Vec3 centre) {
-        reaching.clear();
-        for (std::uint32_t index = 0; index < m_lights.size(); ++index)
-        {
-            const GpuLight& light = m_lights[index];
-            const math::Vec3 nearest = box.isEmpty() ? centre : math::max(box.min, math::min(light.position, box.max));
-            const math::Vec3 toLight = light.position - nearest;
-            const float distance = math::dot(toLight, toLight);
-            if (light.range <= 0.0f || distance <= light.range * light.range)
-            {
-                reaching.emplace_back(distance, index);
-            }
-        }
-        std::ranges::stable_sort(reaching, {}, &std::pair<float, std::uint32_t>::first);
-        std::array<std::uint32_t, 2> packed{0xFFFFFFFFU, 0xFFFFFFFFU};
-        for (std::size_t slot = 0; slot < reaching.size() && slot < lightsPerObject; ++slot)
-        {
-            const std::uint32_t shift = static_cast<std::uint32_t>(slot % 4) * 8;
-            std::uint32_t& word = packed[slot / 4];
-            word = (word & ~(0xFFU << shift)) | (reaching[slot].second << shift);
-        }
-        return packed;
-    };
 
     // The instances the camera sees, by batches of one mesh, submesh, material and way to be drawn; blended ones alone,
     // the farthest first.
@@ -632,7 +808,7 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
         }
         ++m_meshBatches.back().instanceCount;
         instances.push_back({.world = entry.instance->transform,
-                             .lights = lightsOf(entry.box, math::Vec3(entry.instance->transform[3])),
+                             .lights = lightsReaching(entry.box, math::Vec3(entry.instance->transform[3])),
                              .firstBone = entry.instance->firstBone,
                              .boneCount = entry.instance->boneCount});
     }
@@ -788,6 +964,7 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
         .specularMipCount = static_cast<float>(m_environment.specularMips),
         .viewportWidth = static_cast<float>(sceneSize.width),
         .viewportHeight = static_cast<float>(sceneSize.height),
+        .time = m_shaderTime,
     };
     scene.skyInverseViewProjection = math::inverse(matrices.skyViewProjection);
     scene.inverseViewProjection = matrices.inverseViewProjection;
@@ -816,7 +993,485 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
     gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(scene), &scene);
 }
 
-void GlRenderer::orderTransparent()
+std::array<std::uint32_t, 2> GlRenderer::lightsReaching(const math::Aabb& box, math::Vec3 centre) const
+{
+    // At most 8 an object, as Godot's Compatibility: those that reach its box, the nearest first.
+    std::vector<std::pair<float, std::uint32_t>> reaching;
+    for (std::uint32_t index = 0; index < m_lights.size(); ++index)
+    {
+        const GpuLight& light = m_lights[index];
+        const math::Vec3 nearest = box.isEmpty() ? centre : math::max(box.min, math::min(light.position, box.max));
+        const math::Vec3 toLight = light.position - nearest;
+        const float distance = math::dot(toLight, toLight);
+        if (light.range <= 0.0f || distance <= light.range * light.range)
+        {
+            reaching.emplace_back(distance, index);
+        }
+    }
+    std::ranges::stable_sort(reaching, {}, &std::pair<float, std::uint32_t>::first);
+    std::array<std::uint32_t, 2> packed{0xFFFFFFFFU, 0xFFFFFFFFU};
+    for (std::size_t slot = 0; slot < reaching.size() && slot < lightsPerObject; ++slot)
+    {
+        const std::uint32_t shift = static_cast<std::uint32_t>(slot % 4) * 8;
+        std::uint32_t& word = packed[slot / 4];
+        word = (word & ~(0xFFU << shift)) | (reaching[slot].second << shift);
+    }
+    return packed;
+}
+
+void GlRenderer::prepareParticles(const ViewMatrices& matrices)
+{
+    std::vector<GpuParticle> particles;
+    std::vector<GpuTrailPoint> points;
+    packParticles(m_world, matrices.cameraPosition, particles, points);
+    if (!particles.empty())
+    {
+        growBuffer(m_particleBuffer, GL_ARRAY_BUFFER, m_particleCapacity, particles.size() * sizeof(GpuParticle));
+        gl::BufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(particles.size() * sizeof(GpuParticle)), particles.data());
+    }
+    // Each segment with the point it starts at and the next one, in the order of RenderWorld::trailSegments.
+    std::vector<RibbonSegment> segments;
+    segments.reserve(m_world.trailSegments.size());
+    for (const std::uint32_t start : m_world.trailSegments)
+    {
+        segments.push_back(start + 1 < points.size() ? RibbonSegment{points[start], points[start + 1]} : RibbonSegment{});
+    }
+    if (!segments.empty())
+    {
+        growBuffer(m_ribbonBuffer, GL_ARRAY_BUFFER, m_ribbonCapacity, segments.size() * sizeof(RibbonSegment));
+        gl::BufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(segments.size() * sizeof(RibbonSegment)), segments.data());
+    }
+    const std::vector<ParticleDraw>& draws = m_world.particleDraws;
+    if (draws.empty())
+    {
+        return;
+    }
+    std::vector<std::byte> data(draws.size() * m_particleDrawStride);
+    for (std::size_t index = 0; index < draws.size(); ++index)
+    {
+        const ParticleDraw& draw = draws[index];
+        const GpuTexture* const texture = m_textures.find(draw.texture);
+        const ParticleDrawData drawData{
+            .facing = static_cast<std::uint32_t>(draw.facing),
+            .flags = (draw.blend == ParticleBlend::Additive ? 1U : 0U) | (draw.lit ? 2U : 0U),
+            .textured = texture != nullptr && texture->bindable ? 1U : 0U,
+            .sheet = {static_cast<float>(std::max(draw.sheetColumns, 1U)), static_cast<float>(std::max(draw.sheetRows, 1U))},
+            .softness = std::max(draw.softness, 0.0f),
+            .lights = draw.lit ? lightsReaching(math::Aabb{}, draw.center) : std::array<std::uint32_t, 2>{0xFFFFFFFFU, 0xFFFFFFFFU},
+        };
+        std::memcpy(data.data() + index * m_particleDrawStride, &drawData, sizeof(drawData));
+    }
+    growBuffer(m_particleDrawBuffer, GL_UNIFORM_BUFFER, m_particleDrawCapacity, data.size());
+    gl::BufferSubData(GL_UNIFORM_BUFFER, 0, static_cast<GLsizeiptr>(data.size()), data.data());
+}
+
+void GlRenderer::copySceneDepth(math::Extent2D size)
+{
+    if (std::ranges::none_of(m_world.particleDraws, [](const ParticleDraw& draw) { return draw.count > 0 && draw.softness > 0.0f; }))
+    {
+        return;
+    }
+    if (m_depthCopy == 0 || m_depthCopySize != size)
+    {
+        gl::DeleteFramebuffers(1, &m_depthCopyFramebuffer);
+        gl::DeleteTextures(1, &m_depthCopy);
+        gl::GenTextures(1, &m_depthCopy);
+        gl::BindTexture(GL_TEXTURE_2D, m_depthCopy);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+        gl::TexImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(GL_DEPTH_COMPONENT32F), static_cast<GLsizei>(size.width),
+                       static_cast<GLsizei>(size.height), 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        gl::BindTexture(GL_TEXTURE_2D, 0);
+        gl::GenFramebuffers(1, &m_depthCopyFramebuffer);
+        gl::BindFramebuffer(GL_FRAMEBUFFER, m_depthCopyFramebuffer);
+        gl::FramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_depthCopy, 0);
+        const GLenum none = GL_NONE;
+        gl::DrawBuffers(1, &none);
+        gl::ReadBuffer(GL_NONE);
+        m_depthCopySize = size;
+    }
+    gl::BindFramebuffer(GL_READ_FRAMEBUFFER, m_scene.framebuffer);
+    gl::BindFramebuffer(GL_DRAW_FRAMEBUFFER, m_depthCopyFramebuffer);
+    const auto width = static_cast<GLint>(size.width);
+    const auto height = static_cast<GLint>(size.height);
+    gl::BlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    gl::BindFramebuffer(GL_FRAMEBUFFER, m_scene.framebuffer);
+}
+
+void GlRenderer::drawParticles(std::uint32_t index)
+{
+    const ParticleDraw& draw = m_world.particleDraws[index];
+    if (draw.count == 0)
+    {
+        return;
+    }
+    // Premultiplied, behind what the opaque surfaces drew nearer, without hiding the others.
+    gl::Enable(GL_BLEND);
+    gl::BlendEquation(GL_FUNC_ADD);
+    gl::BlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    gl::Disable(GL_CULL_FACE);
+    gl::DepthFunc(GL_GEQUAL);
+    gl::UseProgram(draw.ribbons ? m_ribbonProgram.program : m_particleProgram.program);
+    gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::particleDraw, m_particleDrawBuffer,
+                        static_cast<GLintptr>(std::size_t{index} * m_particleDrawStride), sizeof(ParticleDrawData));
+    const GpuTexture* const texture = m_textures.find(draw.texture);
+    const bool textured = texture != nullptr && texture->bindable;
+    bindTexture(unit::first, textured ? texture->texture : m_white, textured && texture->nearest ? m_nearestSampler : m_linearSampler);
+    bindTextureTarget(unit::second, GL_TEXTURE_2D, m_depthCopy != 0 ? m_depthCopy : m_white, m_pointSampler);
+    // OpenGL ES 3.0 has no first instance: the attributes start at the first of the draw.
+    const auto at = [](std::size_t base, std::size_t offset) { return reinterpret_cast<const void*>(base + offset); };
+    if (draw.ribbons)
+    {
+        gl::BindVertexArray(m_ribbonArray);
+        gl::BindBuffer(GL_ARRAY_BUFFER, m_ribbonBuffer);
+        const std::size_t base = std::size_t{draw.first} * sizeof(RibbonSegment);
+        constexpr GLsizei stride = sizeof(RibbonSegment);
+        for (GLuint point = 0; point < 2; ++point)
+        {
+            const std::size_t first = base + point * sizeof(GpuTrailPoint);
+            gl::VertexAttribPointer(point * 3, 4, GL_FLOAT, GL_FALSE, stride, at(first, offsetof(GpuTrailPoint, position)));
+            gl::VertexAttribPointer(point * 3 + 1, 4, GL_FLOAT, GL_FALSE, stride, at(first, offsetof(GpuTrailPoint, color)));
+            gl::VertexAttribPointer(point * 3 + 2, 4, GL_FLOAT, GL_FALSE, stride, at(first, offsetof(GpuTrailPoint, direction)));
+        }
+    }
+    else
+    {
+        gl::BindVertexArray(m_particleArray);
+        gl::BindBuffer(GL_ARRAY_BUFFER, m_particleBuffer);
+        const std::size_t base = std::size_t{draw.first} * sizeof(GpuParticle);
+        constexpr GLsizei stride = sizeof(GpuParticle);
+        gl::VertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, stride, at(base, offsetof(GpuParticle, position)));
+        gl::VertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, at(base, offsetof(GpuParticle, color)));
+        gl::VertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, stride, at(base, offsetof(GpuParticle, stretch)));
+        gl::VertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, at(base, offsetof(GpuParticle, frame)));
+    }
+    gl::DrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<GLsizei>(draw.count));
+    ++m_drawCalls;
+    gl::BindVertexArray(0);
+}
+
+void GlRenderer::fillTerrainLayers(TerrainLayers& layers, const RenderTerrain& terrain)
+{
+    const std::uint32_t count = std::max(std::min<std::uint32_t>(terrain.layerCount, 8), 1U);
+    // The textures of each layer, white or flat where its material has none.
+    std::vector<std::uint64_t> key{m_textureRevision, count};
+    std::vector<std::array<const GpuTexture*, 3>> sources;
+    const auto keyOf = [](TextureHandle handle) { return (std::uint64_t{handle.index} << 32) | handle.generation; };
+    for (std::uint32_t layer = 0; layer < count; ++layer)
+    {
+        const GpuMaterial* const material = layer < terrain.layerCount ? m_materials.find(terrain.layers[layer]) : nullptr;
+        const auto textureOf = [&](TextureHandle handle) -> const GpuTexture* {
+            const GpuTexture* const texture = material != nullptr ? m_textures.find(handle) : nullptr;
+            const bool found = texture != nullptr && texture->bindable;
+            key.push_back(found ? keyOf(handle) : 0);
+            return found ? texture : nullptr;
+        };
+        sources.push_back({textureOf(material != nullptr ? material->description.baseColorTexture : TextureHandle{}),
+                           textureOf(material != nullptr ? material->description.metallicRoughnessTexture : TextureHandle{}),
+                           textureOf(material != nullptr ? material->description.normalTexture : TextureHandle{})});
+    }
+    if (layers.colors != 0 && key == layers.key)
+    {
+        return;
+    }
+    layers.key = std::move(key);
+    const GLuint previous[] = {layers.colors, layers.surfaces, layers.normals};
+    gl::DeleteTextures(3, previous);
+    const std::array<std::pair<GLuint*, GLenum>, 3> arrays{
+        {{&layers.colors, GL_SRGB8_ALPHA8}, {&layers.surfaces, GL_RGBA8}, {&layers.normals, GL_RGBA8}}};
+    for (const auto& [array, format] : arrays)
+    {
+        gl::GenTextures(1, array);
+        gl::BindTexture(GL_TEXTURE_2D_ARRAY, *array);
+        gl::TexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BASE_LEVEL, 0);
+        gl::TexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_LEVEL, terrainLayerMips - 1);
+        for (std::uint32_t mip = 0; mip < terrainLayerMips; ++mip)
+        {
+            const auto side = static_cast<GLsizei>(std::max(terrainLayerSize >> mip, 1U));
+            gl::TexImage3D(GL_TEXTURE_2D_ARRAY, static_cast<GLint>(mip), static_cast<GLint>(format), side, side, static_cast<GLsizei>(count),
+                           0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        }
+    }
+    gl::BindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    // Every level of every layer of every array, drawn from its texture at the mip that fits it, read as the layers are,
+    // repeating, so that the edges of a tile blend into the next one.
+    GLuint framebuffer = 0;
+    gl::GenFramebuffers(1, &framebuffer);
+    gl::BindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    gl::Disable(GL_DEPTH_TEST);
+    gl::Disable(GL_BLEND);
+    gl::Disable(GL_SCISSOR_TEST);
+    gl::UseProgram(m_blitProgram.program);
+    gl::BindVertexArray(m_emptyArray);
+    gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::blit, m_blitBuffer, 0, sizeof(BlitData));
+    for (std::size_t array = 0; array < arrays.size(); ++array)
+    {
+        // The colours are encoded back into sRGB as they are drawn.
+        if (!m_es)
+        {
+            array == 0 ? gl::Enable(GL_FRAMEBUFFER_SRGB) : gl::Disable(GL_FRAMEBUFFER_SRGB);
+        }
+        for (std::uint32_t layer = 0; layer < count; ++layer)
+        {
+            const GpuTexture* const source = sources[layer][array];
+            bindTexture(unit::first, source != nullptr ? source->texture : array == 2 ? m_flatNormal : m_white, m_linearSampler);
+            for (std::uint32_t mip = 0; mip < terrainLayerMips; ++mip)
+            {
+                const auto side = static_cast<float>(std::max(terrainLayerSize >> mip, 1U));
+                const BlitData blit{.targetWidth = side,
+                                    .targetHeight = side,
+                                    .sourceLevels = static_cast<float>(source != nullptr ? source->mips : 1U)};
+                gl::BindBuffer(GL_UNIFORM_BUFFER, m_blitBuffer);
+                gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(blit), &blit);
+                gl::FramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, *arrays[array].first, static_cast<GLint>(mip),
+                                            static_cast<GLint>(layer));
+                gl::Viewport(0, 0, static_cast<GLsizei>(side), static_cast<GLsizei>(side));
+                gl::DrawArrays(GL_TRIANGLES, 0, 3);
+            }
+        }
+    }
+    if (!m_es)
+    {
+        gl::Disable(GL_FRAMEBUFFER_SRGB);
+    }
+    gl::BindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl::DeleteFramebuffers(1, &framebuffer);
+}
+
+void GlRenderer::prepareTerrains(const ViewMatrices& matrices, const Frustum& frustum)
+{
+    m_terrainDrawings.clear();
+    if (m_world.terrains.empty())
+    {
+        return;
+    }
+    const math::Vec3 eye = matrices.cameraPosition;
+    m_terrainLayers.resize(m_world.terrains.size());
+    std::vector<GpuTerrainNode> nodes;
+    std::vector<GpuTerrainNode> tiles;
+    std::vector<std::byte> uniforms;
+    // The first draw is that of the blocks; three of grass follow for each terrain.
+    std::vector<TerrainDrawData> draws{TerrainDrawData{.cameraPosition = eye, .time = m_shaderTime}};
+    for (std::size_t index = 0; index < m_world.terrains.size(); ++index)
+    {
+        const RenderTerrain& terrain = m_world.terrains[index];
+        const TerrainTextures& textures = terrain.textures;
+        const std::array<const GpuTexture*, 5> found{m_textures.find(textures.heights), m_textures.find(textures.slopes),
+                                                     m_textures.find(textures.paint0), m_textures.find(textures.paint1),
+                                                     m_textures.find(textures.detail)};
+        if (std::ranges::any_of(found, [](const GpuTexture* texture) { return texture == nullptr; }))
+        {
+            continue;
+        }
+        const std::optional<TerrainSelection> selection = selectTerrain(terrain, eye, frustum);
+        if (!selection)
+        {
+            continue;
+        }
+        fillTerrainLayers(m_terrainLayers[index], terrain);
+        TerrainDrawing drawing{.terrain = index, .castShadows = terrain.castShadows};
+        for (std::size_t map = 0; map < found.size(); ++map)
+        {
+            drawing.maps[map] = found[map]->texture;
+        }
+        for (std::size_t group = 0; group < selection->nodes.size(); ++group)
+        {
+            drawing.firstNode[group] = static_cast<std::uint32_t>(nodes.size());
+            drawing.nodeCount[group] = static_cast<std::uint32_t>(selection->nodes[group].size());
+            nodes.insert(nodes.end(), selection->nodes[group].begin(), selection->nodes[group].end());
+        }
+        drawing.firstDraw = static_cast<std::uint32_t>(draws.size());
+        for (std::size_t band = 0; band < selection->tiles.size(); ++band)
+        {
+            draws.push_back({.cameraPosition = eye,
+                             .bladesPerTile = std::max(selection->blades[band], 1U),
+                             .bladeWidthScale = selection->bladeWidth[band],
+                             .time = m_shaderTime});
+            drawing.firstTile[band] = static_cast<std::uint32_t>(tiles.size());
+            drawing.tileCount[band] = static_cast<std::uint32_t>(selection->tiles[band].size());
+            drawing.blades[band] = selection->blades[band];
+            tiles.insert(tiles.end(), selection->tiles[band].begin(), selection->tiles[band].end());
+        }
+        // The lights of a terrain reach any of it, from far below to far above.
+        const math::Aabb box{.min = terrain.origin - math::Vec3{0.0f, 1.0e4f, 0.0f},
+                             .max = terrain.origin + math::Vec3{terrain.size, 1.0e4f, terrain.size}};
+        TerrainData uniform{
+            .origin = terrain.origin,
+            .size = terrain.size,
+            .resolution = terrain.resolution,
+            .layerCount = std::min<std::uint32_t>(terrain.layerCount, 8),
+            .textureSize = terrain.textureSize,
+            .blendSharpness = terrain.blendSharpness,
+            .triplanar = terrain.triplanar ? 1U : 0U,
+            .autoBaseLayer = terrain.autoBaseLayer,
+            .autoSlopeLayer = terrain.autoSlopeLayer,
+            .autoSlope = terrain.autoSlope,
+            .autoHeightLayer = terrain.autoHeightLayer,
+            .autoHeight = terrain.autoHeight,
+            .autoBlend = terrain.autoBlend,
+            .windStrength = terrain.windStrength,
+            .windSpeed = terrain.windSpeed,
+            .grassDistance = terrain.grassDistance,
+            .leafRange = selection->leafRange,
+            .grassColor = terrain.grassColor,
+            .grassHeight = terrain.grassHeight,
+            .grassTipColor = terrain.grassTipColor,
+            .grassWidth = terrain.grassWidth,
+            .lights = lightsReaching(box, terrain.origin),
+        };
+        for (std::uint32_t layer = 0; layer < uniform.layerCount; ++layer)
+        {
+            const GpuMaterial* const material = m_materials.find(terrain.layers[layer]);
+            uniform.baseColorFactors[layer] = material != nullptr ? material->description.baseColorFactor : math::Vec4{1.0f};
+            uniform.layerFactors[layer] = material != nullptr ? math::Vec4(material->description.metallicFactor,
+                                                                           material->description.roughnessFactor,
+                                                                           material->description.normalScale, 0.0f)
+                                                              : math::Vec4(0.0f, 1.0f, 1.0f, 0.0f);
+        }
+        uniforms.resize((m_terrainDrawings.size() + 1) * m_terrainStride);
+        std::memcpy(uniforms.data() + m_terrainDrawings.size() * m_terrainStride, &uniform, sizeof(uniform));
+        m_terrainDrawings.push_back(drawing);
+    }
+    if (m_terrainDrawings.empty())
+    {
+        return;
+    }
+    growBuffer(m_terrainBuffer, GL_UNIFORM_BUFFER, m_terrainCapacity, uniforms.size());
+    gl::BufferSubData(GL_UNIFORM_BUFFER, 0, static_cast<GLsizeiptr>(uniforms.size()), uniforms.data());
+    std::vector<std::byte> drawBytes(draws.size() * m_terrainDrawStride);
+    for (std::size_t draw = 0; draw < draws.size(); ++draw)
+    {
+        std::memcpy(drawBytes.data() + draw * m_terrainDrawStride, &draws[draw], sizeof(TerrainDrawData));
+    }
+    growBuffer(m_terrainDrawBuffer, GL_UNIFORM_BUFFER, m_terrainDrawCapacity, drawBytes.size());
+    gl::BufferSubData(GL_UNIFORM_BUFFER, 0, static_cast<GLsizeiptr>(drawBytes.size()), drawBytes.data());
+    if (!nodes.empty())
+    {
+        growBuffer(m_terrainNodeBuffer, GL_ARRAY_BUFFER, m_terrainNodeCapacity, nodes.size() * sizeof(GpuTerrainNode));
+        gl::BufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(nodes.size() * sizeof(GpuTerrainNode)), nodes.data());
+    }
+    if (!tiles.empty())
+    {
+        growBuffer(m_grassTileBuffer, GL_ARRAY_BUFFER, m_grassTileCapacity, tiles.size() * sizeof(GpuTerrainNode));
+        gl::BufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(tiles.size() * sizeof(GpuTerrainNode)), tiles.data());
+    }
+}
+
+void GlRenderer::bindTerrain(std::size_t drawn) const
+{
+    const TerrainDrawing& drawing = m_terrainDrawings[drawn];
+    gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::terrain, m_terrainBuffer, static_cast<GLintptr>(drawn * m_terrainStride),
+                        sizeof(TerrainData));
+    // The heights, in floats, read without filtering; the other maps between their samples.
+    bindTexture(unit::first, drawing.maps[0], m_pointSampler);
+    for (std::size_t map = 1; map < drawing.maps.size(); ++map)
+    {
+        bindTexture(static_cast<GLuint>(unit::first + static_cast<GLint>(map)), drawing.maps[map], m_clampSampler);
+    }
+    const TerrainLayers& layers = m_terrainLayers[drawing.terrain];
+    bindTextureTarget(unit::layerColors, GL_TEXTURE_2D_ARRAY, layers.colors, m_linearSampler);
+    bindTextureTarget(unit::layerSurfaces, GL_TEXTURE_2D_ARRAY, layers.surfaces, m_linearSampler);
+    bindTextureTarget(unit::layerNormals, GL_TEXTURE_2D_ARRAY, layers.normals, m_linearSampler);
+}
+
+void GlRenderer::drawTerrains(std::optional<std::size_t> shadowView)
+{
+    if (m_terrainDrawings.empty())
+    {
+        return;
+    }
+    if (!shadowView)
+    {
+        bindSceneTextures();
+        gl::Disable(GL_CULL_FACE);
+        gl::Disable(GL_BLEND);
+        gl::DepthFunc(GL_GREATER);
+    }
+    gl::UseProgram(shadowView ? m_groundShadowProgram.program : m_groundProgram.program);
+    // The draw of the blocks is the first.
+    gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::terrainDraw, m_terrainDrawBuffer, 0, sizeof(TerrainDrawData));
+    gl::BindVertexArray(m_terrainArray);
+    gl::BindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_terrainGrid);
+    gl::BindBuffer(GL_ARRAY_BUFFER, m_terrainNodeBuffer);
+    gl::VertexAttribDivisor(0, 1);
+    gl::VertexAttribDivisor(1, 1);
+    constexpr std::uint32_t quarterIndices = terrainBlockCells * terrainBlockCells / 4 * 6;
+    for (std::size_t drawn = 0; drawn < m_terrainDrawings.size(); ++drawn)
+    {
+        const TerrainDrawing& drawing = m_terrainDrawings[drawn];
+        if (shadowView && !drawing.castShadows)
+        {
+            continue;
+        }
+        bindTerrain(drawn);
+        for (std::size_t group = 0; group < drawing.nodeCount.size(); ++group)
+        {
+            if (drawing.nodeCount[group] == 0)
+            {
+                continue;
+            }
+            // A whole block, or one of its quarters; its blocks are its instances.
+            const std::size_t base = std::size_t{drawing.firstNode[group]} * sizeof(GpuTerrainNode);
+            gl::VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GpuTerrainNode), reinterpret_cast<const void*>(base));
+            gl::VertexAttribIPointer(1, 1, GL_UNSIGNED_INT, sizeof(GpuTerrainNode),
+                                     reinterpret_cast<const void*>(base + offsetof(GpuTerrainNode, level)));
+            const std::uint32_t indexCount = group == 0 ? quarterIndices * 4 : quarterIndices;
+            const std::uint32_t firstIndex = group == 0 ? 0 : static_cast<std::uint32_t>(group - 1) * quarterIndices;
+            gl::DrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT,
+                                      reinterpret_cast<const void*>(std::size_t{firstIndex} * sizeof(std::uint32_t)),
+                                      static_cast<GLsizei>(drawing.nodeCount[group]));
+            ++m_drawCalls;
+        }
+    }
+    gl::BindVertexArray(0);
+}
+
+void GlRenderer::drawGrass()
+{
+    if (m_terrainDrawings.empty())
+    {
+        return;
+    }
+    bindSceneTextures();
+    gl::Disable(GL_CULL_FACE);
+    gl::Disable(GL_BLEND);
+    gl::DepthFunc(GL_GREATER);
+    gl::UseProgram(m_grassProgram.program);
+    gl::BindVertexArray(m_terrainArray);
+    gl::BindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_grassBlade);
+    gl::BindBuffer(GL_ARRAY_BUFFER, m_grassTileBuffer);
+    for (std::size_t drawn = 0; drawn < m_terrainDrawings.size(); ++drawn)
+    {
+        const TerrainDrawing& drawing = m_terrainDrawings[drawn];
+        bindTerrain(drawn);
+        for (std::size_t band = 0; band < drawing.tileCount.size(); ++band)
+        {
+            if (drawing.tileCount[band] == 0 || drawing.blades[band] == 0)
+            {
+                continue;
+            }
+            gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::terrainDraw, m_terrainDrawBuffer,
+                                static_cast<GLintptr>(std::size_t{drawing.firstDraw + band} * m_terrainDrawStride), sizeof(TerrainDrawData));
+            // A tile is the instance of all its blades: its attributes move on once all of them are drawn.
+            const std::size_t base = std::size_t{drawing.firstTile[band]} * sizeof(GpuTerrainNode);
+            gl::VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GpuTerrainNode), reinterpret_cast<const void*>(base));
+            gl::VertexAttribIPointer(1, 1, GL_UNSIGNED_INT, sizeof(GpuTerrainNode),
+                                     reinterpret_cast<const void*>(base + offsetof(GpuTerrainNode, level)));
+            gl::VertexAttribDivisor(0, drawing.blades[band]);
+            gl::VertexAttribDivisor(1, drawing.blades[band]);
+            // Far away, one triangle a blade.
+            const bool far = band + 1 == drawing.tileCount.size();
+            gl::DrawElementsInstanced(GL_TRIANGLES, far ? 3 : 15, GL_UNSIGNED_INT,
+                                      reinterpret_cast<const void*>(std::size_t{far ? 15U : 0U} * sizeof(std::uint32_t)),
+                                      static_cast<GLsizei>(drawing.tileCount[band] * drawing.blades[band]));
+            ++m_drawCalls;
+        }
+    }
+    gl::VertexAttribDivisor(0, 1);
+    gl::VertexAttribDivisor(1, 1);
+    gl::BindVertexArray(0);
+}
+
+void GlRenderer::orderTransparent(const ViewMatrices& matrices)
 {
     // Blended meshes lie in the layer "Default", which sprites place themselves around: by layer, then order, then from
     // the farthest. The blended batches come sorted, and sprite batches in this order among themselves, which a stable
@@ -827,6 +1482,7 @@ void GlRenderer::orderTransparent()
         std::int32_t order = 0;
         float distance = 0.0f;
         bool sprites = false;
+        bool particles = false;
         std::uint32_t index = 0;
     };
     std::vector<Item> items;
@@ -835,6 +1491,15 @@ void GlRenderer::orderTransparent()
         if ((m_meshBatches[batch].flags & blendedFlag) != 0)
         {
             items.push_back({.distance = m_meshBatches[batch].distance, .index = batch});
+        }
+    }
+    for (std::uint32_t draw = 0; draw < m_world.particleDraws.size(); ++draw)
+    {
+        if (m_world.particleDraws[draw].count > 0)
+        {
+            items.push_back({.distance = sortDistance(m_world.particleDraws[draw].center, matrices.cameraPosition),
+                             .particles = true,
+                             .index = draw});
         }
     }
     for (std::uint32_t batch = 0; batch < m_spriteFrame.batches.size(); ++batch)
@@ -863,7 +1528,7 @@ void GlRenderer::orderTransparent()
     {
         if (!items[at].sprites)
         {
-            m_transparentDraws.push_back({.index = items[at].index});
+            m_transparentDraws.push_back({.particles = items[at].particles, .index = items[at].index});
             ++at;
             continue;
         }
@@ -1018,6 +1683,7 @@ void GlRenderer::drawShadows()
                                       static_cast<GLsizei>(batch.instanceCount));
             ++m_drawCalls;
         }
+        drawTerrains(view);
     };
     // Each cascade into its layer.
     for (std::size_t view = 0; view < m_shadowPasses.size(); ++view)
@@ -1127,6 +1793,10 @@ void GlRenderer::drawTransparent()
         if (draw.sprites)
         {
             drawSprites(draw.firstRun, draw.runCount);
+        }
+        else if (draw.particles)
+        {
+            drawParticles(draw.index);
         }
         else
         {

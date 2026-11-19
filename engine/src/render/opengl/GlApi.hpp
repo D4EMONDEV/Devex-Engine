@@ -183,6 +183,9 @@ inline constexpr GLenum GL_CONDITION_SATISFIED = 0x911C;
     REQUIRED(PolygonOffset, void, (GLfloat factor, GLfloat units))                                                                  \
     REQUIRED(DrawBuffers, void, (GLsizei count, const GLenum* buffers))                                                             \
     REQUIRED(ReadBuffer, void, (GLenum buffer))                                                                                     \
+    REQUIRED(BlitFramebuffer, void,                                                                                                 \
+             (GLint sourceX0, GLint sourceY0, GLint sourceX1, GLint sourceY1, GLint destinationX0, GLint destinationY0,            \
+              GLint destinationX1, GLint destinationY1, GLbitfield mask, GLenum filter))                                            \
     REQUIRED(TexImage3D, void,                                                                                                      \
              (GLenum target, GLint level, GLint internalFormat, GLsizei width, GLsizei height, GLsizei depth, GLint border,        \
               GLenum format, GLenum type, const void* pixels))                                                                      \

@@ -4123,6 +4123,13 @@ public:
   (colonnes, octets des lumières, os), pointés au début de chaque lot (`bindInstances`) ; liaisons des blocs et unités de
   texture dans `binding::` et `unit::` de `GlRenderer.hpp`. Les entrées d'un shader de sommets tiennent dans une seule
   structure (`MeshInput`, `SkinnedInput`) : Slang décale les `vk::location` de chaque paramètre.
+- Particules et terrains : les particules (`m_particleArray`) et les segments des traînées (`RibbonSegment`, deux points)
+  sont des instances ; `copySceneDepth` copie la profondeur par `BlitFramebuffer` pour les particules douces. Les blocs et
+  les touffes d'herbe (`GpuTerrainNode`) sont des instances de `m_terrainArray`, dont le diviseur des touffes vaut leurs
+  brins ; la grille d'un bloc et le brin sont des tampons d'indices (`m_terrainGrid`, `m_grassBlade`). `fillTerrainLayers`
+  dessine les couches avec `gl_blit` (`GL_FRAMEBUFFER_SRGB` pour les couleurs sur ordinateur) et se refait quand
+  `m_textureRevision` change. Dans les shaders, `SV_VulkanVertexID` et `SV_VulkanInstanceID`, jamais `SV_VertexID` ni
+  `SV_InstanceID`.
 
 ## C++ des jeux pour le web (étape 5 du web)
 

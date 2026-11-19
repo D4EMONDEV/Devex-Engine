@@ -516,17 +516,22 @@ if(DEVEX_OPENGL AND NOT ANDROID AND NOT EMSCRIPTEN)
     set(devex_glsl_source "${CMAKE_CURRENT_BINARY_DIR}/generated/GlShaders.cpp")
     devex_embed_glsl(OUTPUT "${devex_glsl_source}"
         SOURCES
+            gl_blit.slang
             gl_ibl.slang
             gl_mesh.slang
+            gl_particle.slang
             gl_shadow.slang
             gl_sky.slang
             gl_sprite.slang
+            gl_terrain.slang
             gl_tonemap.slang
             gl_ui.slang
         MODULES
             gl_scene.slang
+            particle_shape.slang
             sprite_shape.slang
             surface_shading.slang
+            terrain_shading.slang
             tonemapping.slang
             ui_shape.slang
     )

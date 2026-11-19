@@ -39,6 +39,10 @@ inline constexpr gl::GLuint spriteFrame = 5;
 inline constexpr gl::GLuint tonemap = 6;
 inline constexpr gl::GLuint uiDraw = 7;
 inline constexpr gl::GLuint bake = 8;
+inline constexpr gl::GLuint particleDraw = 9;
+inline constexpr gl::GLuint terrain = 10;
+inline constexpr gl::GLuint terrainDraw = 11;
+inline constexpr gl::GLuint blit = 12;
 } // namespace binding
 
 // The texture units of their samplers: those of the scene first, which every lit shader reads, then those of each draw.
@@ -56,6 +60,10 @@ inline constexpr gl::GLint third = 7;
 inline constexpr gl::GLint fourth = 8;
 inline constexpr gl::GLint fifth = 9;
 inline constexpr gl::GLint bones = 10;
+// The arrays of the layers of a terrain.
+inline constexpr gl::GLint layerColors = 11;
+inline constexpr gl::GLint layerSurfaces = 12;
+inline constexpr gl::GLint layerNormals = 13;
 } // namespace unit
 
 class GlRenderer final : public RenderBackend
@@ -117,6 +125,7 @@ private:
         bool bindable = true;
         // Read at its nearest pixel, for pixel art.
         bool nearest = false;
+        std::uint32_t mips = 1;
     };
     // A mesh in its buffers, and the vertex array that reads them: its vertices, then the skin of a skinned one; the
     // attributes of its instances follow where each batch starts.
@@ -187,10 +196,11 @@ private:
         // Pixels of the atlas: left, bottom, width, height.
         std::array<float, 4> viewport{};
     };
-    // What the blended pass draws in its order: a batch of blended meshes, or runs of sprites.
+    // What the blended pass draws in its order: a batch of blended meshes, runs of sprites, or a draw of particles.
     struct TransparentDraw
     {
         bool sprites = false;
+        bool particles = false;
         std::uint32_t index = 0;
         std::uint32_t firstRun = 0;
         std::uint32_t runCount = 0;
@@ -214,6 +224,28 @@ private:
         gl::GLuint source = 0;
         // The width of the equirectangular map, whose detail each level of the cube samples at.
         std::uint32_t sourceWidth = 0;
+    };
+    // The textures of the layers of a terrain, drawn into arrays, and what they were drawn from.
+    struct TerrainLayers
+    {
+        std::vector<std::uint64_t> key;
+        gl::GLuint colors = 0;
+        gl::GLuint surfaces = 0;
+        gl::GLuint normals = 0;
+    };
+    // What a terrain draws this frame: its blocks, whole or by quarters, and its tiles of grass by bands, where they lie
+    // among the instances of the frame; its maps, and the draws of its grass.
+    struct TerrainDrawing
+    {
+        std::size_t terrain = 0;
+        bool castShadows = true;
+        std::array<std::uint32_t, 5> firstNode{};
+        std::array<std::uint32_t, 5> nodeCount{};
+        std::array<std::uint32_t, 3> firstTile{};
+        std::array<std::uint32_t, 3> tileCount{};
+        std::array<std::uint32_t, 3> blades{};
+        std::uint32_t firstDraw = 0;
+        std::array<gl::GLuint, 5> maps{};
     };
     struct CaptureRequest
     {
@@ -255,7 +287,20 @@ private:
     [[nodiscard]] float sortDistance(math::Vec3 point, math::Vec3 cameraPosition) const noexcept;
     // The lights, the shadows, the instances and the batches of the frame, and the scene the shaders read.
     void prepareMeshes(const ViewMatrices& matrices, const Frustum& frustum, math::Extent2D sceneSize);
-    void orderTransparent();
+    // The local lights that reach a box, at most eight, the nearest first, a byte each; around a point without a box.
+    [[nodiscard]] std::array<std::uint32_t, 2> lightsReaching(const math::Aabb& box, math::Vec3 centre) const;
+    void prepareParticles(const ViewMatrices& matrices);
+    void orderTransparent(const ViewMatrices& matrices);
+    // The depth of the opaque surfaces, copied for the particles that fade into them: OpenGL cannot read what it draws into.
+    void copySceneDepth(math::Extent2D size);
+    void drawParticles(std::uint32_t index);
+    void fillTerrainLayers(TerrainLayers& layers, const RenderTerrain& terrain);
+    void prepareTerrains(const ViewMatrices& matrices, const Frustum& frustum);
+    // Binds what a terrain reads: its uniform block, its maps and the arrays of its layers.
+    void bindTerrain(std::size_t drawn) const;
+    // The ground of the terrains, or its depth into the view of the shadows `shadowView`.
+    void drawTerrains(std::optional<std::size_t> shadowView);
+    void drawGrass();
     [[nodiscard]] gl::GLuint materialUniform(GpuMaterial& material) const;
     void bindMaterial(GpuMaterial& material, bool shadow) const;
     // Points the attributes of the instances of `mesh` at those of a batch.
@@ -316,6 +361,12 @@ private:
     Program m_irradianceProgram;
     Program m_brdfProgram;
     Program m_luminanceProgram;
+    Program m_particleProgram;
+    Program m_ribbonProgram;
+    Program m_groundProgram;
+    Program m_groundShadowProgram;
+    Program m_grassProgram;
+    Program m_blitProgram;
     // The vertex arrays of what reads no vertices, of the sprites and of the interface.
     gl::GLuint m_emptyArray = 0;
     gl::GLuint m_spriteArray = 0;
@@ -336,6 +387,40 @@ private:
     std::size_t m_shadowMatrixCapacity = 0;
     gl::GLuint m_instanceBuffer = 0;
     std::size_t m_instanceCapacity = 0;
+    // The particles of the frame and the segments of its ribbons, each with both its points, as instances; and the
+    // uniform blocks of the draws, each at an aligned offset of its own.
+    gl::GLuint m_particleArray = 0;
+    gl::GLuint m_ribbonArray = 0;
+    gl::GLuint m_particleBuffer = 0;
+    std::size_t m_particleCapacity = 0;
+    gl::GLuint m_ribbonBuffer = 0;
+    std::size_t m_ribbonCapacity = 0;
+    gl::GLuint m_particleDrawBuffer = 0;
+    std::size_t m_particleDrawCapacity = 0;
+    std::size_t m_particleDrawStride = 256;
+    // The terrains: the grid of a block by quarters and the blade of grass, as indices; their blocks and tiles as
+    // instances; their uniform blocks and those of their draws, each at an aligned offset of its own.
+    gl::GLuint m_terrainArray = 0;
+    gl::GLuint m_terrainGrid = 0;
+    gl::GLuint m_grassBlade = 0;
+    gl::GLuint m_terrainNodeBuffer = 0;
+    std::size_t m_terrainNodeCapacity = 0;
+    gl::GLuint m_grassTileBuffer = 0;
+    std::size_t m_grassTileCapacity = 0;
+    gl::GLuint m_terrainBuffer = 0;
+    std::size_t m_terrainCapacity = 0;
+    std::size_t m_terrainStride = 512;
+    gl::GLuint m_terrainDrawBuffer = 0;
+    std::size_t m_terrainDrawCapacity = 0;
+    std::size_t m_terrainDrawStride = 256;
+    gl::GLuint m_blitBuffer = 0;
+    std::vector<TerrainLayers> m_terrainLayers;
+    std::vector<TerrainDrawing> m_terrainDrawings;
+    // Grows whenever a texture comes, goes or changes, which the layers of terrains follow.
+    std::uint64_t m_textureRevision = 0;
+    gl::GLuint m_depthCopy = 0;
+    gl::GLuint m_depthCopyFramebuffer = 0;
+    math::Extent2D m_depthCopySize;
     gl::GLuint m_spriteFrameBuffer = 0;
     gl::GLuint m_tonemapBuffer = 0;
     gl::GLuint m_uiDrawBuffer = 0;
@@ -398,6 +483,9 @@ private:
     bool m_snapExposure = true;
     std::chrono::steady_clock::time_point m_lastExposureUpdate;
     float m_time = 0.0f;
+    // The time of the game in seconds, which the wind of the grass blows by.
+    float m_shaderTime = 0.0f;
+    std::chrono::steady_clock::time_point m_startTime = std::chrono::steady_clock::now();
     std::uint32_t m_drawCalls = 0;
     math::Extent2D m_windowSize;
     std::uint64_t m_nextCapture = 1;
