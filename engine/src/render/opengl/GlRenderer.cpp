@@ -233,6 +233,8 @@ GlRenderer::~GlRenderer()
     {
         destroyPostResources();
         destroySceneResources();
+        gl::DeleteBuffers(1, &m_customInstanceBuffer);
+        destroyTarget(m_shaderSky);
         m_textures.forEach([](TextureHandle, const GpuTexture& texture) { gl::DeleteTextures(1, &texture.texture); });
         m_meshes.forEach([](MeshHandle, const GpuMesh& mesh) {
             const GLuint meshBuffers[] = {mesh.vertices, mesh.indices, mesh.skin};
@@ -407,7 +409,7 @@ core::Result<void> GlRenderer::initialize()
     gl::VertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(GpuUiVertex), reinterpret_cast<const void*>(offsetof(GpuUiVertex, color)));
     // Each sprite is an instance: its attributes move on once per sprite, from where its run starts.
     gl::BindVertexArray(m_spriteArray);
-    for (GLuint location = 0; location < 12; ++location)
+    for (GLuint location = 0; location < 13; ++location)
     {
         gl::EnableVertexAttribArray(location);
         gl::VertexAttribDivisor(location, 1);
@@ -462,12 +464,18 @@ core::Result<void> GlRenderer::initialize()
 
 core::Result<GlRenderer::Program> GlRenderer::linkProgram(std::string_view vertex, std::string_view fragment) const
 {
-    core::Result<GLuint> vertexShader = compileShader(GL_VERTEX_SHADER, vertex, shaderSource(vertex, m_es));
+    return linkSources(vertex, shaderSource(vertex, m_es), fragment, shaderSource(fragment, m_es));
+}
+
+core::Result<GlRenderer::Program> GlRenderer::linkSources(std::string_view vertex, std::string_view vertexSource, std::string_view fragment,
+                                                          std::string_view fragmentSource) const
+{
+    core::Result<GLuint> vertexShader = compileShader(GL_VERTEX_SHADER, vertex, vertexSource);
     if (!vertexShader)
     {
         return std::unexpected(vertexShader.error());
     }
-    core::Result<GLuint> fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragment, shaderSource(fragment, m_es));
+    core::Result<GLuint> fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragment, fragmentSource);
     if (!fragmentShader)
     {
         gl::DeleteShader(*vertexShader);
@@ -665,7 +673,7 @@ core::Result<MeshHandle> GlRenderer::createMesh(const asset::MeshData& mesh)
         gl::EnableVertexAttribArray(5);
     }
     // The attributes of its instances, which each batch points at where its own start: once an instance.
-    for (GLuint location = 6; location < 13; ++location)
+    for (GLuint location = 6; location < 14; ++location)
     {
         gl::EnableVertexAttribArray(location);
         gl::VertexAttribDivisor(location, 1);
@@ -837,6 +845,7 @@ void GlRenderer::updateMaterial(MaterialHandle handle, const MaterialDesc& mater
     {
         stored->description = material;
         stored->written = false;
+        stored->customWritten = false;
     }
 }
 
@@ -844,29 +853,9 @@ void GlRenderer::destroyMaterial(MaterialHandle material)
 {
     if (const std::optional<GpuMaterial> removed = m_materials.remove(material))
     {
-        gl::DeleteBuffers(1, &removed->uniform);
+        const GLuint buffers[] = {removed->uniform, removed->customSlots};
+        gl::DeleteBuffers(2, buffers);
     }
-}
-
-core::Result<ShaderHandle> GlRenderer::createShader(const asset::ShaderData& shader)
-{
-    return m_shaders.insert({.kind = shader.kind});
-}
-
-core::Result<void> GlRenderer::updateShader(ShaderHandle handle, const asset::ShaderData& shader)
-{
-    GpuShader* const stored = m_shaders.find(handle);
-    if (stored == nullptr)
-    {
-        return core::makeError(core::ErrorCode::NotFound, "no such shader");
-    }
-    stored->kind = shader.kind;
-    return {};
-}
-
-void GlRenderer::destroyShader(ShaderHandle shader)
-{
-    static_cast<void>(m_shaders.remove(shader));
 }
 
 RenderWorld& GlRenderer::beginFrame() noexcept
@@ -956,10 +945,25 @@ core::Result<void> GlRenderer::endFrame()
             const GpuTexture* const texture = m_textures.find(handle);
             return texture != nullptr && texture->bindable ? handle.index : noParticleTexture;
         },
-        .materialIndex = [](MaterialHandle) { return 0U; },
-        .canvasShader = [](MaterialHandle) { return ShaderHandle{}; },
+        // The materials of the frame by their index, which the canvas_item shaders of the project bind.
+        .materialIndex =
+            [this](MaterialHandle material) {
+                const auto found = std::ranges::find(m_spriteMaterials, material);
+                if (found != m_spriteMaterials.end())
+                {
+                    return static_cast<std::uint32_t>(found - m_spriteMaterials.begin());
+                }
+                m_spriteMaterials.push_back(material);
+                return static_cast<std::uint32_t>(m_spriteMaterials.size() - 1);
+            },
+        .canvasShader =
+            [this](MaterialHandle material) {
+                return shaderOf(material, asset::ShaderKind::CanvasItem) != nullptr ? m_materials.find(material)->description.shader
+                                                                                     : ShaderHandle{};
+            },
         .sortDistance = [this, camera = matrices.cameraPosition](math::Vec3 point) { return sortDistance(point, camera); },
     };
+    m_spriteMaterials.clear();
     gatherSprites(m_world, frustum, resources, m_spriteFrame);
     if (!m_spriteFrame.sprites.empty())
     {
@@ -1128,8 +1132,16 @@ core::Result<void> GlRenderer::endFrame()
 void GlRenderer::drawSky()
 {
     const GpuTexture* const sky = m_textures.find(m_world.environment.sky);
-    gl::UseProgram(m_skyProgram.program);
+    // A sky shader of the project draws the sky itself.
+    GpuShader* const shader = skyShader();
+    GpuMaterial* const material = shader != nullptr ? m_materials.find(m_world.environment.skyMaterial) : nullptr;
+    const GLuint custom = material != nullptr ? customProgram(*shader, customDraw) : 0;
+    gl::UseProgram(custom != 0 ? custom : m_skyProgram.program);
     bindSceneTextures();
+    if (custom != 0)
+    {
+        bindCustomMaterial(*material);
+    }
     bindTexture(unit::first, sky != nullptr && sky->bindable ? sky->texture : m_white, m_skySampler);
     gl::BindVertexArray(m_emptyArray);
     gl::DrawArrays(GL_TRIANGLES, 0, 3);
@@ -1177,6 +1189,17 @@ void GlRenderer::drawSprites(std::uint32_t firstRun, std::uint32_t runCount)
         gl::VertexAttribPointer(8, 2, GL_FLOAT, GL_FALSE, stride, at(offsetof(GpuSprite, naturalSize)));
         gl::VertexAttribIPointer(9, 2, GL_UNSIGNED_INT, stride, at(offsetof(GpuSprite, texture)));
         gl::VertexAttribIPointer(10, 2, GL_UNSIGNED_INT, stride, at(offsetof(GpuSprite, lightMask)));
+        gl::VertexAttribIPointer(12, 2, GL_UNSIGNED_INT, stride, at(offsetof(GpuSprite, material)));
+        // A canvas_item shader of the project draws with its program and its material.
+        GpuShader* const shader = run.shader.isValid() ? m_shaders.find(run.shader) : nullptr;
+        GpuMaterial* const material =
+            shader != nullptr && run.material < m_spriteMaterials.size() ? m_materials.find(m_spriteMaterials[run.material]) : nullptr;
+        const GLuint custom = material != nullptr ? customProgram(*shader, customDraw) : 0;
+        gl::UseProgram(custom != 0 ? custom : m_spriteProgram.program);
+        if (custom != 0)
+        {
+            bindCustomMaterial(*material);
+        }
         // The texture and the normal map of the run: white and a flat normal for what has none.
         const GpuTexture* const texture = textureAtSlot(run.texture);
         bindTexture(unit::first, texture != nullptr ? texture->texture : m_white,

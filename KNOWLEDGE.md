@@ -4168,6 +4168,12 @@ public:
   (`translateToGlsl`, `DEVEX_GLSL_TRANSLATION`, seulement sur ordinateur) en GLSL ES 3.00 et 3.30, varyings renommées
   `devex_varying<emplacement>` comme au build ; `ShaderData::glsl` les garde, une `GlslStage` par entrée. slangc refuse
   plusieurs sorties SPIR-V par appel. FRAGCOORD et SCREEN_UV sont retournés vers le haut, comme Vulkan les compte.
+- Dessin des shaders du projet (`GlCustom.cpp`) : `customProgram` lie un programme par usage (`customMesh`, `customSkinned`,
+  `customShadow`, `customSkinnedShadow`, `customDraw`, `customBake`) au premier dessin, et le lie aux blocs et unités par
+  leurs noms ; un échec dessine comme le matériau standard. `bindCustomMaterial` écrit les 64 cases (`customSlots`) et lie
+  les 8 textures aux unités 16 à 23 ; `uploadInstanceParameters` remplit `binding::customInstances`. Attributs : 13 pour le
+  début des valeurs d'instance d'un maillage, 12 pour le matériau et les valeurs d'un sprite. Un ciel de shader est déplié
+  dans `m_shaderSky` (512 × 256) puis cuit par `bakeEnvironmentFrom`, comme WebGPU.
 - OpenGL ES ne lit aucun BC, et un vieil OpenGL pas BC7 : `createTexture` décode alors les blocs en pixels RGBA8 (ou
   `SRGB8_ALPHA8`), avec `decodeBlocks` de `engine/src/render/BlockDecoding.hpp`, partagé avec WebGPU. ASTC sans
   l'extension est refusé.

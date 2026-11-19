@@ -124,6 +124,9 @@ struct InstanceData
     std::uint32_t firstBone = 0;
     std::uint32_t boneCount = 0;
     std::array<std::uint32_t, 2> decals{0xFFFFFFFFU, 0xFFFFFFFFU};
+    // Where the values it gives the instance uniforms of a shader of the project start.
+    std::uint32_t instanceParameters = noInstanceParameters;
+    std::uint32_t padding0 = 0;
 };
 struct ParticleDrawData
 {
@@ -207,7 +210,7 @@ struct BakeData
     std::uint32_t padding1 = 0;
 };
 static_assert(sizeof(SceneData) == 688 && sizeof(GpuLight) == 64 && sizeof(LightData) == 2048 && sizeof(ShadowView) == 80 &&
-              sizeof(MaterialData) == 64 && sizeof(InstanceData) == 88 && sizeof(BakeData) == 32 && sizeof(ParticleDrawData) == 48 &&
+              sizeof(MaterialData) == 64 && sizeof(InstanceData) == 96 && sizeof(BakeData) == 32 && sizeof(ParticleDrawData) == 48 &&
               sizeof(GpuParticle) == 64 && sizeof(RibbonSegment) == 96 && sizeof(TerrainData) == 384 && sizeof(TerrainDrawData) == 32 &&
               sizeof(GpuTerrainNode) == 16 && sizeof(BlitData) == 32 && sizeof(AtlasDecalData) == 224 && sizeof(DecalData) == 14336);
 
@@ -235,6 +238,8 @@ constexpr std::uint32_t bonesPerRow = 256;
 constexpr std::uint32_t skinnedFlag = 1;
 constexpr std::uint32_t blendedFlag = 2;
 constexpr std::uint32_t bothSidesFlag = 4;
+// Drawn by a shader of the project.
+constexpr std::uint32_t customFlag = 8;
 
 // Half floats of 1.
 constexpr std::array<std::uint16_t, 4> halfWhite{0x3C00, 0x3C00, 0x3C00, 0x3C00};
@@ -296,6 +301,11 @@ void bindTextureTarget(GLint unit, GLenum target, GLuint texture, GLuint sampler
 }
 
 } // namespace
+
+std::size_t GlRenderer::sceneDataSize() noexcept
+{
+    return sizeof(SceneData);
+}
 
 core::Result<void> GlRenderer::createSceneResources()
 {
@@ -679,6 +689,18 @@ void GlRenderer::bakeEnvironment(TextureHandle sky)
         m_environment.specular = whiteCube();
         return;
     }
+    bakeEnvironmentFrom(source->texture, source->size.width);
+}
+
+void GlRenderer::bakeEnvironmentFrom(GLuint equirectangular, std::uint32_t width)
+{
+    if (m_environment.irradiance != 0 || m_environment.specular != 0)
+    {
+        const GLuint previous[] = {m_environment.irradiance, m_environment.specular};
+        gl::DeleteTextures(2, previous);
+        m_environment.irradiance = 0;
+        m_environment.specular = 0;
+    }
     const auto cube = [](std::uint32_t size, std::uint32_t mips) {
         GLuint made = 0;
         gl::GenTextures(1, &made);
@@ -704,8 +726,8 @@ void GlRenderer::bakeEnvironment(TextureHandle sky)
     m_environment.specularMips = specularMipCount;
 
     // The map wraps around, and the cube is read between its texels, as the samplers of vulkan::EnvironmentBaker.
-    bindTextureTarget(unit::first, GL_TEXTURE_2D, source->texture, m_skySampler);
-    bakeFaces(m_cubeProgram, radiance, radianceSize, radianceMips, {.sourceWidth = source->size.width});
+    bindTextureTarget(unit::first, GL_TEXTURE_2D, equirectangular, m_skySampler);
+    bakeFaces(m_cubeProgram, radiance, radianceSize, radianceMips, {.sourceWidth = width});
     bindTextureTarget(unit::second, GL_TEXTURE_CUBE_MAP, radiance, m_cubeSampler);
     bakeFaces(m_prefilterProgram, m_environment.specular, specularSize, specularMipCount,
               {.sampleCount = prefilterSamples, .sourceSize = static_cast<float>(radianceSize)});
@@ -812,8 +834,16 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
         const MaterialHandle material = m_materials.contains(instance.material) ? instance.material : m_defaultMaterial;
         const MaterialDesc& description = m_materials.find(material)->description;
         std::uint32_t flags = skinned ? skinnedFlag : 0;
-        flags |= description.doubleSided ? bothSidesFlag : 0;
-        flags |= description.alphaMode == asset::AlphaMode::Blend ? blendedFlag : 0;
+        // A shader of the project chooses its sides and its blending.
+        if (const GpuShader* const shader = shaderOf(description, asset::ShaderKind::Spatial))
+        {
+            flags |= customFlag | (shader->transparent ? blendedFlag : 0);
+        }
+        else
+        {
+            flags |= description.doubleSided ? bothSidesFlag : 0;
+            flags |= description.alphaMode == asset::AlphaMode::Blend ? blendedFlag : 0;
+        }
         visible.push_back({&instance, mesh, material, flags, sortDistance(math::Vec3(instance.transform[3]), matrices.cameraPosition),
                            skinned ? math::Aabb{} : box, box});
     }
@@ -854,7 +884,8 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
                              .lights = lightsReaching(entry.box, centre),
                              .firstBone = entry.instance->firstBone,
                              .boneCount = entry.instance->boneCount,
-                             .decals = decalsReaching(entry.rest, centre)});
+                             .decals = decalsReaching(entry.rest, centre),
+                             .instanceParameters = instanceParametersOf(m_world, entry.instance->instanceParameters)});
     }
 
     // The casters of each view of the shadows, by batches as the camera's, after them: opaque and cut-out surfaces cast
@@ -903,7 +934,9 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
                 continue;
             }
             const MaterialHandle material = m_materials.contains(instance.material) ? instance.material : m_defaultMaterial;
-            if (m_materials.find(material)->description.alphaMode == asset::AlphaMode::Blend)
+            const MaterialDesc& description = m_materials.find(material)->description;
+            const GpuShader* const shader = shaderOf(description, asset::ShaderKind::Spatial);
+            if (shader != nullptr ? shader->transparent || !shader->castsShadows : description.alphaMode == asset::AlphaMode::Blend)
             {
                 continue;
             }
@@ -912,7 +945,7 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
             {
                 continue;
             }
-            casters.push_back({&instance, mesh, material, skinned ? skinnedFlag : 0U});
+            casters.push_back({&instance, mesh, material, (skinned ? skinnedFlag : 0U) | (shader != nullptr ? customFlag : 0U)});
         }
         std::ranges::sort(casters, [](const Caster& left, const Caster& right) {
             return std::tuple(left.flags, left.material.index, left.mesh, left.instance->submesh) <
@@ -937,7 +970,8 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
             ++m_shadowBatches.back().instanceCount;
             instances.push_back({.world = caster.instance->transform,
                                  .firstBone = caster.instance->firstBone,
-                                 .boneCount = caster.instance->boneCount});
+                                 .boneCount = caster.instance->boneCount,
+                                 .instanceParameters = instanceParametersOf(m_world, caster.instance->instanceParameters)});
         }
         pass.batchCount = static_cast<std::uint32_t>(m_shadowBatches.size()) - pass.firstBatch;
         m_shadowPasses.push_back(pass);
@@ -1035,6 +1069,14 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
     }
     gl::BindBuffer(GL_UNIFORM_BUFFER, m_sceneBuffer);
     gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(scene), &scene);
+    uploadInstanceParameters();
+    // A sky shader lights the scene from what it draws, which reads the scene just written.
+    if (updateSkyShader())
+    {
+        scene.specularMipCount = static_cast<float>(m_environment.specularMips);
+        gl::BindBuffer(GL_UNIFORM_BUFFER, m_sceneBuffer);
+        gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(scene), &scene);
+    }
 }
 
 std::array<std::uint32_t, 2> GlRenderer::lightsReaching(const math::Aabb& box, math::Vec3 centre) const
@@ -1407,7 +1449,15 @@ void GlRenderer::drawParticles(std::uint32_t index)
     gl::BlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     gl::Disable(GL_CULL_FACE);
     gl::DepthFunc(GL_GEQUAL);
-    gl::UseProgram(draw.ribbons ? m_ribbonProgram.program : m_particleProgram.program);
+    // A particles shader of the project draws particles, not ribbons.
+    GpuShader* const shader = draw.ribbons ? nullptr : shaderOf(draw.material, asset::ShaderKind::Particles);
+    GpuMaterial* const material = shader != nullptr ? m_materials.find(draw.material) : nullptr;
+    const GLuint custom = material != nullptr ? customProgram(*shader, customDraw) : 0;
+    gl::UseProgram(custom != 0 ? custom : draw.ribbons ? m_ribbonProgram.program : m_particleProgram.program);
+    if (custom != 0)
+    {
+        bindCustomMaterial(*material);
+    }
     gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::particleDraw, m_particleDrawBuffer,
                         static_cast<GLintptr>(std::size_t{index} * m_particleDrawStride), sizeof(ParticleDrawData));
     const GpuTexture* const texture = m_textures.find(draw.texture);
@@ -1859,10 +1909,15 @@ void GlRenderer::orderTransparent(const ViewMatrices& matrices)
         for (std::uint32_t index = first; index < end; ++index)
         {
             const GpuSprite& sprite = m_spriteFrame.sprites[index];
+            // A canvas_item shader of the project draws a run of one material.
+            const ShaderHandle shader = index < m_spriteFrame.shaders.size() ? m_spriteFrame.shaders[index] : ShaderHandle{};
+            const std::uint32_t material = shader.isValid() ? sprite.material : 0;
             if (m_spriteRuns.size() == draw.firstRun || m_spriteRuns.back().texture != sprite.texture ||
-                m_spriteRuns.back().normalTexture != sprite.normalTexture)
+                m_spriteRuns.back().normalTexture != sprite.normalTexture || m_spriteRuns.back().shader != shader ||
+                m_spriteRuns.back().material != material)
             {
-                m_spriteRuns.push_back({.first = index, .texture = sprite.texture, .normalTexture = sprite.normalTexture});
+                m_spriteRuns.push_back(
+                    {.first = index, .texture = sprite.texture, .normalTexture = sprite.normalTexture, .shader = shader, .material = material});
             }
             ++m_spriteRuns.back().count;
         }
@@ -1937,6 +1992,7 @@ void GlRenderer::bindInstances(const GpuMesh& mesh, std::uint32_t firstInstance)
     gl::VertexAttribIPointer(10, 2, GL_UNSIGNED_INT, stride, at(offsetof(InstanceData, lights)));
     gl::VertexAttribIPointer(11, 2, GL_UNSIGNED_INT, stride, at(offsetof(InstanceData, firstBone)));
     gl::VertexAttribIPointer(12, 2, GL_UNSIGNED_INT, stride, at(offsetof(InstanceData, decals)));
+    gl::VertexAttribIPointer(13, 1, GL_UNSIGNED_INT, stride, at(offsetof(InstanceData, instanceParameters)));
 }
 
 void GlRenderer::bindSceneTextures() const
@@ -1983,6 +2039,8 @@ void GlRenderer::drawShadows()
         gl::ClearDepth(1.0);
     }
     bindTextureTarget(unit::bones, GL_TEXTURE_2D, m_boneTexture, m_pointSampler);
+    // What the shaders of the project read: the time and the camera of the scene.
+    gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::scene, m_sceneBuffer, 0, sizeof(SceneData));
     const auto drawBatches = [&](const ShadowPass& pass, std::size_t view) {
         gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::shadowView, m_shadowMatrixBuffer, static_cast<GLintptr>(view * matrixStride),
                             sizeof(math::Mat4));
@@ -1996,8 +2054,19 @@ void GlRenderer::drawShadows()
             {
                 continue;
             }
-            gl::UseProgram((batch.flags & skinnedFlag) != 0 ? m_skinnedShadowProgram.program : m_shadowProgram.program);
-            bindMaterial(*material, true);
+            const bool skinned = (batch.flags & skinnedFlag) != 0;
+            GpuShader* const shader = (batch.flags & customFlag) != 0 ? shaderOf(material->description, asset::ShaderKind::Spatial) : nullptr;
+            const GLuint custom = shader != nullptr ? customProgram(*shader, skinned ? customSkinnedShadow : customShadow) : 0;
+            if (custom != 0)
+            {
+                gl::UseProgram(custom);
+                bindCustomMaterial(*material);
+            }
+            else
+            {
+                gl::UseProgram(skinned ? m_skinnedShadowProgram.program : m_shadowProgram.program);
+                bindMaterial(*material, true);
+            }
             bindInstances(*batch.mesh, batch.firstInstance);
             const asset::Submesh& submesh = batch.mesh->submeshes[batch.submesh];
             gl::DrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(submesh.indexCount), GL_UNSIGNED_INT,
@@ -2061,29 +2130,50 @@ void GlRenderer::drawMeshBatch(const MeshBatch& batch)
         return;
     }
     const bool blended = (batch.flags & blendedFlag) != 0;
-    gl::UseProgram((batch.flags & skinnedFlag) != 0 ? m_skinnedProgram.program : m_meshProgram.program);
-    if ((batch.flags & bothSidesFlag) != 0)
+    const bool skinned = (batch.flags & skinnedFlag) != 0;
+    // A shader of the project draws with its program, its sides and its blending; one OpenGL cannot link, as the standard
+    // material.
+    GpuShader* const shader = (batch.flags & customFlag) != 0 ? shaderOf(material->description, asset::ShaderKind::Spatial) : nullptr;
+    const GLuint custom = shader != nullptr ? customProgram(*shader, skinned ? customSkinned : customMesh) : 0;
+    gl::UseProgram(custom != 0 ? custom : skinned ? m_skinnedProgram.program : m_meshProgram.program);
+    const bool bothSides = custom != 0 ? shader->cull == asset::ShaderCull::Disabled : (batch.flags & bothSidesFlag) != 0;
+    if (bothSides)
     {
         gl::Disable(GL_CULL_FACE);
     }
     else
     {
         gl::Enable(GL_CULL_FACE);
-        gl::CullFace(GL_BACK);
+        gl::CullFace(custom != 0 && shader->cull == asset::ShaderCull::Front ? GL_FRONT : GL_BACK);
         gl::FrontFace(GL_CCW);
     }
     if (blended)
     {
-        // A blended surface lets (1 - alpha) of what is behind it through.
+        // A blended surface lets (1 - alpha) of what is behind it through; a shader of the project leaves its colour
+        // premultiplied, and an additive one an alpha of zero.
         gl::Enable(GL_BLEND);
         gl::BlendEquation(GL_FUNC_ADD);
-        gl::BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        if (custom != 0)
+        {
+            gl::BlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        }
+        else
+        {
+            gl::BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        }
     }
     else
     {
         gl::Disable(GL_BLEND);
     }
-    bindMaterial(*material, false);
+    if (custom != 0)
+    {
+        bindCustomMaterial(*material);
+    }
+    else
+    {
+        bindMaterial(*material, false);
+    }
     bindInstances(*batch.mesh, batch.firstInstance);
     const asset::Submesh& submesh = batch.mesh->submeshes[batch.submesh];
     gl::DrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(submesh.indexCount), GL_UNSIGNED_INT,

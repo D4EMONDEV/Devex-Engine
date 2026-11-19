@@ -6224,6 +6224,8 @@ garder ses shaders. L'import fait une compilation de plus par shader : slangc en
 bibliothèque SPIRV-Cross traduit entrée par entrée, sur les ordinateurs où tourne l'éditeur. Comme WebGPU, un matériau lie
 au plus huit textures ; OpenGL ES n'ayant pas de storage buffers, les valeurs d'instance d'une image tiennent dans un bloc
 uniforme de 1024 valeurs, au-delà desquelles un objet prend les valeurs du matériau.
+Fait le 2026-11-19 : OpenGL 3.3 et OpenGL ES 3.0 dessinent les maillages, leurs ombres, les sprites, les particules et le ciel
+de ces shaders comme Vulkan, dans les tests de comparaison de WebGPU, désormais partagés.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

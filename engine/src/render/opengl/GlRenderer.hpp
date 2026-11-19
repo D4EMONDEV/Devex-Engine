@@ -47,6 +47,9 @@ inline constexpr gl::GLuint decals = 13;
 inline constexpr gl::GLuint lights2D = 14;
 // The settings of a step of what follows the light: the antialiasing, the lens or the bloom.
 inline constexpr gl::GLuint post = 15;
+// The uniforms of the material of a shader of the project, and the values objects give the instance uniforms.
+inline constexpr gl::GLuint customMaterial = 16;
+inline constexpr gl::GLuint customInstances = 17;
 } // namespace binding
 
 // The texture units of their samplers: those of the scene first, which every lit shader reads, then those of each draw.
@@ -71,6 +74,8 @@ inline constexpr gl::GLint layerNormals = 13;
 // The atlases of the textures of the decals: their colours, then their normal and ORM maps.
 inline constexpr gl::GLint decalColors = 14;
 inline constexpr gl::GLint decalSurfaces = 15;
+// The eight textures of the material of a shader of the project.
+inline constexpr gl::GLint customTextures = 16;
 } // namespace unit
 
 class GlRenderer final : public RenderBackend
@@ -151,10 +156,37 @@ private:
         // Its factors, as the shaders read them; written again when it changes.
         gl::GLuint uniform = 0;
         bool written = false;
+        // The slots of the uniforms of a shader of the project, written again when it or the textures change.
+        gl::GLuint customSlots = 0;
+        std::uint64_t customRevision = ~std::uint64_t{0};
+        bool customWritten = false;
     };
+    // The programs of a shader of the project, by what they draw.
+    enum CustomProgram : std::size_t
+    {
+        customMesh,
+        customSkinned,
+        customShadow,
+        customSkinnedShadow,
+        // Sprites, particles or the sky.
+        customDraw,
+        // The sky laid out for the light of the environment.
+        customBake,
+        customProgramCount,
+    };
+    // A shader of the project: what OpenGL draws with it, its GLSL by entry point, and its programs, linked when first
+    // drawn. Its revision grows whenever it changes.
     struct GpuShader
     {
         asset::ShaderKind kind = asset::ShaderKind::Spatial;
+        asset::ShaderCull cull = asset::ShaderCull::Back;
+        asset::ShaderBlend blend = asset::ShaderBlend::Mix;
+        bool transparent = false;
+        bool castsShadows = true;
+        std::vector<asset::GlslStage> glsl;
+        std::array<gl::GLuint, customProgramCount> programs{};
+        std::array<bool, customProgramCount> tried{};
+        std::uint64_t revision = 0;
     };
     struct Empty
     {
@@ -171,6 +203,9 @@ private:
         std::uint32_t count = 0;
         std::uint32_t texture = 0;
         std::uint32_t normalTexture = 0;
+        // A canvas_item shader of the project, and the material of the frame it draws with.
+        ShaderHandle shader;
+        std::uint32_t material = 0;
     };
     // A batch of the interface as it is drawn.
     struct UiRun
@@ -280,6 +315,9 @@ private:
     GlRenderer(platform::Window& window, const RendererConfig& config) noexcept;
     [[nodiscard]] core::Result<void> initialize();
     [[nodiscard]] core::Result<Program> linkProgram(std::string_view vertex, std::string_view fragment) const;
+    // A program of the GLSL given, named `vertex` and `fragment` in what OpenGL says of it.
+    [[nodiscard]] core::Result<Program> linkSources(std::string_view vertex, std::string_view vertexSource, std::string_view fragment,
+                                                    std::string_view fragmentSource) const;
     // Binds the uniform blocks of a program to their bindings, and its samplers to their texture units, by their names.
     void bindProgram(const Program& program, std::initializer_list<std::pair<const char*, gl::GLuint>> blocks,
                      std::initializer_list<std::pair<const char*, gl::GLint>> samplers) const;
@@ -300,6 +338,8 @@ private:
     void bakeFaces(const Program& program, gl::GLuint cube, std::uint32_t size, std::uint32_t mips, const BakeSettings& settings);
     void bakeBrdfTable();
     void bakeEnvironment(TextureHandle sky);
+    // The light of the environment from an equirectangular image of `width` pixels.
+    void bakeEnvironmentFrom(gl::GLuint equirectangular, std::uint32_t width);
     [[nodiscard]] float sortDistance(math::Vec3 point, math::Vec3 cameraPosition) const noexcept;
     // The lights, the shadows, the instances and the batches of the frame, and the scene the shaders read.
     void prepareMeshes(const ViewMatrices& matrices, const Frustum& frustum, math::Extent2D sceneSize);
@@ -335,6 +375,25 @@ private:
     // The luminance of the scene, measured on a coarse grid read back frames later, which the automatic exposure follows.
     void updateExposure();
     void measureLuminance();
+
+    // The size of the uniform block of the scene.
+    [[nodiscard]] static std::size_t sceneDataSize() noexcept;
+    // GlCustom.cpp: the shaders of projects.
+    [[nodiscard]] static GpuShader gpuShaderOf(const asset::ShaderData& shader);
+    static void releaseShader(GpuShader& shader) noexcept;
+    // The shader of the project a material draws with, when it is of the kind and has its GLSL.
+    [[nodiscard]] GpuShader* shaderOf(const MaterialDesc& material, asset::ShaderKind kind);
+    [[nodiscard]] GpuShader* shaderOf(MaterialHandle material, asset::ShaderKind kind);
+    // The program of a shader that draws `which`, linked and bound when first asked for; 0 when it cannot be.
+    [[nodiscard]] gl::GLuint customProgram(GpuShader& shader, CustomProgram which);
+    // Binds the uniforms and the textures of the material of a shader of the project.
+    void bindCustomMaterial(GpuMaterial& material);
+    // The values objects give the instance uniforms of their shaders this frame.
+    void uploadInstanceParameters();
+    // The sky shader of the environment, and its sky laid out and baked for the light of the environment when what it
+    // draws changes: whether it was.
+    [[nodiscard]] GpuShader* skyShader();
+    [[nodiscard]] bool updateSkyShader();
 
     // GlPost.cpp: what follows the light.
     [[nodiscard]] core::Result<void> createPostResources();
@@ -417,6 +476,15 @@ private:
     std::size_t m_spriteCapacity = 0;
     // The bytes of the local lights of each sprite, which lit ones read.
     gl::GLuint m_spriteLightBuffer = 0;
+    // The materials of the frame by their index, which the canvas_item shaders of the project bind.
+    std::vector<MaterialHandle> m_spriteMaterials;
+    // The values objects give the instance uniforms of their shaders, at most 1024 a frame.
+    gl::GLuint m_customInstanceBuffer = 0;
+    // The sky a sky shader of the project laid out, and what it was drawn from, which bakes the light of the environment.
+    Target m_shaderSky;
+    std::uint64_t m_shaderSkyKey = 0;
+    std::uint64_t m_shaderSkyLight = 0;
+    std::chrono::steady_clock::time_point m_shaderSkyBaked;
     std::size_t m_spriteLightCapacity = 0;
     // The 2D lights of the frame, and the distances their shadows keep, a row of a texture of floats each.
     std::vector<GpuLight2D> m_lights2D;

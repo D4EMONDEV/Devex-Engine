@@ -558,6 +558,7 @@ if(DEVEX_OPENGL AND NOT EMSCRIPTEN)
         PRIVATE
             src/render/opengl/GlApi.cpp
             src/render/opengl/GlApi.hpp
+            src/render/opengl/GlCustom.cpp
             src/render/opengl/GlPost.cpp
             src/render/opengl/GlRenderer.cpp
             src/render/opengl/GlRenderer.hpp

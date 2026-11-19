@@ -4,12 +4,14 @@
 #include "RenderComparison.hpp"
 #include "render/opengl/GlShaders.hpp"
 
+#include <devex/asset/import/ShaderFile.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/render/Renderer.hpp>
 
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cstdlib>
 #include <format>
 #include <optional>
@@ -262,6 +264,126 @@ TEST_CASE("OpenGL ES 3.0 draws the same terrains, where the computer offers it",
     const devex::render::CapturedImage openGlEs = drawTerrain(devex::render::RenderApi::OpenGl, true);
     checkMeshesLikeVulkan(vulkan, openGlEs);
 
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("OpenGL draws meshes with the spatial shaders of a project as Vulkan does", "[render][gpu][opengl][shader]")
+{
+    if (!devex::asset::translatesGlsl())
+    {
+        SKIP("this build does not translate shaders into GLSL");
+    }
+    const std::array shaders{compiledForEveryApi(R"(shader_type spatial;
+uniform float3 tint : source_color = float3(1.0, 0.6, 0.3);
+uniform sampler2D pattern;
+void fragment() { ALBEDO = tint * texture(pattern, UV).rgb; ROUGHNESS = 0.4; METALLIC = 0.2; }
+void light() { DIFFUSE_LIGHT += saturate(dot(NORMAL, LIGHT)) * ATTENUATION * LIGHT_COLOR / PI; }
+)",
+                                                   "lit.dvxshader"),
+                             compiledForEveryApi(R"(shader_type spatial;
+render_mode unshaded;
+uniform float3 color : source_color = float3(0.2, 0.8, 0.4);
+void vertex() { VERTEX += NORMAL * 0.1 * sin(VERTEX.y * 8.0); }
+void fragment() { ALBEDO = color * (0.5 + 0.5 * NORMAL.y); }
+)",
+                                               "bent.dvxshader"),
+                             compiledForEveryApi(R"(shader_type spatial;
+uniform sampler2D mask : hint_default_white;
+void fragment() { ALBEDO = float3(0.8, 0.8, 0.85); ALPHA = texture(mask, UV).r; ALPHA_SCISSOR_THRESHOLD = 0.5; }
+)",
+                                               "cutout.dvxshader")};
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawShaded(devex::render::RenderApi::Vulkan, shaders);
+    const devex::render::CapturedImage openGl = drawShaded(devex::render::RenderApi::OpenGl, shaders);
+    checkMeshesLikeVulkan(vulkan, openGl);
+    if (const std::optional<std::string> missing = withoutOpenGlEs(); !missing)
+    {
+        checkMeshesLikeVulkan(vulkan, drawShaded(devex::render::RenderApi::OpenGl, shaders, true));
+    }
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("OpenGL draws sprites with the canvas_item shaders of a project, and lit sprites, as Vulkan does",
+          "[render][gpu][opengl][shader]")
+{
+    if (!devex::asset::translatesGlsl())
+    {
+        SKIP("this build does not translate shaders into GLSL");
+    }
+    const devex::asset::ShaderData shader = compiledForEveryApi(R"(shader_type canvas_item;
+uniform float3 tint : source_color = float3(1.0, 0.5, 0.2);
+instance uniform float amount = 0.5;
+void vertex() { VERTEX.x += VERTEX.y * 0.2; }
+void fragment()
+{
+    const float4 base = texture(TEXTURE, UV);
+    COLOR.rgb = lerp(COLOR.rgb, tint * base.rgb, amount) * (TEXTURE_PIXEL_SIZE.x > 0.25 ? 1.0 : 0.5);
+    if (UV.x > 0.5)
+    {
+        COLOR.rgb *= texture(TEXTURE, UV.yx).rgb;
+    }
+    NORMAL_MAP = float3(0.7, 0.5, 1.0);
+}
+)",
+                                                                "tinted.dvxshader");
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawShadedSprites(devex::render::RenderApi::Vulkan, shader);
+    const devex::render::CapturedImage openGl = drawShadedSprites(devex::render::RenderApi::OpenGl, shader);
+    checkMeshesLikeVulkan(vulkan, openGl);
+    if (const std::optional<std::string> missing = withoutOpenGlEs(); !missing)
+    {
+        checkMeshesLikeVulkan(vulkan, drawShadedSprites(devex::render::RenderApi::OpenGl, shader, true));
+    }
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("OpenGL draws the sky and particles with the shaders of a project, and lights the scene with that sky, as Vulkan does",
+          "[render][gpu][opengl][shader]")
+{
+    if (!devex::asset::translatesGlsl())
+    {
+        SKIP("this build does not translate shaders into GLSL");
+    }
+    const devex::asset::ShaderData sky = compiledForEveryApi(R"(shader_type sky;
+uniform float3 top : source_color = float3(0.2, 0.4, 0.9);
+uniform float3 bottom : source_color = float3(0.8, 0.6, 0.4);
+void sky()
+{
+    COLOR = lerp(bottom, top, saturate(EYEDIR.y * 0.5 + 0.5)) + float3(0.3, 0.0, 0.0) * step(0.5, SKY_COORDS.x);
+    if (!AT_CUBEMAP_PASS && LIGHT0_ENABLED)
+    {
+        COLOR += LIGHT0_COLOR * 4.0 * step(0.995, dot(EYEDIR, LIGHT0_DIRECTION));
+    }
+}
+)",
+                                                             "gradient.dvxshader");
+    const devex::asset::ShaderData particles = compiledForEveryApi(R"(shader_type particles;
+render_mode blend_add;
+uniform float3 glow : source_color = float3(1.0, 0.6, 0.2);
+void vertex() { VERTEX.y += 0.1 * float(INSTANCE_ID % 2u); }
+void fragment() { COLOR.rgb *= glow * (0.5 + 0.5 * PARTICLE_SIZE); }
+)",
+                                                                   "embers.dvxshader");
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawShadedSky(devex::render::RenderApi::Vulkan, sky, particles);
+    const devex::render::CapturedImage openGl = drawShadedSky(devex::render::RenderApi::OpenGl, sky, particles);
+    checkMeshesLikeVulkan(vulkan, openGl);
+    if (const std::optional<std::string> missing = withoutOpenGlEs(); !missing)
+    {
+        checkMeshesLikeVulkan(vulkan, drawShadedSky(devex::render::RenderApi::OpenGl, sky, particles, true));
+    }
     for (const std::string& error : capture.errors())
     {
         UNSCOPED_INFO(error);
