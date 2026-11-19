@@ -4100,6 +4100,23 @@ public:
   l'interface est dessinée à la taille de la cible (`FrameGraph::targetExtent` dans Vulkan). Vulkan garde tous les pixels
   dans une image où les outils dessinent par-dessus la scène, puisqu'ils testent sa profondeur.
 
+## Le renderer OpenGL (première étape)
+
+- `engine/src/render/opengl` : `GlRenderer` implémente `RenderBackend`, créé seulement pour `RenderApi::OpenGl`, dans une
+  fenêtre créée avec `WindowConfig::openGl`. `Window::createGlContext` fait le contexte (3.3 core, ou ES 3.0 avec
+  `RendererConfig::openGlEs` sur un ordinateur, et toujours sur Android et le web), `gl::loadFunctions` remplit la table de
+  `GlApi.hpp` par `SDL_GL_GetProcAddress`. Une seule fenêtre ; pas encore de 3D, d'exposition mesurée ni de lumières 2D.
+- Les shaders `shaders/gl_*.slang` passent par `cmake/EmbedGlsl.cmake` : slangc compile chaque point d'entrée à part,
+  `spirv-cross --reflect` donne ses entrées et sorties, et ce qui va d'une étape à l'autre est renommé
+  `devex_varying<emplacement>`, que GLSL ES relie par nom. `spirv-cross` vient de vcpkg (feature `opengl`, dépendance
+  hôte), cherché sous `VCPKG_INSTALLED_DIR/*/tools/spirv-cross` : les builds ne définissent pas `VCPKG_HOST_TRIPLET`.
+- Les blocs uniformes s'appellent comme leur type, suivi de `_std140` (`bindProgram` essaie les deux noms). Une matrice d'un
+  bloc arrive en `row_major` : la matrice de glm s'envoie telle quelle. Celle d'un sprite, en quatre attributs qui sont ses
+  colonnes, se multiplie par la droite (`mul(position, colonnes)`).
+- Les captures dessinent dans une image `SRGB8_ALPHA8`, la fenêtre dans un framebuffer sRGB quand le système le donne
+  (`m_windowSrgb`, lu par `GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING`) ; OpenGL l'encode avec `GL_FRAMEBUFFER_SRGB`, OpenGL ES
+  de lui-même. Sinon la tonemap et l'interface encodent (`encode`, `displaySpace`).
+
 ## C++ des jeux pour le web (étape 5 du web)
 
 - Le kit est dans `platforms/web/kit` (`bin/kit` du build web) : `cmake/DevexConfig.cmake` (de

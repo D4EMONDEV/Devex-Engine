@@ -720,6 +720,16 @@ core::Result<Window> Platform::createWindow(const WindowConfig& config)
         flags |= SDL_WINDOW_VULKAN;
     }
 #endif
+    if (config.openGl)
+    {
+        flags |= SDL_WINDOW_OPENGL;
+        // What the window keeps is chosen with it: colours encoded in sRGB, as a swapchain of Vulkan, which blend as light,
+        // and nothing else, the scene being drawn into images of its own.
+        SDL_GL_ResetAttributes();
+        SDL_GL_SetAttribute(SDL_GL_FRAMEBUFFER_SRGB_CAPABLE, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
+        SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);
+    }
     if (config.hidden)
     {
         flags |= SDL_WINDOW_HIDDEN;

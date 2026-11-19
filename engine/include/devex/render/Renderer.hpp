@@ -48,6 +48,9 @@ enum class RenderApi : std::uint8_t
     Vulkan,
     // Dawn's WebGPU: in a browser, and on a computer built with DEVEX_WEBGPU, for its tests.
     WebGpu,
+    // OpenGL 3.3, or OpenGL ES 3.0 with RendererConfig::openGlEs, into a window created with WindowConfig::openGl. It
+    // draws the 2D and the interface so far, for its tests.
+    OpenGl,
 };
 
 struct DEVEX_API RendererConfig
@@ -78,6 +81,8 @@ struct DEVEX_API RendererConfig
     // Maximum projected simplification error in pixels. Zero keeps original geometry.
     float meshLodError = 1.0f;
     RenderApi api = RenderApi::Automatic;
+    // With OpenGL on a computer, OpenGL ES 3.0 as a phone and a browser have it, where the driver offers it: for the tests.
+    bool openGlEs = false;
 };
 
 // What a sampler2D uniform samples while its texture is missing or still loading.

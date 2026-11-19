@@ -357,6 +357,47 @@ core::Result<std::uint64_t> Window::createVulkanSurface(void* vulkanInstance) co
     return std::bit_cast<std::uint64_t>(surface);
 }
 
+core::Result<void*> Window::createGlContext(bool es, bool debug) const
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    // What the window keeps was chosen when Platform::createWindow made it.
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, es ? SDL_GL_CONTEXT_PROFILE_ES : SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, es ? 0 : 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, debug ? SDL_GL_CONTEXT_DEBUG_FLAG : 0);
+    SDL_GLContext const context = SDL_GL_CreateContext(detail::toSdlWindow(m_native));
+    if (context == nullptr)
+    {
+        return core::makeError(core::ErrorCode::Graphics, "cannot create an OpenGL{} context: {}", es ? " ES 3.0" : " 3.3",
+                               SDL_GetError());
+    }
+    return static_cast<void*>(context);
+}
+
+void Window::destroyGlContext(void* context) const noexcept
+{
+    if (context != nullptr)
+    {
+        static_cast<void>(SDL_GL_DestroyContext(static_cast<SDL_GLContext>(context)));
+    }
+}
+
+bool Window::setGlSwapInterval(int interval) const noexcept
+{
+    return SDL_GL_SetSwapInterval(interval);
+}
+
+void Window::swapGl() const noexcept
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    static_cast<void>(SDL_GL_SwapWindow(detail::toSdlWindow(m_native)));
+}
+
+void* Window::glFunction(const char* name) noexcept
+{
+    return reinterpret_cast<void*>(SDL_GL_GetProcAddress(name));
+}
+
 NativeWindow Window::native() const noexcept
 {
     DEVEX_ASSERT(m_native != nullptr);

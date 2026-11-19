@@ -286,6 +286,10 @@ target_include_directories(devex_render_tests PRIVATE "${PROJECT_SOURCE_DIR}/eng
 if(DEVEX_WEBGPU AND TARGET devex_render_tests)
     target_sources(devex_render_tests PRIVATE render/WebGpuTests.cpp)
 endif()
+# The OpenGL renderer, compared with Vulkan, where the build has it.
+if(DEVEX_OPENGL AND NOT ANDROID AND NOT EMSCRIPTEN AND TARGET devex_render_tests)
+    target_sources(devex_render_tests PRIVATE render/OpenGlTests.cpp)
+endif()
 
 # Command and log tests run anywhere; the overlay test is tagged [gpu].
 devex_add_tests(tools

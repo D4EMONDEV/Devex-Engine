@@ -8,6 +8,9 @@ option(DEVEX_WARNINGS_AS_ERRORS "Treat compiler warnings as errors for Devex tar
 # The renderer of the browser. On a computer it serves the tests and development, beside Vulkan, and stays out of
 # what ships: the web preset turns it on, a build of the tests may.
 option(DEVEX_WEBGPU "Build the WebGPU renderer, with Dawn" OFF)
+# The light renderer that will take WebGPU's place: OpenGL 3.3 on a computer, OpenGL ES 3.0 on a phone, WebGL2 in a
+# browser. It draws with what the system has, and its shaders are translated at the build by spirv-cross, from vcpkg.
+option(DEVEX_OPENGL "Build the OpenGL renderer" ON)
 
 # Dependencies come from vcpkg in manifest mode: the toolchain must be known before project().
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")

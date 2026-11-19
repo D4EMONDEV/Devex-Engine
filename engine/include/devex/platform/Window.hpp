@@ -49,6 +49,8 @@ struct DEVEX_API WindowConfig
     bool resizable = true;
     // Required to create a Vulkan surface for the window.
     bool vulkan = false;
+    // Required to draw into the window with OpenGL. A window of Android serves Vulkan or OpenGL, not both.
+    bool openGl = false;
     bool hidden = false;
     // Borderless over the whole display, at the resolution of the desktop.
     bool fullscreen = false;
@@ -150,6 +152,19 @@ public:
 
     // The window as the system knows it, for a WebGPU surface; Kind::None where it cannot tell.
     [[nodiscard]] NativeWindow native() const noexcept;
+
+    // An OpenGL context that draws into this window, current on the calling thread: OpenGL ES 3.0 when `es`, as phones and
+    // browsers have, OpenGL 3.3 core otherwise; with the debug output when `debug`. The window must have been created with
+    // WindowConfig::openGl, and the caller destroys the context with destroyGlContext.
+    [[nodiscard]] core::Result<void*> createGlContext(bool es, bool debug) const;
+    void destroyGlContext(void* context) const noexcept;
+    // How many times the display refreshes before what OpenGL drew shows: 1 waits for it, 0 never, -1 only when on
+    // time. Answers whether the system took it.
+    bool setGlSwapInterval(int interval) const noexcept;
+    // Shows what OpenGL drew into the window.
+    void swapGl() const noexcept;
+    // The address of a function of OpenGL in the current context, by its full name; null without one.
+    [[nodiscard]] static void* glFunction(const char* name) noexcept;
 
 private:
     friend class Platform;

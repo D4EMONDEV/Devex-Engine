@@ -64,6 +64,15 @@
         "zstd"
     ],
     "features": {
+        "opengl": {
+            "description": "Build the OpenGL renderer, whose shaders spirv-cross translates into GLSL at the build",
+            "dependencies": [
+                {
+                    "name": "spirv-cross",
+                    "host": true
+                }
+            ]
+        },
         "tests": {
             "description": "Build Devex unit tests",
             "dependencies": [

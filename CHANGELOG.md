@@ -8,6 +8,8 @@ Ce qui change d'une version publiée à l'autre. Ce que promet chaque version au
 - **Android sans Vulkan 1.3** : un téléphone qui n'a que Vulkan 1.1, comme beaucoup d'entrée de gamme, dessine avec le renderer WebGPU du web, par Dawn, au lieu de refuser le jeu ; l'APK ne demande plus que Vulkan 1.1. Ces téléphones ont l'image de Compatibility, et les shaders du projet y demandent que le projet soit en Compatibility.
 - **Les téléphones 32 bits** : **Phones, 32 Bits (armeabi-v7a)** dans l'export Android, avec le préréglage `android-arm32`, pour les Android 32 bits, que font tourner bien des téléphones d'entrée de gamme même avec un processeur 64 bits.
 - **L'échelle 3D sur Android** : **Render Scale** dans la carte **Mobile**, comme le `scaling_3d/scale` de Godot. Android dessine la scène avec cette part des pixels de l'écran, en largeur et en hauteur, puis l'agrandit ; l'interface garde chaque pixel. Le préréglage mobile, celui d'un projet qui n'a pas écrit la carte, la met à 50 % : un téléphone dessinait jusque-là chaque pixel de son écran, environ quatre fois plus que la page web sur le même téléphone.
+- **Un renderer OpenGL, première étape** : OpenGL 3.3, et OpenGL ES 3.0 comme l'ont les téléphones, dessinent le fond de l'environnement, les sprites, les tilemaps, le texte, l'interface et les captures comme Vulkan. Il ne sert que quand on le demande (`RenderApi::OpenGl`) : la 3D, Android et WebGL2 viennent ensuite, avant qu'il ne remplace WebGPU. Ses shaders sont traduits en GLSL au build par SPIRV-Cross, une nouvelle dépendance de vcpkg.
+- **Un APK propre à chaque export** : Gradle empaquetait dans l'APK de l'export d'avant, en y laissant la place des anciens fichiers, et un APK de 21 Mo en faisait 34 à l'export suivant.
 
 ## 0.11.1 — 2026-11-18
 

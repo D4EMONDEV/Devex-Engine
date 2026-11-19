@@ -5,6 +5,9 @@
 #if DEVEX_RENDERER_WEBGPU
 #include "webgpu/WebGpuRenderer.hpp"
 #endif
+#if DEVEX_RENDERER_OPENGL
+#include "opengl/GlRenderer.hpp"
+#endif
 
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
@@ -46,6 +49,18 @@ constexpr bool hasVulkan = false;
 core::Result<Renderer> Renderer::create(const platform::Platform& platform,
                                         platform::Window& window, const RendererConfig& config)
 {
+#if DEVEX_RENDERER_OPENGL
+    // Only when asked, until it draws all the others draw.
+    if (config.api == RenderApi::OpenGl)
+    {
+        core::Result<std::unique_ptr<opengl::GlRenderer>> implementation = opengl::GlRenderer::create(platform, window, config);
+        if (!implementation)
+        {
+            return std::unexpected(implementation.error());
+        }
+        return Renderer(std::unique_ptr<RenderBackend>(std::move(*implementation)));
+    }
+#endif
 #if DEVEX_RENDERER_WEBGPU
     const auto webGpu = [&]() -> core::Result<Renderer> {
         core::Result<std::unique_ptr<webgpu::WebGpuRenderer>> implementation = webgpu::WebGpuRenderer::create(platform, window, config);
@@ -62,7 +77,7 @@ core::Result<Renderer> Renderer::create(const platform::Platform& platform,
     }
 #endif
 #if DEVEX_RENDERER_VULKAN
-    if (config.api != RenderApi::WebGpu)
+    if (config.api != RenderApi::WebGpu && config.api != RenderApi::OpenGl)
     {
         core::Result<std::unique_ptr<vulkan::VulkanRenderer>> implementation =
             vulkan::VulkanRenderer::create(platform, window, config);
@@ -90,7 +105,9 @@ core::Result<Renderer> Renderer::create(const platform::Platform& platform,
     static_cast<void>(platform);
     static_cast<void>(window);
     return core::makeError(core::ErrorCode::Unsupported, "this build of Devex has no renderer for {}",
-                           config.api == RenderApi::WebGpu ? "WebGPU" : "this platform");
+                           config.api == RenderApi::WebGpu   ? "WebGPU"
+                           : config.api == RenderApi::OpenGl ? "OpenGL"
+                                                             : "this platform");
 }
 
 Renderer::Renderer(std::unique_ptr<RenderBackend> implementation) noexcept

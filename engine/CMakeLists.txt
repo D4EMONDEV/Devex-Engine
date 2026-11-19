@@ -510,6 +510,34 @@ if(DEVEX_WEBGPU)
     target_link_libraries(devex_render PRIVATE dawn::webgpu_dawn)
     target_compile_definitions(devex_render PRIVATE DEVEX_RENDERER_WEBGPU=1)
 endif()
+# The OpenGL backend, for OpenGL 3.3 on a computer, which takes the system's from SDL. Its shaders are translated into GLSL
+# at the build and kept in the program. OpenGL ES on Android and WebGL2 in a browser come later in its plan.
+if(DEVEX_OPENGL AND NOT ANDROID AND NOT EMSCRIPTEN)
+    set(devex_glsl_source "${CMAKE_CURRENT_BINARY_DIR}/generated/GlShaders.cpp")
+    devex_embed_glsl(OUTPUT "${devex_glsl_source}"
+        SOURCES
+            gl_sky.slang
+            gl_sprite.slang
+            gl_tonemap.slang
+            gl_ui.slang
+        MODULES
+            sprite_shape.slang
+            surface_shading.slang
+            tonemapping.slang
+            ui_shape.slang
+    )
+    target_sources(devex_render
+        PRIVATE
+            src/render/opengl/GlApi.cpp
+            src/render/opengl/GlApi.hpp
+            src/render/opengl/GlRenderer.cpp
+            src/render/opengl/GlRenderer.hpp
+            src/render/opengl/GlShaders.hpp
+            "${devex_glsl_source}"
+    )
+    target_include_directories(devex_render PRIVATE src/render/opengl)
+    target_compile_definitions(devex_render PRIVATE DEVEX_RENDERER_OPENGL=1)
+endif()
 set_target_properties(devex_render PROPERTIES
     EXPORT_NAME Render
     FOLDER "Engine"

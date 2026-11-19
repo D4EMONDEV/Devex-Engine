@@ -159,3 +159,38 @@ function(devex_embed_wgsl)
         VERBATIM
     )
 endfunction()
+
+# devex_embed_glsl(OUTPUT <file.cpp> SOURCES <files.slang...> MODULES <files.slang...>)
+# Translates the shaders of the OpenGL renderer into GLSL ES 3.00 and GLSL 3.30, kept in <file.cpp>: slangc compiles them
+# to SPIR-V and spirv-cross, from vcpkg, translates them. The modules are those the sources import, which rebuild them.
+function(devex_embed_glsl)
+    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "OUTPUT" "SOURCES;MODULES")
+    # The tool of the machine that builds, which vcpkg puts under its own triplet: the target's for a build of that machine,
+    # another for Android and the web.
+    file(GLOB spirv_cross_directories LIST_DIRECTORIES true "${VCPKG_INSTALLED_DIR}/*/tools/spirv-cross")
+    find_program(DEVEX_SPIRV_CROSS spirv-cross
+        HINTS ${spirv_cross_directories}
+        NO_DEFAULT_PATH
+        REQUIRED
+        DOC "spirv-cross from vcpkg, which translates the shaders of the OpenGL renderer into GLSL"
+    )
+    set(sources)
+    foreach(source IN LISTS ARG_SOURCES)
+        cmake_path(ABSOLUTE_PATH source BASE_DIRECTORY "${PROJECT_SOURCE_DIR}/shaders" OUTPUT_VARIABLE source_path)
+        list(APPEND sources "${source_path}")
+    endforeach()
+    set(modules)
+    foreach(module IN LISTS ARG_MODULES)
+        cmake_path(ABSOLUTE_PATH module BASE_DIRECTORY "${PROJECT_SOURCE_DIR}/shaders" OUTPUT_VARIABLE module_path)
+        list(APPEND modules "${module_path}")
+    endforeach()
+    add_custom_command(
+        OUTPUT "${ARG_OUTPUT}"
+        COMMAND "${CMAKE_COMMAND}" "-DOUTPUT=${ARG_OUTPUT}" "-DINPUTS=${sources}" "-DSLANGC=${DEVEX_SLANGC}"
+            "-DSPIRV_CROSS=${DEVEX_SPIRV_CROSS}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/glsl"
+            -P "${PROJECT_SOURCE_DIR}/cmake/EmbedGlsl.cmake"
+        DEPENDS ${sources} ${modules} "${PROJECT_SOURCE_DIR}/cmake/EmbedGlsl.cmake"
+        COMMENT "Translating the shaders of OpenGL into GLSL"
+        VERBATIM
+    )
+endfunction()

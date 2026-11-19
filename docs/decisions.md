@@ -6120,6 +6120,34 @@ l'un ou l'autre, et Vulkan comme WebGPU dessinant sur les deux. Choisi avec lui,
   mobile. Les sprites du monde, dessinés dans la même image que la 3D, la suivent. Le navigateur d'un téléphone, qui
   dessine déjà aux pixels de la page, ne la réduit pas davantage.
 
+L'APK à 50 % tourne « super fluide » sur le Galaxy A13. Pour le renderer OpenGL, choisi ensuite avec l'utilisateur :
+
+- **Ses propres shaders Slang** : WebGL2 et OpenGL ES 3.0 n'ont ni storage buffers ni compute, que lisent ceux de
+  WebGPU. Ils partagent avec eux les calculs (`sprite_shape`, `ui_shape`, `tonemapping`), comme ceux de WebGPU les
+  partagent avec Vulkan. Slang les compile en SPIR-V et **SPIRV-Cross**, par vcpkg comme les autres bibliothèques (l'outil
+  pour le build, et plus tard la bibliothèque pour l'import des shaders du projet), les traduit en GLSL ES 3.00 et en
+  GLSL 3.30. GLSL ES relie les variables entre les étapes par leur nom : le build les renomme d'après leur emplacement.
+- **Les données comme Godot** : les instances en attributs de sommets, l'image et les lumières en uniform blocks (au
+  plus 32 lumières locales visibles, 8 par objet, comme son Compatibility), les os dans une texture.
+- **La 2D et l'interface d'abord**, comme WebGPU : sprites, tilemaps, texte, interface, fond de l'environnement,
+  tonemapping et captures, comparés à Vulkan dans les tests ; puis la 3D.
+- **Sonder avant de créer la fenêtre** : une fenêtre d'Android ne sert qu'à Vulkan ou qu'à OpenGL ES, et le moteur saura
+  si Vulkan 1.3 est là avant de la créer pour l'un ou l'autre.
+
+**Première étape, faite le 2026-11-19** : `engine/src/render/opengl` dessine le fond de l'environnement, les sprites et les
+tilemaps, le tonemapping, l'interface et les captures, en OpenGL 3.3 et en OpenGL ES 3.0, quand on le demande
+(`RenderApi::OpenGl`, `RendererConfig::openGlEs` pour OpenGL ES sur un ordinateur). Un test compare ses images à celles de
+Vulkan, dans les deux versions. Ce qu'elle a demandé :
+
+- **Ses propres pointeurs de fonctions** (`GlApi.hpp`), que SDL trouve dans le contexte, plutôt que les en-têtes OpenGL
+  du système : sous Windows, ils amènent `windows.h`. Ses constantes gardent leur préfixe `GL_`, que `TRUE` ou `RGB` ne
+  heurtent pas les macros de Windows.
+- **Les framebuffers en sRGB**, comme le swapchain de Vulkan : l'interface translucide s'y mélange en lumière, et non en
+  couleurs encodées. La fenêtre le demande à sa création (`SDL_GL_FRAMEBUFFER_SRGB_CAPABLE`) ; WebGL2, qui ne le peut
+  pas, aura ses couleurs encodées par les shaders.
+- **`SV_VulkanVertexID`** dans les shaders : Slang retire de `SV_VertexID` le premier sommet du draw, que GLSL ES n'a pas.
+- **Pas de première instance** en OpenGL ES 3.0 : chaque série de sprites redonne où ses attributs commencent.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.
