@@ -3,16 +3,40 @@
 Ce qui change d'une version publiée à l'autre. Ce que promet chaque version aux projets existants est dans
 [docs/compatibilite.md](docs/compatibilite.md). Les décisions et leurs raisons sont dans [docs/decisions.md](docs/decisions.md).
 
-## À venir
+## 0.12.0 — 2026-11-19
 
+Devex dessine aussi avec OpenGL : OpenGL 3.3 sur un ordinateur sans Vulkan 1.3, OpenGL ES 3.0 sur un téléphone qui n'a que
+Vulkan 1.1 ou pas de Vulkan, et WebGL2 dans un navigateur sans WebGPU, avec tout ce que dessine la méthode Compatibility,
+shaders du projet compris. Les jeux Android tournent ainsi sur bien plus de téléphones, avec un APK plus léger. C'est toujours
+un aperçu.
+
+**Télécharger**
+
+- Windows : `devex-0.12.0-windows-x64-setup.exe`, sans droits administrateur, ou le `.zip` à extraire. L'installateur n'est pas
+  signé : si Windows affiche « Windows a protégé votre ordinateur », cliquer sur *Informations complémentaires*, puis *Exécuter quand même*.
+- Linux : `devex-0.12.0-linux-x64.tar.gz`, à extraire, puis lancer `bin/devex-editor`. Ubuntu 24.04 ou plus récent.
+- Le lecteur web vient avec l'éditeur, dans `platforms/web`.
+
+**Mettre à jour**
+
+- L'installateur remplace la version déjà installée, au même endroit. Ni les projets ni les réglages n'y sont : ils restent.
+- Les shaders et les graphes de shaders du projet sont réimportés une fois, pour y ajouter leur GLSL, et le C++ des jeux est
+  recompilé à leur ouverture.
+- Un jeu Android ou web exporté avec une version précédente garde son lecteur : l'exporter à nouveau lui donne OpenGL ES et
+  WebGL2.
+
+**Nouveautés**
+
+- **Un renderer OpenGL** : OpenGL 3.3, et OpenGL ES 3.0 comme l'ont les téléphones, dessinent comme Vulkan le fond de l'environnement, les sprites, les tilemaps, le texte, l'interface et les captures, puis la 3D : les maillages, avec ou sans squelette, leurs matériaux, la lumière du soleil, des lumières locales (32 par image, 8 par objet, comme le Compatibility de Godot) et de l'environnement, les ombres, le brouillard, les surfaces mélangées et l'exposition automatique ; les particules et les traînées, les terrains, leurs couches et leur herbe, les décals (64 par image, 8 par objet, comme le renderer mobile de Godot), les lumières 2D, leurs ombres et les normal maps des sprites, les sprites éclairés par la scène, les effets après la lumière : l'antialiasing temporel, le bloom, la profondeur de champ, le flou de mouvement et la table de couleurs, et les shaders du projet, spatial, canvas_item, particles et sky, que l'import traduit en GLSL pour chaque projet. Il sert aux machines sans Vulkan 1.3, et quand on le demande (`RenderApi::OpenGl`) : WebGL2 vient ensuite, avant qu'il ne remplace WebGPU. Ses shaders sont traduits en GLSL au build par SPIRV-Cross, une nouvelle dépendance de vcpkg.
 - **Android sans Vulkan 1.3** : un téléphone qui n'a que Vulkan 1.1, ou pas de Vulkan du tout, comme beaucoup d'entrée de gamme, dessine avec le renderer OpenGL, en OpenGL ES 3.0, au lieu de refuser le jeu ; l'APK ne demande plus qu'OpenGL ES 3.0. Les textures en BC, qu'OpenGL ES ne lit pas, y sont décodées au chargement, comme dans le navigateur d'un téléphone. Le moteur le sait avant de créer sa fenêtre, qu'un téléphone fait pour Vulkan ou pour OpenGL ES. `adb shell setprop debug.devex.renderer opengl` dessine avec OpenGL ES sur un téléphone qui a Vulkan 1.3. L'APK n'emporte plus WebGPU (Dawn).
 - **WebGL2 dans un navigateur sans WebGPU** : un navigateur qui ne donne pas son GPU à WebGPU, comme Firefox sur Android ou un vieux Safari, dessine le jeu avec le renderer OpenGL, en WebGL2, au lieu d'afficher qu'il ne peut pas : la page ne le refuse plus que sans WebGPU ni WebGL2. Les autres gardent WebGPU.
 - **Les jeux d'un vieil ordinateur** : un ordinateur sans Vulkan 1.3 lance ses jeux en OpenGL 3.3 au lieu de les refuser. L'éditeur, dont les outils ont besoin de Vulkan, le demande toujours.
 - **Les téléphones 32 bits** : **Phones, 32 Bits (armeabi-v7a)** dans l'export Android, avec le préréglage `android-arm32`, pour les Android 32 bits, que font tourner bien des téléphones d'entrée de gamme même avec un processeur 64 bits.
 - **L'échelle 3D sur Android** : **Render Scale** dans la carte **Mobile**, comme le `scaling_3d/scale` de Godot. Android dessine la scène avec cette part des pixels de l'écran, en largeur et en hauteur, puis l'agrandit ; l'interface garde chaque pixel. Le préréglage mobile, celui d'un projet qui n'a pas écrit la carte, la met à 50 % : un téléphone dessinait jusque-là chaque pixel de son écran, environ quatre fois plus que la page web sur le même téléphone.
-- **Un renderer OpenGL** : OpenGL 3.3, et OpenGL ES 3.0 comme l'ont les téléphones, dessinent comme Vulkan le fond de l'environnement, les sprites, les tilemaps, le texte, l'interface et les captures, puis la 3D : les maillages, avec ou sans squelette, leurs matériaux, la lumière du soleil, des lumières locales (32 par image, 8 par objet, comme le Compatibility de Godot) et de l'environnement, les ombres, le brouillard, les surfaces mélangées et l'exposition automatique ; les particules et les traînées, les terrains, leurs couches et leur herbe, les décals (64 par image, 8 par objet, comme le renderer mobile de Godot), les lumières 2D, leurs ombres et les normal maps des sprites, les sprites éclairés par la scène, les effets après la lumière : l'antialiasing temporel, le bloom, la profondeur de champ, le flou de mouvement et la table de couleurs, et les shaders du projet, spatial, canvas_item, particles et sky, que l'import traduit en GLSL pour chaque projet. Il sert aux machines sans Vulkan 1.3, et quand on le demande (`RenderApi::OpenGl`) : WebGL2 vient ensuite, avant qu'il ne remplace WebGPU. Ses shaders sont traduits en GLSL au build par SPIRV-Cross, une nouvelle dépendance de vcpkg.
 - **Un APK propre à chaque export** : Gradle empaquetait dans l'APK de l'export d'avant, en y laissant la place des anciens fichiers, et un APK de 21 Mo en faisait 34 à l'export suivant.
 - **Une source réécrite aussitôt importée** : la base d'assets prenait pour inchangé un fichier de même taille et de même date, or l'horloge des fichiers n'avance que par pas de quelques millisecondes sous Linux. Un fichier réécrit dans le même pas que son import gardait son ancien import. Comme git pour son index, une date de moins de deux secondes ne prouve plus rien, et le contenu est relu.
+- **Un joueur silencieux part à l'heure** : une session multijoueur compte parti un joueur qui ne répond plus dès que sa limite de silence est passée, et non plus jusqu'à deux fois plus tard.
+- **Visual Studio à jour** : le moteur se compile avec MSVC 14.52, qui refusait un type exporté et voyait une division par zéro qui n'en était pas une.
 
 ## 0.11.1 — 2026-11-18
 
