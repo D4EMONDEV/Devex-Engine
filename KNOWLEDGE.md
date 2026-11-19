@@ -4143,6 +4143,11 @@ public:
   dessine les couches avec `gl_blit` (`GL_FRAMEBUFFER_SRGB` pour les couleurs sur ordinateur) et se refait quand
   `m_textureRevision` change. Dans les shaders, `SV_VulkanVertexID` et `SV_VulkanInstanceID`, jamais `SV_VertexID` ni
   `SV_InstanceID`.
+- Décals : `prepareDecals` garde ceux que la caméra voit, au plus 64, les plus proches, rangés ensuite dans l'ordre du
+  monde, dans le bloc `DecalData` (`binding::decals`) ; `decalsReaching` donne à chaque instance ceux dont la boîte touche
+  la sienne (celle du repos pour un maillage skinné), au plus 8, un octet chacun dans l'attribut 12. Leurs textures sont
+  dessinées par `gl_blit` dans deux atlas de 2048 (`fillDecalAtlas`, couleurs en sRGB et données), placés comme ceux de
+  WebGPU ; `BlitData` dit le coin du rectangle (`originX`, `originY`).
 - OpenGL ES ne lit aucun BC, et un vieil OpenGL pas BC7 : `createTexture` décode alors les blocs en pixels RGBA8 (ou
   `SRGB8_ALPHA8`), avec `decodeBlocks` de `engine/src/render/BlockDecoding.hpp`, partagé avec WebGPU. ASTC sans
   l'extension est refusé.

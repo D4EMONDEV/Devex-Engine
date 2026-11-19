@@ -43,6 +43,7 @@ inline constexpr gl::GLuint particleDraw = 9;
 inline constexpr gl::GLuint terrain = 10;
 inline constexpr gl::GLuint terrainDraw = 11;
 inline constexpr gl::GLuint blit = 12;
+inline constexpr gl::GLuint decals = 13;
 } // namespace binding
 
 // The texture units of their samplers: those of the scene first, which every lit shader reads, then those of each draw.
@@ -64,6 +65,9 @@ inline constexpr gl::GLint bones = 10;
 inline constexpr gl::GLint layerColors = 11;
 inline constexpr gl::GLint layerSurfaces = 12;
 inline constexpr gl::GLint layerNormals = 13;
+// The atlases of the textures of the decals: their colours, then their normal and ORM maps.
+inline constexpr gl::GLint decalColors = 14;
+inline constexpr gl::GLint decalSurfaces = 15;
 } // namespace unit
 
 class GlRenderer final : public RenderBackend
@@ -233,6 +237,14 @@ private:
         gl::GLuint surfaces = 0;
         gl::GLuint normals = 0;
     };
+    // An atlas of the textures of the decals, which the blit draws them into, what it was drawn from, and where each
+    // texture lies in it: its corner and its size, from 0 to 1.
+    struct DecalAtlas
+    {
+        std::vector<std::uint64_t> key;
+        gl::GLuint texture = 0;
+        std::vector<std::pair<TextureHandle, math::Vec4>> rects;
+    };
     // What a terrain draws this frame: its blocks, whole or by quarters, and its tiles of grass by bands, where they lie
     // among the instances of the frame; its maps, and the draws of its grass.
     struct TerrainDrawing
@@ -289,6 +301,12 @@ private:
     void prepareMeshes(const ViewMatrices& matrices, const Frustum& frustum, math::Extent2D sceneSize);
     // The local lights that reach a box, at most eight, the nearest first, a byte each; around a point without a box.
     [[nodiscard]] std::array<std::uint32_t, 2> lightsReaching(const math::Aabb& box, math::Vec3 centre) const;
+    // The textures into the atlas, kept while they stay the same; the colours in sRGB.
+    void fillDecalAtlas(DecalAtlas& atlas, std::vector<TextureHandle> textures, bool colors);
+    // The decals of the frame, at most 64, those the camera sees, the nearest first, then in the order of the world.
+    void prepareDecals(const Frustum& frustum, math::Vec3 cameraPosition);
+    // The decals whose box reaches a box, at most eight, in the order of the frame, a byte each; a point without a box.
+    [[nodiscard]] std::array<std::uint32_t, 2> decalsReaching(const math::Aabb& box, math::Vec3 centre) const;
     void prepareParticles(const ViewMatrices& matrices);
     void orderTransparent(const ViewMatrices& matrices);
     // The depth of the opaque surfaces, copied for the particles that fade into them: OpenGL cannot read what it draws into.
@@ -414,6 +432,11 @@ private:
     std::size_t m_terrainDrawCapacity = 0;
     std::size_t m_terrainDrawStride = 256;
     gl::GLuint m_blitBuffer = 0;
+    // The decals of the frame, their boxes in the world in the same order, and the atlases of their textures.
+    gl::GLuint m_decalBuffer = 0;
+    std::vector<math::Aabb> m_decalBoxes;
+    DecalAtlas m_decalColors;
+    DecalAtlas m_decalSurfaces;
     std::vector<TerrainLayers> m_terrainLayers;
     std::vector<TerrainDrawing> m_terrainDrawings;
     // Grows whenever a texture comes, goes or changes, which the layers of terrains follow.
@@ -435,6 +458,8 @@ private:
     gl::GLuint m_cubeSampler = 0;
     // Bilinear comparisons, as the sampler of shadows of Vulkan.
     gl::GLuint m_shadowSampler = 0;
+    // Clamped, between mips: what the atlases of the decals are drawn from.
+    gl::GLuint m_clampMipSampler = 0;
     gl::GLuint m_white = 0;
     gl::GLuint m_black = 0;
     gl::GLuint m_flatNormal = 0;

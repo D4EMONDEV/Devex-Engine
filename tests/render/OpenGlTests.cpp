@@ -113,12 +113,11 @@ TEST_CASE("OpenGL ES 3.0 draws the same 2D scene, where the computer offers it",
     CHECK(capture.errors().empty());
 }
 
-TEST_CASE("OpenGL draws lit meshes, their shadows, the fog and particles as Vulkan does", "[render][gpu][opengl]")
+TEST_CASE("OpenGL draws lit meshes, their decals, their shadows, the fog and particles as Vulkan does", "[render][gpu][opengl]")
 {
     const ErrorCapture capture;
-    // Without the decal, which OpenGL does not draw yet.
-    const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan, false, false, 1.0f, false);
-    const devex::render::CapturedImage openGl = drawMeshes(devex::render::RenderApi::OpenGl, false, false, 1.0f, false);
+    const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan);
+    const devex::render::CapturedImage openGl = drawMeshes(devex::render::RenderApi::OpenGl);
     checkMeshesLikeVulkan(vulkan, openGl);
 
     for (const std::string& error : capture.errors())
@@ -128,15 +127,15 @@ TEST_CASE("OpenGL draws lit meshes, their shadows, the fog and particles as Vulk
     CHECK(capture.errors().empty());
 }
 
-TEST_CASE("OpenGL ES 3.0 draws the same lit meshes and particles, where the computer offers it", "[render][gpu][opengl]")
+TEST_CASE("OpenGL ES 3.0 draws the same lit meshes, decals and particles, where the computer offers it", "[render][gpu][opengl]")
 {
     if (const std::optional<std::string> missing = withoutOpenGlEs())
     {
         SKIP(*missing);
     }
     const ErrorCapture capture;
-    const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan, false, false, 1.0f, false);
-    const devex::render::CapturedImage openGlEs = drawMeshes(devex::render::RenderApi::OpenGl, false, false, 1.0f, false, true, true);
+    const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan);
+    const devex::render::CapturedImage openGlEs = drawMeshes(devex::render::RenderApi::OpenGl, false, false, 1.0f, true, true, true);
     checkMeshesLikeVulkan(vulkan, openGlEs);
 
     for (const std::string& error : capture.errors())

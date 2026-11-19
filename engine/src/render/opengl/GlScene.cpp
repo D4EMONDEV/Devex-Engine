@@ -67,6 +67,32 @@ struct SceneData
 constexpr std::size_t maxLights = 32;
 constexpr std::size_t maxShadowViews = 64;
 constexpr std::size_t lightsPerObject = 8;
+constexpr std::size_t maxDecals = 64;
+constexpr std::size_t decalsPerObject = 8;
+// The atlases of the decals: as wide as gl_mesh.slang says, every texture no larger than half of it, as WebGPU's.
+constexpr std::uint32_t decalAtlasSize = 2048;
+// A decal of the frame, as gl_mesh.slang reads it: its box, its fades, and where its textures lie in the atlases.
+struct AtlasDecalData
+{
+    math::Mat4 worldToDecal{1.0f};
+    math::Vec4 axisX{0.0f};
+    math::Vec4 axisZ{0.0f};
+    math::Vec4 axisY{0.0f};
+    math::Vec4 modulate{1.0f};
+    float albedoMix = 1.0f;
+    float emissionEnergy = 1.0f;
+    float normalFade = 0.0f;
+    float upperFade = 0.3f;
+    float lowerFade = 0.3f;
+    float fadeBegin = 0.0f;
+    float fadeLength = 0.0f;
+    float padding0 = 0.0f;
+    std::array<math::Vec4, 4> rects{};
+};
+struct DecalData
+{
+    std::array<AtlasDecalData, maxDecals> decals{};
+};
 struct LightData
 {
     std::array<GpuLight, maxLights> lights{};
@@ -89,13 +115,15 @@ struct MaterialData
     std::uint32_t padding0 = 0;
     std::uint32_t padding1 = 0;
 };
-// An instance as gl_mesh.slang reads its attributes: the columns of its matrix, the bytes of its lights, its bones.
+// An instance as gl_mesh.slang reads its attributes: the columns of its matrix, the bytes of its lights, its bones, the
+// bytes of its decals.
 struct InstanceData
 {
     math::Mat4 world{1.0f};
     std::array<std::uint32_t, 2> lights{0xFFFFFFFFU, 0xFFFFFFFFU};
     std::uint32_t firstBone = 0;
     std::uint32_t boneCount = 0;
+    std::array<std::uint32_t, 2> decals{0xFFFFFFFFU, 0xFFFFFFFFU};
 };
 struct ParticleDrawData
 {
@@ -156,6 +184,10 @@ struct BlitData
     float targetHeight = 1.0f;
     float sourceLevels = 1.0f;
     float padding0 = 0.0f;
+    float originX = 0.0f;
+    float originY = 0.0f;
+    float padding1 = 0.0f;
+    float padding2 = 0.0f;
 };
 // A segment of a ribbon as gl_particle.slang reads it: the point it starts at, then the one it ends at.
 struct RibbonSegment
@@ -175,9 +207,9 @@ struct BakeData
     std::uint32_t padding1 = 0;
 };
 static_assert(sizeof(SceneData) == 688 && sizeof(GpuLight) == 64 && sizeof(LightData) == 2048 && sizeof(ShadowView) == 80 &&
-              sizeof(MaterialData) == 64 && sizeof(InstanceData) == 80 && sizeof(BakeData) == 32 && sizeof(ParticleDrawData) == 48 &&
+              sizeof(MaterialData) == 64 && sizeof(InstanceData) == 88 && sizeof(BakeData) == 32 && sizeof(ParticleDrawData) == 48 &&
               sizeof(GpuParticle) == 64 && sizeof(RibbonSegment) == 96 && sizeof(TerrainData) == 384 && sizeof(TerrainDrawData) == 32 &&
-              sizeof(GpuTerrainNode) == 16);
+              sizeof(GpuTerrainNode) == 16 && sizeof(BlitData) == 32 && sizeof(AtlasDecalData) == 224 && sizeof(DecalData) == 14336);
 
 // The textures of the layers of a terrain: as large, and with as many levels, as WebGPU's.
 constexpr std::uint32_t terrainLayerSize = 512;
@@ -306,7 +338,8 @@ core::Result<void> GlRenderer::createSceneResources()
                     {{"SceneData", binding::scene},
                      {"LightData", binding::lights},
                      {"ShadowViewData", binding::shadowViews},
-                     {"MaterialData", binding::material}},
+                     {"MaterialData", binding::material},
+                     {"DecalData", binding::decals}},
                     {{"irradianceEnvironment", unit::irradiance},
                      {"specularEnvironment", unit::specular},
                      {"brdfLut", unit::brdf},
@@ -317,7 +350,9 @@ core::Result<void> GlRenderer::createSceneResources()
                      {"normalTexture", unit::third},
                      {"occlusionTexture", unit::fourth},
                      {"emissiveTexture", unit::fifth},
-                     {"boneTexture", unit::bones}});
+                     {"boneTexture", unit::bones},
+                     {"decalColors", unit::decalColors},
+                     {"decalSurfaces", unit::decalSurfaces}});
     }
     for (const Program* particles : {&m_particleProgram, &m_ribbonProgram})
     {
@@ -388,6 +423,7 @@ core::Result<void> GlRenderer::createSceneResources()
     gl::GenBuffers(1, &m_terrainBuffer);
     gl::GenBuffers(1, &m_terrainDrawBuffer);
     uniform(m_blitBuffer, sizeof(BlitData));
+    uniform(m_decalBuffer, sizeof(DecalData));
     const auto aligned = [this](std::size_t size) {
         const auto alignment = static_cast<std::size_t>(m_uniformAlignment);
         return (size + alignment - 1) / alignment * alignment;
@@ -454,6 +490,7 @@ core::Result<void> GlRenderer::createSceneResources()
     m_shadowSampler = makeSampler(GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
     gl::SamplerParameteri(m_shadowSampler, GL_TEXTURE_COMPARE_MODE, static_cast<GLint>(GL_COMPARE_REF_TO_TEXTURE));
     gl::SamplerParameteri(m_shadowSampler, GL_TEXTURE_COMPARE_FUNC, static_cast<GLint>(GL_LEQUAL));
+    m_clampMipSampler = makeSampler(GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
     if (!m_es)
     {
         // OpenGL ES reads cubes across their seams by itself.
@@ -519,8 +556,10 @@ void GlRenderer::destroySceneResources() noexcept
     const GLuint arrays[] = {m_particleArray, m_ribbonArray, m_terrainArray};
     gl::DeleteVertexArrays(3, arrays);
     const GLuint terrainBuffers[] = {m_terrainGrid,   m_grassBlade,        m_terrainNodeBuffer, m_grassTileBuffer,
-                                     m_terrainBuffer, m_terrainDrawBuffer, m_blitBuffer};
-    gl::DeleteBuffers(7, terrainBuffers);
+                                     m_terrainBuffer, m_terrainDrawBuffer, m_blitBuffer,        m_decalBuffer};
+    gl::DeleteBuffers(8, terrainBuffers);
+    const GLuint atlases[] = {m_decalColors.texture, m_decalSurfaces.texture};
+    gl::DeleteTextures(2, atlases);
     for (const TerrainLayers& layers : m_terrainLayers)
     {
         const GLuint textures[] = {layers.colors, layers.surfaces, layers.normals};
@@ -532,8 +571,8 @@ void GlRenderer::destroySceneResources() noexcept
     }
     gl::DeleteFramebuffers(1, &m_depthCopyFramebuffer);
     gl::DeleteTextures(1, &m_depthCopy);
-    const GLuint samplers[] = {m_pointSampler, m_skySampler, m_cubeSampler, m_shadowSampler};
-    gl::DeleteSamplers(4, samplers);
+    const GLuint samplers[] = {m_pointSampler, m_skySampler, m_cubeSampler, m_shadowSampler, m_clampMipSampler};
+    gl::DeleteSamplers(5, samplers);
     const GLuint textures[] = {m_flatNormal, m_brdfTable, m_boneTexture, m_cascadeMap, m_atlasMap, m_sceneDepth,
                                m_environment.irradiance, m_environment.specular};
     gl::DeleteTextures(8, textures);
@@ -741,8 +780,10 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
         m_lights.push_back(all[seen[index].second]);
     }
 
+    prepareDecals(frustum, matrices.cameraPosition);
+
     // The instances the camera sees, by batches of one mesh, submesh, material and way to be drawn; blended ones alone,
-    // the farthest first.
+    // the farthest first. A skinned one, always drawn, has no box for its lights, but its rest for its decals.
     struct Visible
     {
         const MeshInstance* instance;
@@ -751,6 +792,7 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
         std::uint32_t flags;
         float distance;
         math::Aabb box;
+        math::Aabb rest;
     };
     std::vector<Visible> visible;
     for (const MeshInstance& instance : m_world.meshes)
@@ -773,7 +815,7 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
         flags |= description.doubleSided ? bothSidesFlag : 0;
         flags |= description.alphaMode == asset::AlphaMode::Blend ? blendedFlag : 0;
         visible.push_back({&instance, mesh, material, flags, sortDistance(math::Vec3(instance.transform[3]), matrices.cameraPosition),
-                           skinned ? math::Aabb{} : box});
+                           skinned ? math::Aabb{} : box, box});
     }
     std::ranges::stable_sort(visible, [](const Visible& left, const Visible& right) {
         const bool leftBlended = (left.flags & blendedFlag) != 0;
@@ -807,10 +849,12 @@ void GlRenderer::prepareMeshes(const ViewMatrices& matrices, const Frustum& frus
                                      .distance = entry.distance});
         }
         ++m_meshBatches.back().instanceCount;
+        const math::Vec3 centre(entry.instance->transform[3]);
         instances.push_back({.world = entry.instance->transform,
-                             .lights = lightsReaching(entry.box, math::Vec3(entry.instance->transform[3])),
+                             .lights = lightsReaching(entry.box, centre),
                              .firstBone = entry.instance->firstBone,
-                             .boneCount = entry.instance->boneCount});
+                             .boneCount = entry.instance->boneCount,
+                             .decals = decalsReaching(entry.rest, centre)});
     }
 
     // The casters of each view of the shadows, by batches as the camera's, after them: opaque and cut-out surfaces cast
@@ -1015,6 +1059,259 @@ std::array<std::uint32_t, 2> GlRenderer::lightsReaching(const math::Aabb& box, m
         const std::uint32_t shift = static_cast<std::uint32_t>(slot % 4) * 8;
         std::uint32_t& word = packed[slot / 4];
         word = (word & ~(0xFFU << shift)) | (reaching[slot].second << shift);
+    }
+    return packed;
+}
+
+void GlRenderer::fillDecalAtlas(DecalAtlas& atlas, std::vector<TextureHandle> textures, bool colors)
+{
+    const auto keyOf = [](TextureHandle handle) { return (std::uint64_t{handle.index} << 32) | handle.generation; };
+    std::ranges::sort(textures, {}, keyOf);
+    textures.erase(std::ranges::unique(textures, {}, keyOf).begin(), textures.end());
+    std::vector<std::uint64_t> key{m_textureRevision};
+    for (const TextureHandle texture : textures)
+    {
+        key.push_back(keyOf(texture));
+    }
+    if (key == atlas.key)
+    {
+        return;
+    }
+    atlas.key = std::move(key);
+    atlas.rects.clear();
+    if (textures.empty())
+    {
+        return;
+    }
+    if (atlas.texture == 0)
+    {
+        gl::GenTextures(1, &atlas.texture);
+        gl::BindTexture(GL_TEXTURE_2D, atlas.texture);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+        gl::TexImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(colors ? GL_SRGB8_ALPHA8 : GL_RGBA8), static_cast<GLsizei>(decalAtlasSize),
+                       static_cast<GLsizei>(decalAtlasSize), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        gl::BindTexture(GL_TEXTURE_2D, 0);
+    }
+    // On shelves, the tallest first, each texture at its size but no larger than half the atlas, all halved together
+    // until they fit; a texel of room around each keeps its neighbours from bleeding in. As WebGPU places them.
+    std::vector<math::Extent2D> sizes;
+    for (const TextureHandle texture : textures)
+    {
+        const GpuTexture* const found = m_textures.find(texture);
+        sizes.push_back(found != nullptr ? found->size : math::Extent2D{1, 1});
+    }
+    std::vector<std::size_t> order(textures.size());
+    for (std::size_t index = 0; index < order.size(); ++index)
+    {
+        order[index] = index;
+    }
+    std::ranges::sort(order, std::greater{}, [&](std::size_t index) { return sizes[index].height; });
+    // The corner and the size of each in pixels.
+    std::vector<std::array<std::uint32_t, 4>> placed(textures.size());
+    for (float scale = 1.0f; scale >= 1.0f / 64.0f; scale *= 0.5f)
+    {
+        std::uint32_t x = 0;
+        std::uint32_t y = 0;
+        std::uint32_t shelf = 0;
+        bool fits = true;
+        for (const std::size_t index : order)
+        {
+            const math::Extent2D size = sizes[index];
+            const float largest = static_cast<float>(std::max(size.width, size.height));
+            const float shrink = std::min(1.0f, static_cast<float>(decalAtlasSize / 2) / largest) * scale;
+            const auto width = std::max(static_cast<std::uint32_t>(std::lround(static_cast<float>(size.width) * shrink)), 1U);
+            const auto height = std::max(static_cast<std::uint32_t>(std::lround(static_cast<float>(size.height) * shrink)), 1U);
+            if (x + width + 2 > decalAtlasSize)
+            {
+                x = 0;
+                y += shelf;
+                shelf = 0;
+            }
+            if (y + height + 2 > decalAtlasSize)
+            {
+                fits = false;
+                break;
+            }
+            placed[index] = {x + 1, y + 1, width, height};
+            x += width + 2;
+            shelf = std::max(shelf, height + 2);
+        }
+        if (fits)
+        {
+            break;
+        }
+    }
+    // Each texture drawn into its rectangle from the mip that fits it; the colours encoded back into sRGB.
+    GLuint framebuffer = 0;
+    gl::GenFramebuffers(1, &framebuffer);
+    gl::BindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    gl::FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, atlas.texture, 0);
+    if (const GLenum status = gl::CheckFramebufferStatus(GL_FRAMEBUFFER); status != GL_FRAMEBUFFER_COMPLETE)
+    {
+        DEVEX_LOG_WARNING("OpenGL cannot draw the textures of the decals into their atlas: {:#x}", status);
+        gl::BindFramebuffer(GL_FRAMEBUFFER, 0);
+        gl::DeleteFramebuffers(1, &framebuffer);
+        return;
+    }
+    gl::Disable(GL_DEPTH_TEST);
+    gl::Disable(GL_BLEND);
+    gl::Disable(GL_SCISSOR_TEST);
+    if (!m_es)
+    {
+        colors ? gl::Enable(GL_FRAMEBUFFER_SRGB) : gl::Disable(GL_FRAMEBUFFER_SRGB);
+    }
+    gl::Viewport(0, 0, static_cast<GLsizei>(decalAtlasSize), static_cast<GLsizei>(decalAtlasSize));
+    gl::ClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    gl::Clear(GL_COLOR_BUFFER_BIT);
+    gl::UseProgram(m_blitProgram.program);
+    gl::BindVertexArray(m_emptyArray);
+    gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::blit, m_blitBuffer, 0, sizeof(BlitData));
+    const auto atlasSize = static_cast<float>(decalAtlasSize);
+    for (std::size_t index = 0; index < textures.size(); ++index)
+    {
+        const GpuTexture* const found = m_textures.find(textures[index]);
+        const auto [x, y, width, height] = placed[index];
+        if (found == nullptr || !found->bindable || width == 0)
+        {
+            continue;
+        }
+        const BlitData blit{.targetWidth = static_cast<float>(width),
+                            .targetHeight = static_cast<float>(height),
+                            .sourceLevels = static_cast<float>(found->mips),
+                            .originX = static_cast<float>(x),
+                            .originY = static_cast<float>(y)};
+        gl::BindBuffer(GL_UNIFORM_BUFFER, m_blitBuffer);
+        gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(blit), &blit);
+        bindTexture(unit::first, found->texture, m_clampMipSampler);
+        gl::Viewport(static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+        gl::DrawArrays(GL_TRIANGLES, 0, 3);
+        // OpenGL counts the rows it draws into from the first stored, as the shaders read the atlas.
+        atlas.rects.emplace_back(textures[index], math::Vec4(static_cast<float>(x) / atlasSize, static_cast<float>(y) / atlasSize,
+                                                             static_cast<float>(width) / atlasSize, static_cast<float>(height) / atlasSize));
+    }
+    if (!m_es)
+    {
+        gl::Disable(GL_FRAMEBUFFER_SRGB);
+    }
+    gl::BindVertexArray(0);
+    gl::BindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl::DeleteFramebuffers(1, &framebuffer);
+}
+
+void GlRenderer::prepareDecals(const Frustum& frustum, math::Vec3 cameraPosition)
+{
+    // At most 64 a frame: those the camera sees, the nearest first; then in the order of the world, which they lie in.
+    struct Seen
+    {
+        float distance;
+        std::size_t index;
+        DecalBox box;
+        math::Aabb bounds;
+    };
+    std::vector<Seen> seen;
+    for (std::size_t index = 0; index < m_world.decals.size(); ++index)
+    {
+        const RenderDecal& decal = m_world.decals[index];
+        const std::optional<DecalBox> box = decalBox(decal);
+        if (!box)
+        {
+            continue;
+        }
+        const math::Aabb bounds = math::transform(math::inverse(box->worldToDecal), math::Aabb{.min = math::Vec3{-1.0f}, .max = math::Vec3{1.0f}});
+        if (!frustum.intersects(bounds))
+        {
+            continue;
+        }
+        const math::Vec3 toCamera = math::Vec3(decal.transform[3]) - cameraPosition;
+        seen.push_back({math::dot(toCamera, toCamera), index, *box, bounds});
+    }
+    std::ranges::stable_sort(seen, {}, &Seen::distance);
+    seen.resize(std::min(seen.size(), maxDecals));
+    std::ranges::sort(seen, {}, &Seen::index);
+
+    const auto usable = [this](TextureHandle texture) {
+        const GpuTexture* const found = m_textures.find(texture);
+        return found != nullptr && found->bindable;
+    };
+    std::vector<TextureHandle> colors;
+    std::vector<TextureHandle> surfaces;
+    for (const Seen& entry : seen)
+    {
+        const RenderDecal& decal = m_world.decals[entry.index];
+        for (const TextureHandle texture : {decal.albedo, decal.emission})
+        {
+            if (usable(texture))
+            {
+                colors.push_back(texture);
+            }
+        }
+        for (const TextureHandle texture : {decal.normal, decal.orm})
+        {
+            if (usable(texture))
+            {
+                surfaces.push_back(texture);
+            }
+        }
+    }
+    fillDecalAtlas(m_decalColors, std::move(colors), true);
+    fillDecalAtlas(m_decalSurfaces, std::move(surfaces), false);
+    // Where a texture lies in its atlas; nothing for one it does not hold.
+    const auto rectOf = [&usable](const DecalAtlas& atlas, TextureHandle texture) {
+        if (!usable(texture))
+        {
+            return math::Vec4{0.0f};
+        }
+        const auto found = std::ranges::find_if(atlas.rects, [&](const auto& placed) { return placed.first == texture; });
+        return found != atlas.rects.end() ? found->second : math::Vec4{0.0f};
+    };
+    std::vector<AtlasDecalData> packed;
+    m_decalBoxes.clear();
+    for (const Seen& entry : seen)
+    {
+        const RenderDecal& decal = m_world.decals[entry.index];
+        packed.push_back({.worldToDecal = entry.box.worldToDecal,
+                          .axisX = entry.box.axisX,
+                          .axisZ = entry.box.axisZ,
+                          .axisY = entry.box.axisY,
+                          .modulate = decal.modulate,
+                          .albedoMix = decal.albedoMix,
+                          .emissionEnergy = decal.emissionEnergy,
+                          .normalFade = decal.normalFade,
+                          .upperFade = decal.upperFade,
+                          .lowerFade = decal.lowerFade,
+                          .fadeBegin = decal.fadeBegin,
+                          .fadeLength = decal.fadeLength,
+                          .rects = {rectOf(m_decalColors, decal.albedo), rectOf(m_decalSurfaces, decal.normal),
+                                    rectOf(m_decalSurfaces, decal.orm), rectOf(m_decalColors, decal.emission)}});
+        m_decalBoxes.push_back(entry.bounds);
+    }
+    if (!packed.empty())
+    {
+        gl::BindBuffer(GL_UNIFORM_BUFFER, m_decalBuffer);
+        gl::BufferSubData(GL_UNIFORM_BUFFER, 0, static_cast<GLsizeiptr>(packed.size() * sizeof(AtlasDecalData)), packed.data());
+    }
+}
+
+std::array<std::uint32_t, 2> GlRenderer::decalsReaching(const math::Aabb& box, math::Vec3 centre) const
+{
+    // At most 8 an object, as Godot's mobile renderer: those whose box meets its own, in the order they lie in.
+    std::array<std::uint32_t, 2> packed{0xFFFFFFFFU, 0xFFFFFFFFU};
+    std::size_t slot = 0;
+    for (std::uint32_t index = 0; index < m_decalBoxes.size() && slot < decalsPerObject; ++index)
+    {
+        const math::Aabb& decal = m_decalBoxes[index];
+        const math::Vec3 low = box.isEmpty() ? centre : box.min;
+        const math::Vec3 high = box.isEmpty() ? centre : box.max;
+        const bool meets = low.x <= decal.max.x && decal.min.x <= high.x && low.y <= decal.max.y && decal.min.y <= high.y &&
+                           low.z <= decal.max.z && decal.min.z <= high.z;
+        if (!meets)
+        {
+            continue;
+        }
+        const std::uint32_t shift = static_cast<std::uint32_t>(slot % 4) * 8;
+        std::uint32_t& word = packed[slot / 4];
+        word = (word & ~(0xFFU << shift)) | (index << shift);
+        ++slot;
     }
     return packed;
 }
@@ -1637,6 +1934,7 @@ void GlRenderer::bindInstances(const GpuMesh& mesh, std::uint32_t firstInstance)
     }
     gl::VertexAttribIPointer(10, 2, GL_UNSIGNED_INT, stride, at(offsetof(InstanceData, lights)));
     gl::VertexAttribIPointer(11, 2, GL_UNSIGNED_INT, stride, at(offsetof(InstanceData, firstBone)));
+    gl::VertexAttribIPointer(12, 2, GL_UNSIGNED_INT, stride, at(offsetof(InstanceData, decals)));
 }
 
 void GlRenderer::bindSceneTextures() const
@@ -1650,6 +1948,10 @@ void GlRenderer::bindSceneTextures() const
     bindTextureTarget(unit::cascades, GL_TEXTURE_2D_ARRAY, m_cascadeMap, m_shadowSampler);
     bindTextureTarget(unit::atlas, GL_TEXTURE_2D, m_atlasMap, m_shadowSampler);
     bindTextureTarget(unit::bones, GL_TEXTURE_2D, m_boneTexture, m_pointSampler);
+    gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::decals, m_decalBuffer, 0, sizeof(DecalData));
+    bindTextureTarget(unit::decalColors, GL_TEXTURE_2D, m_decalColors.texture != 0 ? m_decalColors.texture : m_white, m_clampSampler);
+    bindTextureTarget(unit::decalSurfaces, GL_TEXTURE_2D, m_decalSurfaces.texture != 0 ? m_decalSurfaces.texture : m_white,
+                      m_clampSampler);
 }
 
 void GlRenderer::drawShadows()

@@ -6184,13 +6184,29 @@ téléphone par le préréglage mobile. Ce qu'ils ont demandé :
 **OpenGL ES en secours d'Android, décidé le 2026-11-19** avec l'utilisateur, une fois l'arène dessinée en OpenGL :
 
 - **OpenGL ES dès maintenant** plutôt que WebGPU jusqu'à la parité : un téléphone sans Vulkan 1.3 dessine en OpenGL ES 3.0,
-  sans les décals, les shaders du projet ni les lumières 2D, qu'OpenGL ne dessine pas encore. WebGPU reste dans l'APK, que
+  sans les décals, les shaders du projet ni les lumières 2D, qu'OpenGL ne dessinait pas encore. WebGPU reste dans l'APK, que
   `adb shell setprop debug.devex.renderer webgpu` choisit ; `opengl` choisit OpenGL ES sur un téléphone en Vulkan 1.3.
   Le manifeste demande OpenGL ES 3.0, et plus Vulkan : un téléphone sans Vulkan installe le jeu.
 - **Les jeux d'un vieil ordinateur en OpenGL 3.3** : sans Vulkan 1.3, le lecteur prend OpenGL au lieu de refuser le jeu.
   L'éditeur, dont les outils dessinent avec Vulkan, ne le fait pas.
 - **Le choix avant la fenêtre**, comme décidé : `Renderer::chooseApi` crée une instance Vulkan et inspecte les GPU comme le
   renderer, sans surface ; l'application fait la fenêtre pour l'API choisie.
+
+**La suite, décidée le 2026-11-19** une fois l'APK essayé sur le Galaxy A13, où il tourne en OpenGL ES. L'utilisateur veut
+OpenGL, OpenGL ES et Vulkan finis pour tous les appareils, puis le C# dans tous les jeux, sur toutes les plateformes :
+
+- **Vulkan 1.3 suffit** : Vulkan reste le renderer complet, là où un GPU a Vulkan 1.3, l'adressage des tampons et les
+  textures sans limite. Les autres appareils dessinent avec OpenGL ES ou OpenGL. Écartés : descendre à Vulkan 1.1, qui
+  demanderait de réécrire le cœur du renderer Vulkan, et MoltenVK pour Apple, que Devex n'exporte pas encore.
+- **Finir OpenGL**, c'est dessiner ce que dessine Compatibility, comme WebGPU : les décals, les lumières 2D, le bloom,
+  les effets d'objectif, l'antialiasing temporel et les shaders du projet. Puis WebGL2 dans le navigateur, et WebGPU
+  retiré du web et d'Android, comme décidé. Le C# sur toutes les plateformes vient ensuite, avec son propre plan.
+
+**Les décals d'OpenGL, faits le 2026-11-19** : WebGPU lit tous les décals de l'image pour chaque pixel, dans un storage
+buffer qu'OpenGL ES 3.0 n'a pas. OpenGL les range comme ses lumières locales et comme le renderer mobile de Godot : au plus
+64 par image dans un bloc uniforme, ceux que la caméra voit, les plus proches, et 8 par objet, ceux dont la boîte touche la
+sienne, en octets dans ses attributs. Un téléphone ne lit ainsi que les décals d'un objet. Leurs textures sont dans deux
+atlas, couleurs et données, comme ceux de WebGPU.
 
 ## Outils de level design — plan décidé le 2026-11-04
 

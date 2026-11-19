@@ -625,7 +625,7 @@ core::Result<MeshHandle> GlRenderer::createMesh(const asset::MeshData& mesh)
         gl::EnableVertexAttribArray(5);
     }
     // The attributes of its instances, which each batch points at where its own start: once an instance.
-    for (GLuint location = 6; location < 12; ++location)
+    for (GLuint location = 6; location < 13; ++location)
     {
         gl::EnableVertexAttribArray(location);
         gl::VertexAttribDivisor(location, 1);

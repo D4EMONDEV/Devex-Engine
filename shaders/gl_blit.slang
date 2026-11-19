@@ -1,6 +1,7 @@
-// Draws a texture into a level of a layer of an array for OpenGL, translated into GLSL, as webgpu_blit.slang does for
-// WebGPU: the textures of the layers of a terrain, each level read from the mip of the source that fits it. A copy of
-// framebuffers cannot read compressed textures, which a triangle over the whole level samples.
+// Draws a texture into a rectangle of an image for OpenGL, translated into GLSL, as webgpu_blit.slang does for WebGPU:
+// the textures of the layers of a terrain into each level of their arrays, and those of the decals into their atlases,
+// each read from the mip of the source that fits. A copy of framebuffers cannot read compressed textures, which a
+// triangle over the viewport samples.
 
 struct BlitData
 {
@@ -10,6 +11,11 @@ struct BlitData
     // How many levels the source has, which OpenGL ES cannot ask it.
     float sourceLevels;
     float padding0;
+    // The corner of the rectangle in the image, in pixels.
+    float originX;
+    float originY;
+    float padding1;
+    float padding2;
 };
 
 ConstantBuffer<BlitData> blit;
@@ -37,7 +43,7 @@ float4 blitFragment(VertexOutput input) : SV_Target
     sourceImage.GetDimensions(width, height);
     // OpenGL counts the rows it draws into from the first stored, as the source keeps its own.
     const float2 target = float2(blit.targetWidth, blit.targetHeight);
-    const float2 uv = input.position.xy / target;
+    const float2 uv = (input.position.xy - float2(blit.originX, blit.originY)) / target;
     // The level whose texels are as large as the pixels drawn.
     const float level = clamp(log2(max(float(width) / target.x, float(height) / target.y)), 0.0, blit.sourceLevels - 1.0);
     return sourceImage.SampleLevel(uv, level);
