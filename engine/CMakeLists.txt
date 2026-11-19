@@ -369,6 +369,16 @@ if(TARGET basisu::basisu_encoder)
 else()
     target_compile_definitions(devex_asset_import PRIVATE DEVEX_TEXTURE_ENCODERS=0)
 endif()
+# The shaders of projects are translated into GLSL at their import, for OpenGL, by SPIRV-Cross from vcpkg, on the computers
+# the editor runs on.
+if(DEVEX_OPENGL AND NOT ANDROID AND NOT EMSCRIPTEN)
+    find_package(spirv_cross_core CONFIG REQUIRED)
+    find_package(spirv_cross_glsl CONFIG REQUIRED)
+    target_link_libraries(devex_asset_import PRIVATE spirv-cross-glsl spirv-cross-core)
+    target_compile_definitions(devex_asset_import PRIVATE DEVEX_GLSL_TRANSLATION=1)
+else()
+    target_compile_definitions(devex_asset_import PRIVATE DEVEX_GLSL_TRANSLATION=0)
+endif()
 set_target_properties(devex_asset_import PROPERTIES
     EXPORT_NAME AssetImport
     FOLDER "Engine"
@@ -533,6 +543,7 @@ if(DEVEX_OPENGL AND NOT EMSCRIPTEN)
             bloom_filter.slang
             decal_layer.slang
             gl_canvas.slang
+            gl_particles.slang
             gl_scene.slang
             lens_filter.slang
             particle_shape.slang

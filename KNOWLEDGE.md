@@ -4160,6 +4160,14 @@ public:
   la ligne du bas comme le clip. Le saut de l'antialiasing est tourné vers Y en haut, comme WebGPU. Sans images de
   demi-flottants (`drawsPostEffects`), aucun de ces effets. Le tonemap lit `m_finishedImage`, `m_bloomImage` et la table
   de couleurs (`colorTableOf`).
+- Shaders du projet pour OpenGL (`ShaderFile.cpp`) : `glSpatialTemplate`, `glCanvasTemplate`, `glParticlesTemplate`,
+  `glSkyTemplate` (`generateShaderCode(..., ShaderTarget::OpenGl)`), sur `gl_custom.slang` (8 textures du matériau,
+  `customMaterial` de 64 cases, `customInstances` de 1024 valeurs par image : OpenGL ES n'a pas de storage buffers),
+  `gl_scene.slang` (`IGlLight`, `directLuminance`), `gl_canvas.slang` et `gl_particles.slang`. `compileOpenGlShader` fait
+  un seul module SPIR-V (`-fvk-use-entrypoint-name`) puis traduit chaque entrée avec la bibliothèque SPIRV-Cross
+  (`translateToGlsl`, `DEVEX_GLSL_TRANSLATION`, seulement sur ordinateur) en GLSL ES 3.00 et 3.30, varyings renommées
+  `devex_varying<emplacement>` comme au build ; `ShaderData::glsl` les garde, une `GlslStage` par entrée. slangc refuse
+  plusieurs sorties SPIR-V par appel. FRAGCOORD et SCREEN_UV sont retournés vers le haut, comme Vulkan les compte.
 - OpenGL ES ne lit aucun BC, et un vieil OpenGL pas BC7 : `createTexture` décode alors les blocs en pixels RGBA8 (ou
   `SRGB8_ALPHA8`), avec `decodeBlocks` de `engine/src/render/BlockDecoding.hpp`, partagé avec WebGPU. ASTC sans
   l'extension est refusé.

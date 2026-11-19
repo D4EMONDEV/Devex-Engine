@@ -120,6 +120,17 @@ struct DEVEX_API ShaderDiagnostic
     bool operator==(const ShaderDiagnostic&) const = default;
 };
 
+// One entry point of a shader for OpenGL: its name, and its code in GLSL ES 3.00, for OpenGL ES and WebGL2, and in GLSL
+// 3.30, for OpenGL on a computer.
+struct DEVEX_API GlslStage
+{
+    std::string entry;
+    std::string es;
+    std::string core;
+
+    bool operator==(const GlslStage&) const = default;
+};
+
 // A shader compiled from a .dvxshader file: what the renderer builds its pipelines from, and what
 // materials give values to. A shader that did not compile keeps its diagnostics and no code;
 // materials using it draw as the default material.
@@ -143,6 +154,9 @@ struct DEVEX_API ShaderData
     // WGSL for WebGPU, with the entry points of the passes it draws in, for a project that draws with Compatibility,
     // which the web needs; empty otherwise, or for a kind WebGPU does not draw from a shader yet.
     std::string wgsl;
+    // GLSL for OpenGL, an entry point at a time, for every project: a game falls back to OpenGL where Vulkan 1.3 is
+    // missing. Empty where the import could not translate it.
+    std::vector<GlslStage> glsl;
     std::vector<ShaderDiagnostic> diagnostics;
 
     [[nodiscard]] bool compiled() const noexcept

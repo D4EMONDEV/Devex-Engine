@@ -65,11 +65,15 @@
     ],
     "features": {
         "opengl": {
-            "description": "Build the OpenGL renderer, whose shaders spirv-cross translates into GLSL at the build",
+            "description": "Build the OpenGL renderer, whose shaders spirv-cross translates into GLSL at the build, and those of projects at their import",
             "dependencies": [
                 {
                     "name": "spirv-cross",
                     "host": true
+                },
+                {
+                    "name": "spirv-cross",
+                    "platform": "!android & !emscripten"
                 }
             ]
         },

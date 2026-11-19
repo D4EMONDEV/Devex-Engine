@@ -69,6 +69,10 @@ devex_ship_shader_modules(devex_shader_modules
         canvas.slang
         common.slang
         custom.slang
+        gl_canvas.slang
+        gl_custom.slang
+        gl_particles.slang
+        gl_scene.slang
         particles.slang
         particle_shape.slang
         pbr.slang

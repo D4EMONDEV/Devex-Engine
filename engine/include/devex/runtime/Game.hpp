@@ -83,7 +83,8 @@ class GameRegistry;
 // 68: the export for Android, in Project, gained the phones whose Android is 32 bits.
 // 69: the rendering of phones, in Project, gained the scale of the scene, and RenderWorld its renderScale.
 // 70: WindowConfig and RendererConfig gained OpenGL.
-inline constexpr std::uint32_t gameApiVersion = 70;
+// 71: ShaderData gained its GLSL for OpenGL.
+inline constexpr std::uint32_t gameApiVersion = 71;
 
 enum class SystemPhase : std::uint8_t
 {

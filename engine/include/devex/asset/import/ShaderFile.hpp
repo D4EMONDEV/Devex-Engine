@@ -5,6 +5,7 @@
 #include <devex/asset/ShaderData.hpp>
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -80,8 +81,16 @@ struct DEVEX_API ShaderSource
 // - particles: particleVertex and particleFragment;
 // - sky: skyVertex, skyFragment, and bakeFragment, which lays the whole sky out as an
 //   equirectangular image for the light of the environment.
-// For WebGPU, empty for a kind it does not draw from a shader yet.
-[[nodiscard]] DEVEX_API std::string generateShaderCode(const ShaderSource& source, std::string_view sourceName, bool web = false);
+// For WebGPU and for OpenGL, the same entry points but those of the passes they do not draw: spatial: meshVertex,
+// skinnedVertex, shadowVertex, skinnedShadowVertex, sceneFragment and shadowFragment.
+enum class ShaderTarget : std::uint8_t
+{
+    Vulkan,
+    WebGpu,
+    OpenGl,
+};
+[[nodiscard]] DEVEX_API std::string generateShaderCode(const ShaderSource& source, std::string_view sourceName,
+                                                       ShaderTarget target = ShaderTarget::Vulkan);
 
 // Where slangc is, and the Slang modules the generated code imports. The editor ships them in the
 // folder "slang" beside its executable, and the modules in "shaders/modules".
@@ -91,7 +100,13 @@ struct DEVEX_API ShaderCompiler
     std::filesystem::path modules;
     // Also compiles WGSL for WebGPU, for a project that draws with Compatibility.
     bool web = false;
+    // Also translates GLSL for OpenGL, which every project may fall back to, where the import can.
+    bool openGl = false;
 };
+
+// Whether this import translates the shaders of projects into GLSL: the editor does, with the SPIRV-Cross it is built
+// with.
+[[nodiscard]] DEVEX_API bool translatesGlsl() noexcept;
 
 // The compiler beside the executable.
 [[nodiscard]] DEVEX_API ShaderCompiler defaultShaderCompiler();

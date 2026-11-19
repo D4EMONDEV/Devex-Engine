@@ -201,11 +201,28 @@ public float3 environmentLuminance(Surface surface)
     return ambientLight(surface, irradiance, prefiltered, brdf);
 }
 
-// The luminance leaving a surface towards the viewer, before exposure: the environment from its baked maps, the local
-// lights the object was given, at most eight, in the bytes of `lights`, and the sun.
-public float3 surfaceLight(Surface surface, uint2 lights)
+// What a light gives a surface: the physical one, or the light() of a shader of the project in its place, as
+// webgpu_scene.slang has it for WebGPU.
+public interface IGlLight
 {
-    float3 luminance = environmentLuminance(surface);
+    // The luminance a light adds: it comes from `toLight`, with `color` the illuminance it brings at normal incidence, of
+    // which `attenuation` reaches the surface past its range, its cone and the shadows.
+    float3 shade(Surface surface, float3 toLight, float3 color, float attenuation, bool directional);
+};
+
+public struct GlPhysicalLight : IGlLight
+{
+    public float3 shade(Surface surface, float3 toLight, float3 color, float attenuation, bool directional)
+    {
+        return shadeLight(surface, toLight, color * attenuation);
+    }
+};
+
+// The light of the local lights the object was given, at most eight, in the bytes of `lights`, and of the sun, through a
+// light model.
+public float3 directLuminance<Model : IGlLight>(Surface surface, uint2 lights, Model model)
+{
+    float3 luminance = float3(0.0);
     for (uint slot = 0; slot < lightsPerObject; ++slot)
     {
         const uint index = ((slot < 4 ? lights.x : lights.y) >> ((slot % 4) * 8)) & 0xFF;
@@ -218,13 +235,21 @@ public float3 surfaceLight(Surface surface, uint2 lights)
         const float3 direction = toLight * rsqrt(max(dot(toLight, toLight), 1e-8));
         const float attenuation = localAttenuation(toLight, light.range, light.direction, light.spotScale, light.spotOffset) *
                                   localShadow(surface, light, -toLight);
-        luminance += shadeLight(surface, direction, light.intensity * attenuation);
+        luminance += model.shade(surface, direction, light.intensity, attenuation, false);
     }
     if (scene.sunEnabled != 0)
     {
-        luminance += shadeLight(surface, -scene.sunDirection, scene.sunIlluminance * sunShadow(surface));
+        luminance += model.shade(surface, -scene.sunDirection, scene.sunIlluminance, sunShadow(surface), true);
     }
     return luminance;
+}
+
+// The luminance leaving a surface towards the viewer, before exposure: the environment from its baked maps, the local
+// lights the object was given, at most eight, in the bytes of `lights`, and the sun.
+public float3 surfaceLight(Surface surface, uint2 lights)
+{
+    GlPhysicalLight physical;
+    return environmentLuminance(surface) + directLuminance(surface, lights, physical);
 }
 
 // How far the fog is looked through towards the sky, in meters.

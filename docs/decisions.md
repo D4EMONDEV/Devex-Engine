@@ -6218,6 +6218,13 @@ de mouvement et le bloom, avec les filtres que partagent Vulkan et WebGPU, chacu
 demi-flottants. Un système qui ne dessine pas de demi-flottants, dont la scène reste à 8 bits, n'en dessine aucun : le
 bloom n'aurait rien au-dessus de 1, et le cercle de confusion ne tiendrait pas dans 8 bits.
 
+**Les shaders du projet pour OpenGL, décidé le 2026-11-19** avec l'utilisateur : **traduits pour tous les projets**, pas
+seulement ceux en Compatibility comme le WGSL, car un jeu Forward+ passe aussi à OpenGL ES sur un vieux téléphone et doit
+garder ses shaders. L'import fait une compilation de plus par shader : slangc en un seul module SPIR-V, que la
+bibliothèque SPIRV-Cross traduit entrée par entrée, sur les ordinateurs où tourne l'éditeur. Comme WebGPU, un matériau lie
+au plus huit textures ; OpenGL ES n'ayant pas de storage buffers, les valeurs d'instance d'une image tiennent dans un bloc
+uniforme de 1024 valeurs, au-delà desquelles un objet prend les valeurs du matériau.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

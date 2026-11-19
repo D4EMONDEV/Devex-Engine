@@ -470,3 +470,59 @@ TEST_CASE("The shaders of the sandbox compile without warnings, for WebGPU too",
     }
     CHECK(count == 9);
 }
+
+TEST_CASE("The shaders of the sandbox translate into GLSL for OpenGL, an entry point at a time", "[asset][shader][noweb]")
+{
+    if (!devex::asset::translatesGlsl())
+    {
+        SKIP("this build does not translate shaders into GLSL");
+    }
+    const std::filesystem::path folder = std::filesystem::path{DEVEX_SANDBOX_DIRECTORY} / "assets" / "shaders";
+    devex::asset::ShaderCompiler openGl = devex::asset::shaderCompiler();
+    openGl.openGl = true;
+    std::size_t count = 0;
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(folder))
+    {
+        if (entry.path().extension() != devex::asset::shaderExtension)
+        {
+            continue;
+        }
+        const auto text = devex::core::readTextFile(entry.path());
+        REQUIRE(text.has_value());
+        const ShaderData shader = devex::asset::compileShader(*text, entry.path(), openGl);
+        INFO(entry.path().filename().string());
+        INFO((shader.diagnostics.empty() ? std::string{} : shader.diagnostics.front().message));
+        CHECK(shader.compiled());
+        CHECK(shader.diagnostics.empty());
+        // Every entry point in GLSL ES 3.00 and in GLSL 3.30, what the vertex stage hands on named after its location.
+        CHECK(shader.glsl.size() >= 2);
+        for (const devex::asset::GlslStage& stage : shader.glsl)
+        {
+            INFO(stage.entry);
+            CHECK(stage.es.starts_with("#version 300 es"));
+            CHECK(stage.core.starts_with("#version 330"));
+            // The depth of the shadows of a shader that never discards reads nothing.
+            if (stage.entry != "shadowFragment" || shader.discards)
+            {
+                CHECK(stage.es.find("devex_varying") != std::string::npos);
+            }
+        }
+        ++count;
+    }
+    CHECK(count == 9);
+
+    // A material binds eight textures with OpenGL: a shader that reads more still draws with Vulkan, and says so.
+    std::string many = "shader_type spatial;\n";
+    std::string sum = "float3(0.0)";
+    for (int texture = 0; texture < 9; ++texture)
+    {
+        many += std::format("uniform sampler2D layer{};\n", texture);
+        sum += std::format(" + texture(layer{}, UV).rgb", texture);
+    }
+    many += "void fragment() { ALBEDO = " + sum + "; }\n";
+    const ShaderData layered = devex::asset::compileShader(many, "layered.dvxshader", openGl);
+    CHECK(layered.compiled());
+    CHECK(layered.glsl.empty());
+    REQUIRE(layered.diagnostics.size() == 1);
+    CHECK(layered.diagnostics.front().message.find("for OpenGL") != std::string::npos);
+}

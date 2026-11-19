@@ -1322,6 +1322,13 @@ std::vector<std::byte> encodeShader(const ShaderData& shader)
         writer.write(diagnostic.node);
     }
     writer.writeString(shader.wgsl);
+    writer.write(static_cast<std::uint32_t>(shader.glsl.size()));
+    for (const GlslStage& stage : shader.glsl)
+    {
+        writer.writeString(stage.entry);
+        writer.writeString(stage.es);
+        writer.writeString(stage.core);
+    }
     return writer.take();
 }
 
@@ -1365,10 +1372,21 @@ core::Result<ShaderData> decodeShader(std::span<const std::byte> bytes)
         diagnostic.error = reader.read<std::uint8_t>() != 0;
         diagnostic.node = reader.read<std::uint32_t>();
     }
-    // Shaders imported before the web had none.
+    // Shaders imported before the web had none, and those imported before OpenGL no GLSL.
     if (!reader.failed() && reader.remaining() > 0)
     {
         shader.wgsl = reader.readString();
+    }
+    if (!reader.failed() && reader.remaining() > 0)
+    {
+        const auto stageCount = reader.read<std::uint32_t>();
+        for (std::uint32_t index = 0; index < stageCount && !reader.failed(); ++index)
+        {
+            GlslStage& stage = shader.glsl.emplace_back();
+            stage.entry = reader.readString();
+            stage.es = reader.readString();
+            stage.core = reader.readString();
+        }
     }
     if (reader.failed() || !valid)
     {

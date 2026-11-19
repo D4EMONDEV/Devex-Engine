@@ -435,6 +435,7 @@ core::Result<ImportResult> importShaderFile(ImportContext& context)
     // materials keep their values and draw as the default material until it is fixed.
     ShaderCompiler compiler = shaderCompiler();
     compiler.web = context.compatibility;
+    compiler.openGl = translatesGlsl();
     const ShaderData shader = compileShader(*text, context.source, compiler, context.cancelled);
     if (context.isCancelled())
     {
@@ -460,6 +461,7 @@ core::Result<ImportResult> importShaderGraphFile(ImportContext& context)
     // As a shader written by hand: a graph that does not compile still imports, with its errors.
     ShaderCompiler compiler = shaderCompiler();
     compiler.web = context.compatibility;
+    compiler.openGl = translatesGlsl();
     const ShaderData shader = compileShaderGraph(*graph, context.source, compiler, context.cancelled);
     if (context.isCancelled())
     {
@@ -913,8 +915,8 @@ std::span<const Importer> importers()
             .name = "shader",
             // Increased whenever the generated code or the Slang modules it imports change. 2: the
             // reflection probes. 3: the atmosphere and the fog. 4: raster-depth reconstruction. 5: WGSL.
-            // 6: WGSL for every kind.
-            .version = 6,
+            // 6: WGSL for every kind. 7: GLSL.
+            .version = 7,
             .mainType = AssetType::Shader,
             .extensions = {shaderExtension},
             .run = &importShaderFile,
@@ -924,8 +926,8 @@ std::span<const Importer> importers()
             .name = "shader_graph",
             // Increased whenever the code of the nodes or the Slang modules change. 2: the
             // reflection probes. 3: the atmosphere and the fog. 4: raster-depth reconstruction. 5: WGSL.
-            // 6: WGSL for every kind.
-            .version = 6,
+            // 6: WGSL for every kind. 7: GLSL.
+            .version = 7,
             .mainType = AssetType::Shader,
             .extensions = {shaderGraphExtension},
             .run = &importShaderGraphFile,
