@@ -352,6 +352,12 @@ core::Result<ExportResult> exportAndroid(const ExportPlan& plan, const std::func
     const bool bundle = android.format == "aab";
     const std::string_view variant = android.release ? "Release" : "Debug";
     const std::string task = std::format("{}{}", bundle ? "bundle" : "assemble", variant);
+    const std::string lower = android.release ? "release" : "debug";
+    const fs::path made = bundle ? gradle / "app" / "build" / "outputs" / "bundle" / lower / std::format("app-{}.aab", lower)
+                                 : gradle / "app" / "build" / "outputs" / "apk" / lower / std::format("app-{}.apk", lower);
+    // Gradle packages into the file it made before, replacing what changed and leaving the room the old files took, which
+    // grew an APK of 21 MB to 34 MB in one export: each export starts from none.
+    fs::remove(made, error);
     report(std::format("Building the {}: the first time, Gradle downloads what it needs", bundle ? "AAB" : "APK"), 0.72f);
     if (core::Result<void> built = platform::runAndLog({core::toUtf8(tools.java), "-classpath", core::toUtf8(gradle / "gradle" / "wrapper" / "gradle-wrapper.jar"),
                                               "org.gradle.wrapper.GradleWrapperMain", "--no-daemon", "--console=plain", task},
@@ -360,9 +366,6 @@ core::Result<ExportResult> exportAndroid(const ExportPlan& plan, const std::func
     {
         return std::unexpected(built.error());
     }
-    const std::string lower = android.release ? "release" : "debug";
-    const fs::path made = bundle ? gradle / "app" / "build" / "outputs" / "bundle" / lower / std::format("app-{}.aab", lower)
-                                 : gradle / "app" / "build" / "outputs" / "apk" / lower / std::format("app-{}.apk", lower);
     fs::create_directories(plan.output, error);
     const fs::path destination = plan.output / std::format("{}.{}", name, bundle ? "aab" : "apk");
     fs::copy_file(made, destination, fs::copy_options::overwrite_existing, error);
