@@ -4104,8 +4104,15 @@ public:
 - Sans Vulkan 1.3 : `Renderer::chooseApi` décide avant la fenêtre (`VulkanRenderer::probe`, qui inspecte les GPU sans
   surface par `Device::whyNoneCanDraw`), et l'application crée la fenêtre pour Vulkan ou pour OpenGL : un jeu passe à
   OpenGL (ES 3.0 sur Android, 3.3 sur un ordinateur), l'éditeur reste en Vulkan. `adb shell setprop debug.devex.renderer
-  webgpu` (ou `opengl`) choisit sur Android. La surface WebGPU se refait quand `Window::native().window` change
-  (`m_surfaceWindow`). Une fenêtre OpenGL que l'EGL refuse en sRGB se refait sans. L'export donne à Gradle `ndkPath` et
+  opengl` choisit OpenGL ES sur Android, qui n'a plus WebGPU : un dossier de build Android configuré avant garde
+  `DEVEX_WEBGPU=ON` dans son cache, à reconfigurer avec `-DDEVEX_WEBGPU=OFF`. Une fenêtre OpenGL que l'EGL refuse en sRGB
+  se refait sans.
+- Dans le navigateur : `run` demande d'abord le GPU de WebGPU (`requestBrowserDevice`) ; `chooseApi` prend WebGPU s'il
+  l'a reçu (`browserDeviceReady`), WebGL2 sinon. Le lecteur web lie WebGL2 (`-sMIN_WEBGL_VERSION=2
+  -sMAX_WEBGL_VERSION=2 -sGL_ENABLE_GET_PROC_ADDRESS=1`). Emscripten n'a `glMapBufferRange` qu'avec `FULL_ES3`, et pas en
+  lecture : la luminance se relit par `glGetBufferSubData`. Sous Windows, ANGLE fait compiler le HLSL des gros shaders
+  d'OpenGL par Direct3D 11, trop lentement : le GPU du navigateur tombe et Chrome bloque WebGL jusqu'à son redémarrage.
+  D'où WebGPU d'abord ; les shaders de WebGL2 restent à alléger. L'export donne à Gradle `ndkPath` et
   `ndkVersion`, sans lesquels il n'épure pas les bibliothèques.
 - Sur Android, SDL ignore `SDL_WINDOW_HIGH_PIXEL_DENSITY` : la fenêtre a tous les pixels de la surface. L'échelle 3D
   (`PlatformRendering::renderScale`, `RenderWorld::renderScale`, `scaledExtent`) réduit l'image de la scène, que la

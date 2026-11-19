@@ -193,8 +193,9 @@ inline constexpr GLenum GL_CONDITION_SATISFIED = 0x911C;
               GLenum format, GLenum type, const void* pixels))                                                                      \
     REQUIRED(FramebufferTextureLayer, void, (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint layer))           \
     REQUIRED(Uniform1f, void, (GLint location, GLfloat value))                                                                      \
-    REQUIRED(MapBufferRange, void*, (GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access))                        \
-    REQUIRED(UnmapBuffer, GLboolean, (GLenum target))                                                                               \
+    OPTIONAL(MapBufferRange, void*, (GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access))                        \
+    OPTIONAL(GetBufferSubData, void, (GLenum target, GLintptr offset, GLsizeiptr size, void* data))                                 \
+    OPTIONAL(UnmapBuffer, GLboolean, (GLenum target))                                                                               \
     REQUIRED(FenceSync, GLsync, (GLenum condition, GLbitfield flags))                                                               \
     REQUIRED(ClientWaitSync, GLenum, (GLsync sync, GLbitfield flags, GLuint64 timeout))                                             \
     REQUIRED(DeleteSync, void, (GLsync sync))                                                                                       \

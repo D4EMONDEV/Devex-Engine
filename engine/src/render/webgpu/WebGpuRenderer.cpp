@@ -333,6 +333,11 @@ void requestBrowserDevice(std::function<void(core::Result<void>)> ready)
                 }));
         }));
 }
+
+bool browserDeviceReady() noexcept
+{
+    return static_cast<bool>(webgpu::browserDevice().device);
+}
 #endif
 
 } // namespace devex::render

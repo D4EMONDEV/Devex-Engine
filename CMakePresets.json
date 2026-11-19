@@ -92,8 +92,7 @@
                 "ANDROID_PLATFORM": "android-29",
                 "ANDROID_STL": "c++_shared",
                 "DEVEX_BUILD_EDITOR": "OFF",
-                "DEVEX_BUILD_TESTS": "OFF",
-                "DEVEX_WEBGPU": "ON"
+                "DEVEX_BUILD_TESTS": "OFF"
             }
         },
         {

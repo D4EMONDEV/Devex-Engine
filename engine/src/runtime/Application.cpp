@@ -4272,8 +4272,7 @@ void browserFrame(void* argument)
 int run(Application& application, const ApplicationConfig& config)
 {
 #if defined(__EMSCRIPTEN__)
-    // The browser gives its GPU only once the page has its hand back: the game starts then, and plays one frame at each
-    // refresh of the page. The application must live as long as the page. Without rendering, it runs at once.
+    // The game plays one frame at each refresh of the page, once it has what it draws with. The application must live as long as the page. Without rendering, it runs at once.
     if (!config.enableRendering)
     {
         const auto session = std::make_unique<Session>();
@@ -4283,12 +4282,7 @@ int run(Application& application, const ApplicationConfig& config)
         }
         return session->runner->execute();
     }
-    render::requestBrowserDevice([&application, config](core::Result<void> ready) {
-        if (!ready)
-        {
-            DEVEX_LOG_FATAL("Cannot initialize rendering: {}", ready.error());
-            return;
-        }
+    const auto start = [&application, config]() {
         auto session = std::make_unique<Session>();
         if (prepare(*session, application, config))
         {
@@ -4308,6 +4302,14 @@ int run(Application& application, const ApplicationConfig& config)
             }
             emscripten_set_main_loop_arg(&browserFrame, started, 0, false);
         });
+    };
+    // WebGPU gives its GPU once the page has its hand back; a browser that gives none draws with WebGL2.
+    render::requestBrowserDevice([start](core::Result<void> ready) {
+        if (!ready)
+        {
+            DEVEX_LOG_INFO("Drawing with WebGL2: {}", ready.error());
+        }
+        start();
     });
     return EXIT_SUCCESS;
 #else

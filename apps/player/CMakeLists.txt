@@ -60,6 +60,10 @@ if(EMSCRIPTEN)
         -lidbfs.js
         "-sEXPORTED_RUNTIME_METHODS=['FS','addRunDependency','removeRunDependency']"
     )
+    # WebGL2, whose functions the renderer asks for by name, as from any OpenGL.
+    if(DEVEX_OPENGL)
+        list(APPEND DEVEX_WEB_KIT_LINK_OPTIONS -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 -sGL_ENABLE_GET_PROC_ADDRESS=1)
+    endif()
     target_link_options(devex_player PRIVATE ${DEVEX_WEB_KIT_LINK_OPTIONS})
     # The player with threads goes beside the other in an export of Thread Support, under its own name, which its
     # program, its workers and its WebAssembly know each other by.

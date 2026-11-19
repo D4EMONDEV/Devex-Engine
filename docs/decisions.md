@@ -6227,6 +6227,13 @@ uniforme de 1024 valeurs, au-delà desquelles un objet prend les valeurs du mat�
 Fait le 2026-11-19 : OpenGL 3.3 et OpenGL ES 3.0 dessinent les maillages, leurs ombres, les sprites, les particules et le ciel
 de ces shaders comme Vulkan, dans les tests de comparaison de WebGPU, désormais partagés.
 
+**WebGPU d'abord dans le navigateur, décidé le 2026-11-19** avec l'utilisateur, ce qui revient sur « OpenGL remplace
+WebGPU » pour le web : le jeu démarre en WebGL2, mais sous Windows, ANGLE traduit les gros shaders d'éclairage pour
+Direct3D 11, dont le compilateur met trop longtemps ; le GPU du navigateur tombe et Chrome bloque WebGL. WebGPU les compile
+sans peine. Le navigateur prend donc WebGPU là où il donne son GPU (Chrome, Edge, Firefox récent, Safari 26), et WebGL2
+sinon (Firefox sur Android, vieux Safari), au lieu de refuser le jeu. WebGPU ne sort que d'Android, où OpenGL ES le
+remplace. Alléger les shaders de WebGL2 vient ensuite.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

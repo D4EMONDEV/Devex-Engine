@@ -2249,16 +2249,30 @@ void GlRenderer::updateExposure()
             m_luminanceFence = nullptr;
             constexpr std::size_t samples = std::size_t{luminanceGridWidth} * luminanceGridHeight;
             gl::BindBuffer(GL_PIXEL_PACK_BUFFER, m_luminanceBuffer);
-            if (const auto* const mapped = static_cast<const float*>(
-                    gl::MapBufferRange(GL_PIXEL_PACK_BUFFER, 0, static_cast<GLsizeiptr>(samples * 4 * sizeof(float)), GL_MAP_READ_BIT));
-                mapped != nullptr && m_measuredExposure > 0.0f)
+            // OpenGL and WebGL2 copy a buffer out; OpenGL ES maps it, which WebGL2 cannot for reading. A system that does
+            // neither keeps its exposure where it was.
+            std::vector<float> texels(samples * 4);
+            const auto bytes = static_cast<GLsizeiptr>(texels.size() * sizeof(float));
+            bool read = false;
+            if (gl::GetBufferSubData != nullptr)
+            {
+                gl::GetBufferSubData(GL_PIXEL_PACK_BUFFER, 0, bytes, texels.data());
+                read = true;
+            }
+            else if (const void* const mapped =
+                         gl::MapBufferRange != nullptr ? gl::MapBufferRange(GL_PIXEL_PACK_BUFFER, 0, bytes, GL_MAP_READ_BIT) : nullptr)
+            {
+                std::memcpy(texels.data(), mapped, static_cast<std::size_t>(bytes));
+                static_cast<void>(gl::UnmapBuffer(GL_PIXEL_PACK_BUFFER));
+                read = true;
+            }
+            if (read && m_measuredExposure > 0.0f)
             {
                 std::vector<float> luminances(samples);
                 for (std::size_t sample = 0; sample < samples; ++sample)
                 {
-                    luminances[sample] = mapped[sample * 4] / m_measuredExposure;
+                    luminances[sample] = texels[sample * 4] / m_measuredExposure;
                 }
-                static_cast<void>(gl::UnmapBuffer(GL_PIXEL_PACK_BUFFER));
                 if (const float average = averageLuminance(luminances); average > 0.0f)
                 {
                     m_targetEv100 =

@@ -1,7 +1,7 @@
 # Publier un jeu sur le web
 
 Devex exporte un jeu pour le navigateur : une page, le lecteur du jeu en WebAssembly et son paquet, dessinés avec
-WebGPU. Ce guide dit ce qu'il faut, comment exporter, essayer et mettre en ligne, et ce que le navigateur change. Les
+WebGPU, ou avec WebGL2 dans un navigateur qui n'a pas WebGPU. Ce guide dit ce qu'il faut, comment exporter, essayer et mettre en ligne, et ce que le navigateur change. Les
 raisons des choix sont dans [decisions.md](decisions.md#le-web--plan-décidé-le-2026-11-14).
 
 ## Ce qu'il faut
@@ -25,9 +25,9 @@ raisons des choix sont dans [decisions.md](decisions.md#le-web--plan-décidé-le
   (`emsdk.bat` sous Windows.) L'éditeur le trouve par la variable `EMSDK` ou dans les dossiers habituels d'emsdk, ou là
   où **Editor Settings > Export** le désigne. Une autre version est refusée en rouge, avec la commande qui installe la
   bonne : le moteur livré a été construit avec celle-là.
-- **Un navigateur qui a WebGPU** : les versions récentes de Chrome, Edge, Firefox et Safari (le détail par système est
-  sur [caniuse.com/webgpu](https://caniuse.com/webgpu)). Sans WebGPU, la page le dit : *This browser has no WebGPU: the
-  game cannot be drawn.*
+- **Un navigateur qui a WebGPU ou WebGL2** : WebGPU dans les versions récentes de Chrome, Edge, Firefox et Safari (le
+  détail par système est sur [caniuse.com/webgpu](https://caniuse.com/webgpu)), WebGL2 dans les autres, comme Firefox sur
+  Android. Sans l'un ni l'autre, la page le dit : *This browser has neither WebGPU nor WebGL2: the game cannot be drawn.*
 
 ## Exporter
 

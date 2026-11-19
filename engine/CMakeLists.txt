@@ -520,9 +520,9 @@ if(DEVEX_WEBGPU)
     target_link_libraries(devex_render PRIVATE dawn::webgpu_dawn)
     target_compile_definitions(devex_render PRIVATE DEVEX_RENDERER_WEBGPU=1)
 endif()
-# The OpenGL backend, for OpenGL 3.3 on a computer and OpenGL ES 3.0 on Android, which takes the system's from SDL. Its
-# shaders are translated into GLSL at the build and kept in the program. WebGL2 in a browser comes later in its plan.
-if(DEVEX_OPENGL AND NOT EMSCRIPTEN)
+# The OpenGL backend, for OpenGL 3.3 on a computer, OpenGL ES 3.0 on Android and WebGL2 in a browser, which takes the
+# system's from SDL. Its shaders are translated into GLSL at the build and kept in the program.
+if(DEVEX_OPENGL)
     set(devex_glsl_source "${CMAKE_CURRENT_BINARY_DIR}/generated/GlShaders.cpp")
     devex_embed_glsl(OUTPUT "${devex_glsl_source}"
         SOURCES

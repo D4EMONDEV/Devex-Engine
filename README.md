@@ -8,8 +8,9 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 ## Direction technique
 
 - C++23 (C++26 en expérimentation), CMake + Ninja, dépendances via vcpkg ;
-- Vulkan 1.3 (volk + VMA), shaders Slang, cible de rendu forward+ clustered PBR ; WebGPU dans le
-  navigateur, qui dessine ce que montre la méthode Compatibility ;
+- Vulkan 1.3 (volk + VMA), shaders Slang, cible de rendu forward+ clustered PBR ; OpenGL 3.3,
+  OpenGL ES 3.0 et WebGL2 là où Vulkan 1.3 manque, et WebGPU dans le navigateur qui l'a, qui
+  dessinent ce que montre la méthode Compatibility ;
 - SDL3 pour la fenêtre et les entrées ; l'éditeur sous Windows et Linux, les jeux exportés pour
   Windows, Linux, Android et le [web](docs/web.md) ;
 - scènes en entités + composants, stockées de façon data-oriented ;
@@ -378,8 +379,9 @@ Pour le web, le moteur et le lecteur se compilent en WebAssembly sous Linux (WSL
 Emscripten 7.0.0 installé par emsdk et désigné par `EMSDK` : `web` sur un thread, `web-threads`
 pour **Thread Support**. Ses tests de ce que fait un jeu tournent dans Node. Les releases livrent
 ce lecteur avec l'éditeur, dans `platforms/web` : exporter un jeu pour le web ne demande pas de le
-construire (voir [publier sur le web](docs/web.md)). Le build Debug de Windows contient aussi le
-renderer WebGPU, par Dawn, dont des tests comparent les images à celles de Vulkan.
+construire (voir [publier sur le web](docs/web.md)). Le jeu y dessine avec WebGPU, ou avec WebGL2
+dans un navigateur qui n'a pas WebGPU. Le build Debug de Windows contient aussi le renderer WebGPU,
+par Dawn, dont des tests comparent les images à celles de Vulkan, comme celles d'OpenGL.
 
 ```bash
 source "$EMSDK/emsdk_env.sh"

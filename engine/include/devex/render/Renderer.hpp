@@ -179,9 +179,11 @@ struct DEVEX_API RendererStats
 class RenderBackend;
 
 #if defined(__EMSCRIPTEN__)
-// Asks the browser for its GPU, which answers once the page goes back to it: Renderer::create needs the answer, which
-// `ready` receives. In a browser only.
+// Asks the browser for its GPU for WebGPU, which answers once the page goes back to it: `ready` receives whether it gave
+// one. A game draws with WebGPU where it did, and with WebGL2 otherwise. In a browser only.
 DEVEX_API void requestBrowserDevice(std::function<void(core::Result<void>)> ready);
+// Whether the browser gave its GPU for WebGPU.
+[[nodiscard]] DEVEX_API bool browserDeviceReady() noexcept;
 #endif
 
 // Draws RenderWorld snapshots into a window. Only one renderer may exist at a time, and the
@@ -194,8 +196,8 @@ public:
                                                        const RendererConfig& config);
     // The API a renderer draws with on this machine, chosen before its window, which a phone makes for Vulkan or for
     // OpenGL ES, not both: Vulkan where a GPU has Vulkan 1.3 and what the renderer needs of it; otherwise OpenGL when
-    // `openGlFallback`, as a game takes it and the editor does not. WebGPU in a browser. On Android,
-    // `adb shell setprop debug.devex.renderer opengl` or `webgpu` chooses.
+    // `openGlFallback`, as a game takes it and the editor does not. In a browser, WebGPU where it gave its GPU, WebGL2
+    // otherwise. On Android, `adb shell setprop debug.devex.renderer opengl` chooses OpenGL ES.
     [[nodiscard]] static RenderApi chooseApi(const platform::Platform& platform, bool openGlFallback);
 
     Renderer(Renderer&& other) noexcept;

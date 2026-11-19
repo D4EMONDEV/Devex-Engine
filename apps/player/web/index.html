@@ -12,7 +12,7 @@
 </head>
 <body>
 <!-- The page of a Devex game: it loads game.dvxpak, beside it, into the files of the program, then plays it in the
-     canvas with WebGPU. -->
+     canvas with WebGPU, or with WebGL2 in a browser without it. -->
 <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
 <div id="status">Loading…</div>
 <script>
@@ -23,8 +23,8 @@
         canvas: document.getElementById('canvas'),
         arguments: ['--package', '/game.dvxpak'],
         preRun: [() => {
-            if (!navigator.gpu) {
-                status.textContent = 'This browser has no WebGPU: the game cannot be drawn.';
+            if (!navigator.gpu && !document.createElement('canvas').getContext('webgl2')) {
+                status.textContent = 'This browser has neither WebGPU nor WebGL2: the game cannot be drawn.';
             }
             Module.addRunDependency('game');
             fetch('game.dvxpak')

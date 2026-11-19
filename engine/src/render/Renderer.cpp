@@ -31,8 +31,8 @@ namespace {
 [[maybe_unused]] constexpr bool hasVulkan = false;
 #endif
 
-// What a developer asks of a phone, to try another renderer on one that has Vulkan 1.3:
-// adb shell setprop debug.devex.renderer webgpu (or opengl)
+// What a developer asks of a phone, to try OpenGL ES on one that has Vulkan 1.3:
+// adb shell setprop debug.devex.renderer opengl
 [[nodiscard]] std::string askedRenderer()
 {
 #if defined(__ANDROID__)
@@ -45,18 +45,39 @@ namespace {
 
 } // namespace
 
+#if defined(__EMSCRIPTEN__) && !DEVEX_RENDERER_WEBGPU
+// A player without WebGPU draws with WebGL2 at once.
+void requestBrowserDevice(std::function<void(core::Result<void>)> ready)
+{
+    ready(core::makeError(core::ErrorCode::Unsupported, "this player draws without WebGPU"));
+}
+
+bool browserDeviceReady() noexcept
+{
+    return false;
+}
+#endif
+
 RenderApi Renderer::chooseApi(const platform::Platform& platform, bool openGlFallback)
 {
     static_cast<void>(platform);
     static_cast<void>(openGlFallback);
     const std::string asked = askedRenderer();
     static_cast<void>(asked);
+#if defined(__EMSCRIPTEN__)
+    // A browser draws with WebGPU where it gave its GPU, and with WebGL2, which every browser has, otherwise.
 #if DEVEX_RENDERER_WEBGPU
-    if (asked == "webgpu" || !hasVulkan)
+    if (browserDeviceReady())
     {
         return RenderApi::WebGpu;
     }
 #endif
+#if DEVEX_RENDERER_OPENGL
+    return RenderApi::OpenGl;
+#else
+    return RenderApi::WebGpu;
+#endif
+#else
 #if DEVEX_RENDERER_OPENGL
     if (asked == "opengl")
     {
@@ -80,13 +101,14 @@ RenderApi Renderer::chooseApi(const platform::Platform& platform, bool openGlFal
 #else
     return RenderApi::Automatic;
 #endif
+#endif
 }
 
 core::Result<Renderer> Renderer::create(const platform::Platform& platform,
                                         platform::Window& window, const RendererConfig& config)
 {
 #if DEVEX_RENDERER_OPENGL
-    // Only when asked, until it draws all the others draw.
+    // Where Renderer::chooseApi took it, or when asked.
     if (config.api == RenderApi::OpenGl)
     {
         core::Result<std::unique_ptr<opengl::GlRenderer>> implementation = opengl::GlRenderer::create(platform, window, config);
@@ -107,7 +129,7 @@ core::Result<Renderer> Renderer::create(const platform::Platform& platform,
         return Renderer(std::unique_ptr<RenderBackend>(std::move(*implementation)));
     };
     // WebGPU when asked, or when there is no Vulkan: in a browser.
-    if (config.api == RenderApi::WebGpu || (config.api == RenderApi::Automatic && (!hasVulkan || askedRenderer() == "webgpu")))
+    if (config.api == RenderApi::WebGpu || (config.api == RenderApi::Automatic && !hasVulkan))
     {
         return webGpu();
     }
@@ -119,20 +141,6 @@ core::Result<Renderer> Renderer::create(const platform::Platform& platform,
             vulkan::VulkanRenderer::create(platform, window, config);
         if (!implementation)
         {
-#if DEVEX_RENDERER_WEBGPU
-            // Without Vulkan 1.3, as a phone that has only 1.1, WebGPU draws what Compatibility shows, through Dawn; not
-            // when a renderer exists already, which WebGPU would not replace either.
-            if (config.api == RenderApi::Automatic && implementation.error().code != core::ErrorCode::InvalidState)
-            {
-                DEVEX_LOG_WARNING("Vulkan cannot draw here ({}): drawing with WebGPU", implementation.error());
-                core::Result<Renderer> fallback = webGpu();
-                if (fallback)
-                {
-                    return fallback;
-                }
-                return core::makeError(core::ErrorCode::Graphics, "{}; and WebGPU neither: {}", implementation.error(), fallback.error());
-            }
-#endif
             return std::unexpected(implementation.error());
         }
         return Renderer(std::unique_ptr<RenderBackend>(std::move(*implementation)));

@@ -590,6 +590,11 @@ void GlRenderer::bindTexture(GLuint unit, GLuint texture, GLuint sampler) const
 
 void GlRenderer::applyPresentMode()
 {
+#if defined(__EMSCRIPTEN__)
+    // The browser draws a frame at each refresh of the page, which the main loop follows.
+    m_presentModeApplied = true;
+    return;
+#endif
     // Immediate never waits; mailbox, which OpenGL lacks, does not either; FIFO waits for the display, and relaxed only
     // when on time, where the system can.
     const int interval = m_presentMode == PresentMode::Immediate || m_presentMode == PresentMode::Mailbox ? 0
