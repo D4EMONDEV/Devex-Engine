@@ -1836,7 +1836,8 @@ void GlRenderer::orderTransparent(const ViewMatrices& matrices)
         }
         return a.distance > b.distance;
     });
-    // Sprite batches that follow each other lie one after the other among the sprites: they are drawn by runs of one texture.
+    // Sprite batches that follow each other lie one after the other among the sprites: they are drawn by runs of one texture
+    // and one normal map.
     m_transparentDraws.clear();
     m_spriteRuns.clear();
     for (std::size_t at = 0; at < items.size();)
@@ -1857,10 +1858,11 @@ void GlRenderer::orderTransparent(const ViewMatrices& matrices)
         TransparentDraw draw{.sprites = true, .firstRun = static_cast<std::uint32_t>(m_spriteRuns.size())};
         for (std::uint32_t index = first; index < end; ++index)
         {
-            const std::uint32_t texture = m_spriteFrame.sprites[index].texture;
-            if (m_spriteRuns.size() == draw.firstRun || m_spriteRuns.back().texture != texture)
+            const GpuSprite& sprite = m_spriteFrame.sprites[index];
+            if (m_spriteRuns.size() == draw.firstRun || m_spriteRuns.back().texture != sprite.texture ||
+                m_spriteRuns.back().normalTexture != sprite.normalTexture)
             {
-                m_spriteRuns.push_back({.first = index, .texture = texture});
+                m_spriteRuns.push_back({.first = index, .texture = sprite.texture, .normalTexture = sprite.normalTexture});
             }
             ++m_spriteRuns.back().count;
         }

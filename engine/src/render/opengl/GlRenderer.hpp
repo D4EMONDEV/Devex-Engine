@@ -44,6 +44,7 @@ inline constexpr gl::GLuint terrain = 10;
 inline constexpr gl::GLuint terrainDraw = 11;
 inline constexpr gl::GLuint blit = 12;
 inline constexpr gl::GLuint decals = 13;
+inline constexpr gl::GLuint lights2D = 14;
 } // namespace binding
 
 // The texture units of their samplers: those of the scene first, which every lit shader reads, then those of each draw.
@@ -167,6 +168,7 @@ private:
         std::uint32_t first = 0;
         std::uint32_t count = 0;
         std::uint32_t texture = 0;
+        std::uint32_t normalTexture = 0;
     };
     // A batch of the interface as it is drawn.
     struct UiRun
@@ -391,6 +393,15 @@ private:
     gl::GLuint m_uiArray = 0;
     gl::GLuint m_spriteBuffer = 0;
     std::size_t m_spriteCapacity = 0;
+    // The bytes of the local lights of each sprite, which lit ones read.
+    gl::GLuint m_spriteLightBuffer = 0;
+    std::size_t m_spriteLightCapacity = 0;
+    // The 2D lights of the frame, and the distances their shadows keep, a row of a texture of floats each.
+    std::vector<GpuLight2D> m_lights2D;
+    std::vector<float> m_shadows2D;
+    gl::GLuint m_light2DBuffer = 0;
+    gl::GLuint m_shadow2DTexture = 0;
+    std::uint32_t m_shadow2DRows = 0;
     gl::GLuint m_uiVertexBuffer = 0;
     std::size_t m_uiVertexCapacity = 0;
     gl::GLuint m_uiIndexBuffer = 0;

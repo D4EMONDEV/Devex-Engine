@@ -9,6 +9,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/platform/Window.hpp>
 #include <devex/render/Culling.hpp>
+#include <devex/render/Light2D.hpp>
 #include <devex/render/Photometry.hpp>
 #include <devex/render/PostProcess.hpp>
 
@@ -21,6 +22,7 @@
 #include <cstddef>
 #include <cstring>
 #include <format>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -35,6 +37,14 @@ struct SpriteFrameData
 {
     math::Mat4 viewProjection{1.0f};
     math::Vec4 canvasModulate{1.0f};
+    std::uint32_t lightCount = 0;
+    std::uint32_t shadowResolution = shadow2DResolution;
+    std::uint32_t padding0 = 0;
+    std::uint32_t padding1 = 0;
+};
+struct Light2DData
+{
+    std::array<GpuLight2D, maxLights2D> lights{};
 };
 struct UiDrawData
 {
@@ -64,7 +74,8 @@ struct TonemapData
     math::Vec4 filter{1.0f};
     math::Vec4 balance{1.0f};
 };
-static_assert(sizeof(SpriteFrameData) == 80 && sizeof(UiDrawData) == 48 && sizeof(TonemapData) == 80);
+static_assert(sizeof(SpriteFrameData) == 96 && sizeof(UiDrawData) == 48 && sizeof(TonemapData) == 80 && sizeof(GpuLight2D) == 80 &&
+              sizeof(Light2DData) == 5120);
 
 [[nodiscard]] std::string text(const GLubyte* value)
 {
@@ -234,12 +245,13 @@ GlRenderer::~GlRenderer()
         }
         const GLuint arrays[] = {m_emptyArray, m_spriteArray, m_uiArray};
         gl::DeleteVertexArrays(3, arrays);
-        const GLuint buffers[] = {m_spriteBuffer, m_uiVertexBuffer, m_uiIndexBuffer, m_spriteFrameBuffer, m_tonemapBuffer, m_uiDrawBuffer};
-        gl::DeleteBuffers(6, buffers);
+        const GLuint buffers[] = {m_spriteBuffer,  m_uiVertexBuffer, m_uiIndexBuffer,     m_spriteFrameBuffer,
+                                  m_tonemapBuffer, m_uiDrawBuffer,   m_spriteLightBuffer, m_light2DBuffer};
+        gl::DeleteBuffers(8, buffers);
         const GLuint samplers[] = {m_linearSampler, m_nearestSampler, m_clampSampler};
         gl::DeleteSamplers(3, samplers);
-        const GLuint textures[] = {m_white, m_black};
-        gl::DeleteTextures(2, textures);
+        const GLuint textures[] = {m_white, m_black, m_shadow2DTexture};
+        gl::DeleteTextures(3, textures);
         destroyTarget(m_scene);
     }
     m_window.destroyGlContext(m_context);
@@ -340,7 +352,20 @@ core::Result<void> GlRenderer::initialize()
     }
     bindProgram(m_skyProgram, {{"SceneData", binding::scene}},
                 {{"irradianceEnvironment", unit::irradiance}, {"specularEnvironment", unit::specular}, {"skyTexture", unit::first}});
-    bindProgram(m_spriteProgram, {{"SpriteFrame", binding::spriteFrame}}, {{"spriteTexture", unit::first}});
+    bindProgram(m_spriteProgram,
+                {{"SpriteFrame", binding::spriteFrame},
+                 {"Light2DData", binding::lights2D},
+                 {"SceneData", binding::scene},
+                 {"LightData", binding::lights},
+                 {"ShadowViewData", binding::shadowViews}},
+                {{"spriteTexture", unit::first},
+                 {"normalTexture", unit::second},
+                 {"shadows2D", unit::third},
+                 {"irradianceEnvironment", unit::irradiance},
+                 {"specularEnvironment", unit::specular},
+                 {"brdfLut", unit::brdf},
+                 {"cascadeMap", unit::cascades},
+                 {"atlasMap", unit::atlas}});
     bindProgram(m_uiProgram, {{"DrawData", binding::uiDraw}}, {{"uiTexture", unit::first}});
     bindProgram(m_tonemapProgram, {{"TonemapData", binding::tonemap}},
                 {{"sceneTexture", unit::first}, {"bloomTexture", unit::second}, {"colorTableTexture", unit::third}});
@@ -348,13 +373,23 @@ core::Result<void> GlRenderer::initialize()
     gl::GenVertexArrays(1, &m_emptyArray);
     gl::GenVertexArrays(1, &m_spriteArray);
     gl::GenVertexArrays(1, &m_uiArray);
-    const std::array buffers{&m_spriteBuffer, &m_uiVertexBuffer, &m_uiIndexBuffer, &m_spriteFrameBuffer, &m_tonemapBuffer, &m_uiDrawBuffer};
+    const std::array buffers{&m_spriteBuffer,  &m_uiVertexBuffer, &m_uiIndexBuffer,     &m_spriteFrameBuffer,
+                             &m_tonemapBuffer, &m_uiDrawBuffer,   &m_spriteLightBuffer, &m_light2DBuffer};
     for (GLuint* buffer : buffers)
     {
         gl::GenBuffers(1, buffer);
     }
     gl::BindBuffer(GL_UNIFORM_BUFFER, m_spriteFrameBuffer);
     gl::BufferData(GL_UNIFORM_BUFFER, sizeof(SpriteFrameData), nullptr, GL_DYNAMIC_DRAW);
+    gl::BindBuffer(GL_UNIFORM_BUFFER, m_light2DBuffer);
+    gl::BufferData(GL_UNIFORM_BUFFER, sizeof(Light2DData), nullptr, GL_DYNAMIC_DRAW);
+    // The distances of the shadows of the 2D lights: none until a light casts some.
+    gl::GenTextures(1, &m_shadow2DTexture);
+    gl::BindTexture(GL_TEXTURE_2D, m_shadow2DTexture);
+    gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+    constexpr float far = 1.0e9f;
+    gl::TexImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(GL_R32F), 1, 1, 0, GL_RED, GL_FLOAT, &far);
+    gl::BindTexture(GL_TEXTURE_2D, 0);
     gl::BindBuffer(GL_UNIFORM_BUFFER, m_tonemapBuffer);
     gl::BufferData(GL_UNIFORM_BUFFER, sizeof(TonemapData), nullptr, GL_DYNAMIC_DRAW);
 
@@ -371,7 +406,7 @@ core::Result<void> GlRenderer::initialize()
     gl::VertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(GpuUiVertex), reinterpret_cast<const void*>(offsetof(GpuUiVertex, color)));
     // Each sprite is an instance: its attributes move on once per sprite, from where its run starts.
     gl::BindVertexArray(m_spriteArray);
-    for (GLuint location = 0; location < 10; ++location)
+    for (GLuint location = 0; location < 12; ++location)
     {
         gl::EnableVertexAttribArray(location);
         gl::VertexAttribDivisor(location, 1);
@@ -922,8 +957,47 @@ core::Result<void> GlRenderer::endFrame()
         growBuffer(m_spriteBuffer, GL_ARRAY_BUFFER, m_spriteCapacity, m_spriteFrame.sprites.size() * sizeof(GpuSprite));
         gl::BufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(m_spriteFrame.sprites.size() * sizeof(GpuSprite)),
                           m_spriteFrame.sprites.data());
+        // A lit sprite takes the local lights that reach its origin, as a particle its centre.
+        std::vector<std::array<std::uint32_t, 2>> spriteLights(m_spriteFrame.sprites.size(), {0xFFFFFFFFU, 0xFFFFFFFFU});
+        for (std::size_t index = 0; index < spriteLights.size(); ++index)
+        {
+            const GpuSprite& sprite = m_spriteFrame.sprites[index];
+            if ((sprite.flags & spriteLit) != 0)
+            {
+                spriteLights[index] = lightsReaching(math::Aabb{}, math::Vec3(sprite.world[3]));
+            }
+        }
+        growBuffer(m_spriteLightBuffer, GL_ARRAY_BUFFER, m_spriteLightCapacity, spriteLights.size() * sizeof(spriteLights.front()));
+        gl::BufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(spriteLights.size() * sizeof(spriteLights.front())), spriteLights.data());
     }
-    const SpriteFrameData frame{.viewProjection = matrices.viewProjection, .canvasModulate = math::Vec4(m_world.canvasModulate, 1.0f)};
+    // The 2D lights that light what the camera sees of the plane of the sprites, and their shadows, as Vulkan gathers them.
+    gatherLights2D(m_world, math::Vec2(matrices.cameraPosition), math::inverse(clipCorrection) * matrices.unjitteredViewProjection,
+                   m_lights2D, m_shadows2D);
+    Light2DData lights2D;
+    std::ranges::copy(std::span(m_lights2D).first(std::min(m_lights2D.size(), maxLights2D)), lights2D.lights.begin());
+    gl::BindBuffer(GL_UNIFORM_BUFFER, m_light2DBuffer);
+    gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(lights2D), &lights2D);
+    if (!m_shadows2D.empty())
+    {
+        const auto rows = static_cast<std::uint32_t>(m_shadows2D.size() / shadow2DResolution);
+        gl::BindTexture(GL_TEXTURE_2D, m_shadow2DTexture);
+        gl::PixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        if (rows != m_shadow2DRows)
+        {
+            gl::TexImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(GL_R32F), static_cast<GLsizei>(shadow2DResolution),
+                           static_cast<GLsizei>(rows), 0, GL_RED, GL_FLOAT, m_shadows2D.data());
+            m_shadow2DRows = rows;
+        }
+        else
+        {
+            gl::TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, static_cast<GLsizei>(shadow2DResolution), static_cast<GLsizei>(rows), GL_RED,
+                              GL_FLOAT, m_shadows2D.data());
+        }
+        gl::BindTexture(GL_TEXTURE_2D, 0);
+    }
+    const SpriteFrameData frame{.viewProjection = matrices.viewProjection,
+                                .canvasModulate = math::Vec4(m_world.canvasModulate, 1.0f),
+                                .lightCount = static_cast<std::uint32_t>(std::min(m_lights2D.size(), maxLights2D))};
     gl::BindBuffer(GL_UNIFORM_BUFFER, m_spriteFrameBuffer);
     gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(frame), &frame);
     prepareParticles(matrices);
@@ -1060,13 +1134,19 @@ void GlRenderer::drawSprites(std::uint32_t firstRun, std::uint32_t runCount)
     gl::DepthFunc(GL_GEQUAL);
     gl::UseProgram(m_spriteProgram.program);
     gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::spriteFrame, m_spriteFrameBuffer, 0, sizeof(SpriteFrameData));
+    gl::BindBufferRange(GL_UNIFORM_BUFFER, binding::lights2D, m_light2DBuffer, 0, sizeof(Light2DData));
+    bindTexture(unit::third, m_shadow2DTexture, m_pointSampler);
     gl::BindVertexArray(m_spriteArray);
-    gl::BindBuffer(GL_ARRAY_BUFFER, m_spriteBuffer);
     constexpr GLsizei stride = sizeof(GpuSprite);
+    constexpr GLsizei lightStride = sizeof(std::array<std::uint32_t, 2>);
     for (std::uint32_t index = firstRun; index < firstRun + runCount; ++index)
     {
         const SpriteRun& run = m_spriteRuns[index];
         // OpenGL ES 3.0 has no first instance: the attributes start at the run.
+        gl::BindBuffer(GL_ARRAY_BUFFER, m_spriteLightBuffer);
+        gl::VertexAttribIPointer(11, 2, GL_UNSIGNED_INT, lightStride,
+                                 reinterpret_cast<const void*>(std::size_t{run.first} * static_cast<std::size_t>(lightStride)));
+        gl::BindBuffer(GL_ARRAY_BUFFER, m_spriteBuffer);
         const std::size_t base = std::size_t{run.first} * sizeof(GpuSprite);
         const auto at = [base](std::size_t offset) { return reinterpret_cast<const void*>(base + offset); };
         for (GLuint column = 0; column < 4; ++column)
@@ -1079,9 +1159,14 @@ void GlRenderer::drawSprites(std::uint32_t firstRun, std::uint32_t runCount)
         gl::VertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, stride, at(offsetof(GpuSprite, size)));
         gl::VertexAttribPointer(8, 2, GL_FLOAT, GL_FALSE, stride, at(offsetof(GpuSprite, naturalSize)));
         gl::VertexAttribIPointer(9, 2, GL_UNSIGNED_INT, stride, at(offsetof(GpuSprite, texture)));
+        gl::VertexAttribIPointer(10, 2, GL_UNSIGNED_INT, stride, at(offsetof(GpuSprite, lightMask)));
+        // The texture and the normal map of the run: white and a flat normal for what has none.
         const GpuTexture* const texture = textureAtSlot(run.texture);
         bindTexture(unit::first, texture != nullptr ? texture->texture : m_white,
                     texture != nullptr && texture->nearest ? m_nearestSampler : m_linearSampler);
+        const GpuTexture* const normal = textureAtSlot(run.normalTexture);
+        bindTexture(unit::second, normal != nullptr ? normal->texture : m_flatNormal,
+                    normal != nullptr && normal->nearest ? m_nearestSampler : m_linearSampler);
         gl::DrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<GLsizei>(run.count));
         ++m_drawCalls;
     }

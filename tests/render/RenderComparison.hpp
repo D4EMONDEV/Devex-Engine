@@ -176,6 +176,79 @@ struct Difference
     return difference;
 }
 
+// The window of a 2D scene under 2D lights drawn by one API: a point light and a directional one, which cast shadows
+// from occluders, over a dark canvas, on a floor, on a sprite with a normal map, and on a lit sprite that a local light
+// shines on. OpenGL draws with OpenGL ES 3.0 when `es` asks for it, where the driver of the computer has it.
+[[nodiscard]] inline devex::render::CapturedImage drawLights2D(devex::render::RenderApi api, bool es = false)
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform.has_value());
+    const bool openGl = api == devex::render::RenderApi::OpenGl;
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = !openGl, .openGl = openGl, .hidden = true});
+    REQUIRE(window.has_value());
+    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true, .api = api, .openGlEs = es});
+    if (!renderer)
+    {
+        FAIL(std::format("{}", renderer.error()));
+    }
+    devex::asset::TextureData white{.format = devex::asset::TextureFormat::Rgba8Srgb};
+    white.mips.push_back({.width = 2, .height = 2, .bytes = std::vector<std::byte>(16, std::byte{230})});
+    // Normals tilted left, right, down and up, as a normal map stores them.
+    devex::asset::TextureData normals{.format = devex::asset::TextureFormat::Rgba8Unorm, .filter = devex::asset::TextureFilter::Nearest};
+    normals.mips.push_back({.width = 2,
+                            .height = 2,
+                            .bytes = {std::byte{40}, std::byte{128}, std::byte{230}, std::byte{255}, std::byte{215}, std::byte{128},
+                                      std::byte{230}, std::byte{255}, std::byte{128}, std::byte{40}, std::byte{230}, std::byte{255},
+                                      std::byte{128}, std::byte{215}, std::byte{230}, std::byte{255}}});
+    const auto texture = renderer->createTexture(white);
+    const auto normalMap = renderer->createTexture(normals);
+    REQUIRE((texture && normalMap));
+
+    std::vector<devex::render::CapturedImage> captured;
+    for (int frame = 0; frame < 10 && captured.empty(); ++frame)
+    {
+        devex::render::RenderWorld& world = renderer->beginFrame();
+        world.camera.view = devex::math::inverse(at(0.0f, 0.0f, 10.0f));
+        world.camera.projection = devex::render::Projection::Orthographic;
+        world.camera.orthographicSize = 3.0f;
+        world.camera.farPlane = 100.0f;
+        world.camera.autoExposure = false;
+        world.camera.antialiasing = devex::render::Antialiasing::None;
+        world.camera.tonemapper = devex::render::Tonemapper::None;
+        world.camera.bloom = 0.0f;
+        world.environment.color = {0.0f, 0.0f, 0.0f};
+        world.canvasModulate = {0.25f, 0.25f, 0.3f};
+        world.sprites.push_back({.transform = at(0.0f, 0.0f, 0.0f), .size = {8.0f, 6.0f}, .naturalSize = {8.0f, 6.0f}, .texture = *texture});
+        world.sprites.push_back({.transform = at(1.5f, 0.5f, 0.1f), .size = {1.5f, 1.5f}, .naturalSize = {1.5f, 1.5f},
+                                 .texture = *texture, .normalTexture = *normalMap, .layer = 1});
+        // A lit sprite, which the local light shines on as on a matte surface.
+        world.sprites.push_back({.transform = at(-2.2f, 1.6f, 0.1f), .size = {1.2f, 1.2f}, .naturalSize = {1.2f, 1.2f},
+                                 .texture = *texture, .lit = true, .layer = 1});
+        world.lights.push_back({.position = {-2.0f, 1.4f, 1.0f}, .intensity = {2.0f, 1.5f, 1.0f}, .range = 4.0f});
+        world.lights2D.push_back({.position = {-1.0f, 0.5f}, .color = {1.0f, 0.7f, 0.4f}, .radius = 4.0f, .falloff = 1.5f,
+                                  .height = 0.4f, .shadows = true});
+        world.lights2D.push_back({.directional = true, .direction = {0.5f, -1.0f}, .color = {0.2f, 0.3f, 0.6f}, .height = 0.3f,
+                                  .shadows = true});
+        world.occluders2D.push_back({.from = {-0.5f, -0.5f}, .to = {0.0f, 1.0f}});
+        world.occluders2D.push_back({.from = {-2.5f, -1.5f}, .to = {-1.5f, -1.8f}});
+        if (frame == 3)
+        {
+            static_cast<void>(renderer->requestWindowCapture());
+        }
+        const devex::core::Result<void> presented = renderer->endFrame();
+        if (!presented)
+        {
+            FAIL(std::format("frame {}: {}", frame, presented.error()));
+        }
+        for (devex::render::CapturedImage& image : renderer->takeCaptures())
+        {
+            captured.push_back(std::move(image));
+        }
+    }
+    REQUIRE(captured.size() == 1);
+    return std::move(captured.front());
+}
+
 // The window of a 3D scene drawn by one API: a rough sphere and a metallic one, a textured box on a plane and a
 // skinned box, lit by the sun, a point light and a spot, which cast shadows, and the environment baked from a sky
 // texture, in a height fog, with a decal, unless `decal` leaves it out, and particles and a ribbon, unless `particles`

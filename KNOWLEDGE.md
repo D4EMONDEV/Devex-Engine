@@ -4148,6 +4148,12 @@ public:
   la sienne (celle du repos pour un maillage skinné), au plus 8, un octet chacun dans l'attribut 12. Leurs textures sont
   dessinées par `gl_blit` dans deux atlas de 2048 (`fillDecalAtlas`, couleurs en sRGB et données), placés comme ceux de
   WebGPU ; `BlitData` dit le coin du rectangle (`originX`, `originY`).
+- Sprites : `gl_canvas.slang` est ce que lisent les sprites, comme `webgpu_canvas.slang`. Les lumières 2D (au plus 64,
+  `maxLights2D`) sont dans le bloc `Light2DData` (`binding::lights2D`), les distances de leurs ombres dans une texture
+  `R32F` d'une ligne de 1024 par lumière (`m_shadow2DTexture`, unité `third`), lue par `Load`. Les attributs d'un sprite :
+  10 son masque et sa normal map (depuis `GpuSprite::lightMask`), 11 les octets des lumières locales d'un sprite éclairé,
+  dans un tampon à part (`m_spriteLightBuffer`). Les séries se coupent aussi à chaque normal map (unité `second`). Le
+  programme des sprites lit la scène (`SceneData`, lumières, ombres) pour les sprites éclairés.
 - OpenGL ES ne lit aucun BC, et un vieil OpenGL pas BC7 : `createTexture` décode alors les blocs en pixels RGBA8 (ou
   `SRGB8_ALPHA8`), avec `decodeBlocks` de `engine/src/render/BlockDecoding.hpp`, partagé avec WebGPU. ASTC sans
   l'extension est refusé.

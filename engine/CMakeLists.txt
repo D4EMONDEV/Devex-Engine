@@ -527,6 +527,8 @@ if(DEVEX_OPENGL AND NOT EMSCRIPTEN)
             gl_tonemap.slang
             gl_ui.slang
         MODULES
+            decal_layer.slang
+            gl_canvas.slang
             gl_scene.slang
             particle_shape.slang
             sprite_shape.slang

@@ -6208,6 +6208,11 @@ buffer qu'OpenGL ES 3.0 n'a pas. OpenGL les range comme ses lumières locales et
 sienne, en octets dans ses attributs. Un téléphone ne lit ainsi que les décals d'un objet. Leurs textures sont dans deux
 atlas, couleurs et données, comme ceux de WebGPU.
 
+**Les lumières 2D d'OpenGL, faites le 2026-11-19** : le moteur en rassemble au plus 64 par image, dont 16 avec ombres. Elles
+tiennent dans un bloc uniforme, et les distances de leurs ombres dans une texture de flottants, une ligne par lumière, lue
+texel par texel : OpenGL ES 3.0 n'a pas les storage buffers de WebGPU. Un sprite éclairé prend, comme une particule, les
+lumières locales qui atteignent son origine, en octets dans un tampon d'attributs à part.
+
 ## Outils de level design — plan décidé le 2026-11-04
 
 Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.

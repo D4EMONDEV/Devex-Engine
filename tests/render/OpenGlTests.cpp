@@ -1,5 +1,5 @@
-// The OpenGL renderer: its shaders translated for OpenGL ES 3.0 and OpenGL 3.3, and the 2D scene with its interface and
-// the lit meshes drawn as Vulkan draws them, with OpenGL 3.3 and with OpenGL ES 3.0 where the driver of the computer
+// The OpenGL renderer: its shaders translated for OpenGL ES 3.0 and OpenGL 3.3, and the 2D scene with its interface, the
+// sprites under the 2D lights and the lit meshes drawn as Vulkan draws them, with OpenGL 3.3 and with OpenGL ES 3.0 where the driver of the computer
 // offers it.
 #include "RenderComparison.hpp"
 #include "render/opengl/GlShaders.hpp"
@@ -56,6 +56,17 @@ void checkMeshesLikeVulkan(const devex::render::CapturedImage& vulkan, const dev
     INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));
     CHECK(difference.channels < vulkan.rgba.size() / 100);
     CHECK(difference.mean < 1.5);
+}
+
+// Whether the sprites under the 2D lights are lit as Vulkan lights them, but for a few pixels along the edges of the
+// shadows, where the two may round differently.
+void checkLights2DLikeVulkan(const devex::render::CapturedImage& vulkan, const devex::render::CapturedImage& openGl)
+{
+    REQUIRE(openGl.rgba.size() == vulkan.rgba.size());
+    const Difference difference = compare(vulkan, openGl, 6);
+    INFO(std::format("{} channels differ, {:.2f} on average", difference.channels, difference.mean));
+    CHECK(difference.channels < vulkan.rgba.size() / 200);
+    CHECK(difference.mean < 1.0);
 }
 
 } // namespace
@@ -137,6 +148,38 @@ TEST_CASE("OpenGL ES 3.0 draws the same lit meshes, decals and particles, where 
     const devex::render::CapturedImage vulkan = drawMeshes(devex::render::RenderApi::Vulkan);
     const devex::render::CapturedImage openGlEs = drawMeshes(devex::render::RenderApi::OpenGl, false, false, 1.0f, true, true, true);
     checkMeshesLikeVulkan(vulkan, openGlEs);
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("OpenGL lights sprites with the 2D lights, their shadows and the local lights as Vulkan does", "[render][gpu][opengl]")
+{
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawLights2D(devex::render::RenderApi::Vulkan);
+    const devex::render::CapturedImage openGl = drawLights2D(devex::render::RenderApi::OpenGl);
+    checkLights2DLikeVulkan(vulkan, openGl);
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("OpenGL ES 3.0 lights the same sprites, where the computer offers it", "[render][gpu][opengl]")
+{
+    if (const std::optional<std::string> missing = withoutOpenGlEs())
+    {
+        SKIP(*missing);
+    }
+    const ErrorCapture capture;
+    const devex::render::CapturedImage vulkan = drawLights2D(devex::render::RenderApi::Vulkan);
+    const devex::render::CapturedImage openGlEs = drawLights2D(devex::render::RenderApi::OpenGl, true);
+    checkLights2DLikeVulkan(vulkan, openGlEs);
 
     for (const std::string& error : capture.errors())
     {
